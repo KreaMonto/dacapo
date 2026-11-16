@@ -23,6 +23,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for what comes next.
 - **Core**: Rust (`crates/dacapo-core`). The musical model, editing engine and persistence have no UI dependency.
 - **App shell**: Tauri 2 (`src-tauri`).
 - **UI**: plain HTML/CSS/JavaScript with SVG rendering (`src`). No Node.js or build step is required.
+- **Engraving**: the [Bravura](https://github.com/steinbergmedia/bravura) SMuFL music font by Steinberg (SIL Open Font License), bundled in `src/fonts/`.
 - **Formats**: `.dacapo` (JSON) for documents and a binary CRC-checked journal for recovery. MusicXML import/export is planned.
 
 ## Repository layout

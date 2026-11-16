@@ -586,6 +586,9 @@ tauri.event.listen('close-requested', async ({ payload }) => {
 // ----- start -----------------------------------------------------------------
 
 serial(async () => {
+  // Draw only once the music font is ready, or the first frame would use
+  // fallback glyphs in the wrong places.
+  try { await document.fonts.load('40px Bravura', ''); } catch { /* render anyway */ }
   await checkRecovery();
   for (const tab of await invoke('list_documents')) adopt(await invoke('get_document', { id: tab.id }));
   if (state.order.length) state.active = state.order[0];

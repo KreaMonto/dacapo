@@ -133,7 +133,16 @@ Closing the window with unsaved documents is intercepted: the frontend asks the 
 3. Places events proportionally to time, so all staves line up vertically.
 4. Draws clefs, key and time signatures, noteheads, stems, flags, ledger lines, accidentals, dots, rests, the selection and the caret.
 
-Glyphs currently come from the Unicode Musical Symbols block (Segoe UI Symbol on Windows). Moving to the SMuFL font Bravura is planned. `dev/preview.html` renders sample data without Tauri, for working on the renderer in a normal browser.
+**Music font.** All symbols come from **Bravura**, the reference font of the [SMuFL](https://www.smufl.org/) standard by Steinberg. It is bundled in `src/fonts/` under the SIL Open Font License, so the app works offline.
+
+SMuFL fonts follow fixed conventions:
+
+- 1 em = 4 staff spaces, so with `SP = 10px` the font size is 40px.
+- Every glyph's origin sits on a staff position. A G clef's baseline is the G line, a notehead's baseline is its vertical center, and time-signature digits are centered on their baseline.
+
+Because of this, symbols are placed exactly from staff positions, with no font-specific offsets. Glyph widths (noteheads, rests, accidentals) are taken from Bravura's metadata. Line thicknesses follow its engraving defaults.
+
+`dev/preview.html` renders sample data without Tauri, for working on the renderer in a normal browser.
 
 ## Design principles
 

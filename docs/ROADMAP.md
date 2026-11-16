@@ -51,7 +51,8 @@ This document tracks the development goals and major stages toward a complete op
 
 ## Phase 5: UX and collaboration
 
-- [ ] SMuFL music font (Bravura) for engraving-quality glyphs.
+- [x] SMuFL music font (Bravura) for engraving-quality glyphs.
+- [ ] Option to switch music font (Leland, Petaluma for a handwritten/jazz look).
 - [ ] Light/dark theme switch (currently follows the system).
 - [ ] Customizable keyboard shortcuts.
 - [ ] Localization of the application (English first; Spanish next).
