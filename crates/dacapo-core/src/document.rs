@@ -823,6 +823,54 @@ impl Document {
         self.commit(TxKind::Repitch, ops, caret, now_ms, true)
     }
 
+    /// Dragging a notehead: moves one event's notes by diatonic steps, or
+    /// only the tone `pitch` (matched by step and octave) when the event is
+    /// a chord of several notes. The caret goes after the event, so the
+    /// moved note sounds and Alt+Up/Down keep moving it. Consecutive moves
+    /// undo as one step.
+    pub fn move_pitch(
+        &mut self,
+        id: EventId,
+        pitch: Option<Pitch>,
+        steps: i32,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let Some((staff, measure, voice, index)) = self.score.locate(id) else {
+            return Ok(());
+        };
+        let event = &self.score.staves[staff].measures[measure].voices[voice][index];
+        let EventKind::Chord { pitches } = &event.kind else {
+            return Ok(());
+        };
+        let only = pitch.filter(|_| pitches.len() > 1);
+        let pitches = pitches
+            .iter()
+            .map(|q| match only {
+                Some(p) if !(q.step == p.step && q.octave == p.octave) => *q,
+                _ => q.shifted(steps),
+            })
+            .collect();
+        let op = Op::ReplaceEvent {
+            at: VoiceLoc {
+                staff,
+                measure,
+                voice,
+            },
+            index,
+            event: Event {
+                kind: EventKind::Chord { pitches },
+                ..event.clone()
+            },
+        };
+        let caret = Caret {
+            staff,
+            measure,
+            voice,
+            index: index + 1,
+        };
+        self.commit(TxKind::Repitch, vec![op], caret, now_ms, false)
+    }
+
     /// Moves notes up/down by diatonic steps (Alt+Up/Down; 7 = octave).
     pub fn transpose(&mut self, steps: i32, now_ms: u64) -> Result<(), EditError> {
         self.repitch(now_ms, |p| p.shifted(steps))
@@ -1327,6 +1375,40 @@ mod tests {
             .unwrap();
         assert!(doc.score.voice(0, 0, 0).unwrap().is_empty());
 
+        doc.undo().unwrap();
+        doc.undo().unwrap();
+        assert_eq!(doc.score, before);
+    }
+
+    #[test]
+    fn dragging_moves_a_note_or_one_chord_tone() {
+        let mut doc = Document::new(Score::new("t", 1));
+        doc.place_note(at(0, 0, 0), C, 5, Q, 10_000).unwrap();
+        doc.place_note(at(0, 0, 1), E, 4, Q, 10_100).unwrap();
+        doc.add_pitch(at(0, 0, 1), G, 4, 10_200).unwrap();
+        let ids: Vec<EventId> = doc
+            .score
+            .voice(0, 0, 0)
+            .unwrap()
+            .iter()
+            .map(|e| e.id)
+            .collect();
+        let before = doc.score.clone();
+
+        doc.move_pitch(ids[0], None, 2, 20_000).unwrap();
+        doc.move_pitch(ids[0], None, 1, 20_050).unwrap();
+        assert_eq!(
+            doc.score.voice(0, 0, 0).unwrap()[0].pitches(),
+            &[Pitch::new(F, 5)]
+        );
+        assert_eq!(doc.caret, at(0, 0, 1));
+        // Only the G of the E–G chord moves.
+        doc.move_pitch(ids[1], Some(Pitch::new(G, 4)), -1, 30_000)
+            .unwrap();
+        assert_eq!(
+            doc.score.voice(0, 0, 0).unwrap()[1].pitches(),
+            &[Pitch::new(E, 4), Pitch::new(F, 4)]
+        );
         doc.undo().unwrap();
         doc.undo().unwrap();
         assert_eq!(doc.score, before);

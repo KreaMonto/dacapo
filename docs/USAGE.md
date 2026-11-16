@@ -69,6 +69,10 @@ This works like the note palette in Encore. The **palette** on the left holds th
 3. Click to place it. Notes you place one after another undo together with a single Ctrl+Z.
 4. Click **on an existing note** (the label shows `+`) to add the pitch to its chord. Clicking on a rest turns it into a note.
 
+## Moving notes with the mouse
+
+With the **Select** tool, point at a notehead: the pointer becomes a vertical double arrow. Press and drag up or down to move the note one line or space at a time; it sounds at each step. In a chord, only the note you grabbed moves. Let go to drop it. One **Ctrl+Z** undoes the whole drag. The key signature's accidentals are not applied while dragging: an altered note keeps its accidental, as with **Alt+↑/↓**.
+
 ## The palette
 
 The palette is grouped into collapsible categories. Click a heading to open or close it; Da Capo remembers your choice. Hover any button, or reach it with Tab, to see a tooltip with its name, what it does, and its keyboard shortcut.

@@ -1,7 +1,7 @@
 // Da Capo frontend. Owns no musical state: every edit is sent to Rust,
 // which answers with the full document view to redraw.
 
-import { renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, playheadMarkup, esc, eraserTarget, eventsInBox } from './render.js';
+import { SP, renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, playheadMarkup, esc, eraserTarget, eventsInBox } from './render.js';
 import { installTooltips } from './tooltip.js';
 import { installMenuBar } from './menu.js';
 
@@ -577,8 +577,16 @@ $('score').addEventListener('mousedown', (ev) => {
   if (!caret) return;
   ev.preventDefault();
   page.focus();
-  dragging = true;
-  lastHit = JSON.stringify(caret);
+  // Pressing on a notehead grabs it: dragging up or down changes its pitch.
+  // Anywhere else, dragging selects.
+  const p = pointerInLayout(ev.clientX, ev.clientY);
+  const head = !ev.shiftKey && p && eraserTarget(state.hits || [], p.x, p.y);
+  if (head && !head.rest) {
+    noteDrag = { id: head.id, pitch: head.pitch, y: p.y, steps: 0 };
+  } else {
+    dragging = true;
+    lastHit = JSON.stringify(caret);
+  }
   act({ type: 'set_caret', caret, extend: ev.shiftKey });
 });
 $('score').addEventListener('mousemove', (ev) => {
@@ -589,9 +597,45 @@ $('score').addEventListener('mousemove', (ev) => {
     highlightErasable(t ? [t.id] : []);
     return;
   }
+  if (state.mode === 'select') {
+    // Show that a notehead can be grabbed.
+    const p = !dragging && !noteDrag && pointerInLayout(ev.clientX, ev.clientY);
+    const t = p && eraserTarget(state.hits || [], p.x, p.y);
+    $('score').classList.toggle('over-note', !!(t && !t.rest));
+    return;
+  }
   if (!entering()) return;
   state.pointer = { x: ev.clientX, y: ev.clientY };
   drawGhost();
+});
+
+// ----- dragging notes ------------------------------------------------------------
+
+let noteDrag = null; // { id, pitch, y, steps } while a notehead is held
+
+/** A pitch moved by diatonic steps (accidental left to the core). */
+function shiftedPitch(p, steps) {
+  const d = p.octave * 7 + 'CDEFGAB'.indexOf(p.step) + steps;
+  return { ...p, step: 'CDEFGAB'[((d % 7) + 7) % 7], octave: Math.floor(d / 7) };
+}
+
+window.addEventListener('mousemove', (ev) => {
+  if (!noteDrag) return;
+  const p = pointerInLayout(ev.clientX, ev.clientY);
+  if (!p) return;
+  $('score').classList.add('dragging-note');
+  // One step per half staff space (a line or a space).
+  const steps = Math.round((noteDrag.y - p.y) / (SP / 2));
+  const delta = steps - noteDrag.steps;
+  if (!delta) return;
+  noteDrag.steps = steps;
+  act({ type: 'move_pitch', id: noteDrag.id, pitch: noteDrag.pitch, steps: delta });
+  if (noteDrag.pitch) noteDrag.pitch = shiftedPitch(noteDrag.pitch, delta);
+});
+window.addEventListener('mouseup', () => {
+  if (!noteDrag) return;
+  noteDrag = null;
+  $('score').classList.remove('dragging-note');
 });
 $('score').addEventListener('mouseleave', () => {
   state.pointer = null;

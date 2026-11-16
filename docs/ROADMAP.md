@@ -37,7 +37,8 @@ This document tracks the development goals and major stages toward a complete op
 - [ ] Computer keyboard as a piano (two rows of keys = white and black keys, as in DAWs), as an alternative to letter entry.
 - [ ] MIDI keyboard input (also listed under phase 4).
 - [ ] Stable measure widths while entering notes (today the layout re-flows on every insertion).
-- [ ] Rectangle (marquee) selection and dragging notes up and down to change pitch.
+- [x] Dragging a notehead up or down to change its pitch (a chord tone alone).
+- [ ] Rectangle (marquee) selection.
 - [x] Side palette: figures with a notes/rests switch, dot, accidentals, voices on demand.
 - [x] Measures with errors labelled in red and counted in the status bar (click to jump).
 - [x] Centered measure rests; writing into a measure rest replaces it.

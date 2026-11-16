@@ -104,6 +104,12 @@ struct EraseTarget {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Action {
+    /// Dragging a notehead up or down (a chord tone alone when `pitch` is set).
+    MovePitch {
+        id: u64,
+        pitch: Option<dacapo_core::model::Pitch>,
+        steps: i32,
+    },
     /// The eraser: whole events, or single chord tones when `pitch` is set.
     Erase {
         targets: Vec<EraseTarget>,
@@ -272,6 +278,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             | Action::PlaceNote { .. }
             | Action::AddPitch { .. }
             | Action::Transpose { .. }
+            | Action::MovePitch { .. }
             | Action::Accidental { .. }
             | Action::SetAccidental { .. }
     );
@@ -290,6 +297,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::AddPitch { at, step, octave } => d.add_pitch(at, step, octave, now),
             Action::DeleteBackward => d.delete_backward(now),
             Action::DeleteForward => d.delete_forward(now),
+            Action::MovePitch { id, pitch, steps } => d.move_pitch(id, pitch, steps, now),
             Action::Erase { targets } => {
                 let targets: Vec<_> = targets.into_iter().map(|t| (t.id, t.pitch)).collect();
                 d.erase(&targets, now)
@@ -670,7 +678,8 @@ fn install_update(app: tauri::AppHandle, state: State<AppState>) -> Result<(), S
     state.audio.stop();
     for s in &state.inner.lock().unwrap().sessions {
         if s.doc().is_dirty() {
-            s.sync().map_err(|e| format!("Could not protect unsaved work: {e}"))?;
+            s.sync()
+                .map_err(|e| format!("Could not protect unsaved work: {e}"))?;
         }
     }
     state.updates.install()?;
@@ -716,7 +725,11 @@ mod tests {
         let new = base.join("io.github.dacapo-editor.dacapo");
         std::fs::create_dir_all(old.join("soundfonts")).unwrap();
         std::fs::create_dir_all(old.join("recovery").join("abc")).unwrap();
-        std::fs::write(old.join("soundfonts").join("FluidR3_GM.sf2"), b"RIFF....sfbk").unwrap();
+        std::fs::write(
+            old.join("soundfonts").join("FluidR3_GM.sf2"),
+            b"RIFF....sfbk",
+        )
+        .unwrap();
 
         migrate_old_data_dir(&new);
         assert!(new.join("soundfonts").join("FluidR3_GM.sf2").is_file());

@@ -757,10 +757,11 @@ function drawBeams(push, infos, starts, up, midY, cls) {
 // ----- eraser ------------------------------------------------------------------
 
 /**
- * The event under the eraser's crosshair at (x, y) in layout coordinates:
- * `{ id, pitch }`, where `pitch` ({ step, octave }) names the chord tone hit
- * when the event is a chord of several notes, else null. Only noteheads and
- * rests count, so one note can be picked out of a crowded passage.
+ * The notehead or rest at (x, y) in layout coordinates, for the eraser and
+ * for dragging notes: `{ id, pitch, rest }`, where `pitch` ({ step, octave })
+ * names the chord tone hit when the event is a chord of several notes, else
+ * null. Only noteheads and rests count, so one note can be picked out of a
+ * crowded passage.
  */
 export function eraserTarget(hits, x, y) {
   let best = null;
@@ -768,17 +769,17 @@ export function eraserTarget(hits, x, y) {
   for (const h of hits) {
     if (x < h.left - 0.25 * SP || x > h.right + 0.25 * SP) continue;
     if (h.rest) {
-      if (y >= h.hi - 0.25 * SP && y <= h.lo + 0.25 * SP) consider(Math.abs(x - (h.left + h.right) / 2), { id: h.id, pitch: null });
+      if (y >= h.hi - 0.25 * SP && y <= h.lo + 0.25 * SP) consider(Math.abs(x - (h.left + h.right) / 2), { id: h.id, pitch: null, rest: true });
       continue;
     }
     for (const head of h.heads) {
       const dy = Math.abs(y - head.y);
       if (dy > 0.6 * SP) continue;
       const pitch = h.heads.length > 1 ? { step: head.step, octave: head.octave, alter: 0 } : null;
-      consider(dy + Math.abs(x - (h.left + h.right) / 2) / 4, { id: h.id, pitch });
+      consider(dy + Math.abs(x - (h.left + h.right) / 2) / 4, { id: h.id, pitch, rest: false });
     }
   }
-  return best && { id: best.id, pitch: best.pitch };
+  return best && { id: best.id, pitch: best.pitch, rest: best.rest };
 }
 
 /** Ids of the events with a notehead or rest inside the box (layout coordinates). */
