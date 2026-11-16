@@ -37,9 +37,12 @@ use crate::file::atomic_write;
 /// This bounds how much work a power cut can lose.
 pub const DEFAULT_SYNC_INTERVAL: Duration = Duration::from_millis(500);
 
-const JOURNAL_MAGIC: &[u8; 4] = b"DCJ\x01";
-const SNAPSHOT_MAGIC: &[u8; 4] = b"DCS\x01";
-const SNAPSHOT_VERSION: u32 = 1;
+// The binary encoding is not self-describing, so any change to the document
+// types must bump these: data from an older build is then reported as
+// unreadable instead of being misread.
+const JOURNAL_MAGIC: &[u8; 4] = b"DCJ\x02";
+const SNAPSHOT_MAGIC: &[u8; 4] = b"DCS\x02";
+const SNAPSHOT_VERSION: u32 = 2;
 
 const LOCK_FILE: &str = "lock";
 const MANIFEST_FILE: &str = "manifest.json";

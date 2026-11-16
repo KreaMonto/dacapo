@@ -11,7 +11,8 @@ use dacapo_core::cursor::{Caret, Move, SelectionRange};
 use dacapo_core::document::{Clipboard, Document};
 use dacapo_core::file;
 use dacapo_core::model::{
-    Clef, Duration, Issue, KeySignature, Metadata, Score, Step, TimeSignature,
+    Articulation, Clef, Duration, Dynamic, Issue, KeySignature, Metadata, Score, Step,
+    TimeSignature,
 };
 use dacapo_core::recovery::{Recoverable, RecoveryStore};
 use dacapo_core::session::{now_ms, Session};
@@ -92,24 +93,65 @@ struct TabInfo {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Action {
-    InsertNote { step: Step, duration: Duration },
-    InsertRest { duration: Duration },
-    AddToChord { step: Step },
+    InsertNote {
+        step: Step,
+        duration: Duration,
+    },
+    InsertRest {
+        duration: Duration,
+    },
+    AddToChord {
+        step: Step,
+    },
     /// Mouse entry: note at an insertion point.
-    PlaceNote { at: Caret, step: Step, octave: i8, duration: Duration },
+    PlaceNote {
+        at: Caret,
+        step: Step,
+        octave: i8,
+        duration: Duration,
+    },
     /// Mouse entry: rest at an insertion point.
-    PlaceRest { at: Caret, duration: Duration },
+    PlaceRest {
+        at: Caret,
+        duration: Duration,
+    },
     /// Mouse entry on an existing event (`at.index` = event index).
-    AddPitch { at: Caret, step: Step, octave: i8 },
+    AddPitch {
+        at: Caret,
+        step: Step,
+        octave: i8,
+    },
     DeleteBackward,
     DeleteForward,
-    Move { to: Move, extend: bool },
-    SetCaret { caret: Caret, extend: bool },
+    Move {
+        to: Move,
+        extend: bool,
+    },
+    SetCaret {
+        caret: Caret,
+        extend: bool,
+    },
     SelectAll,
-    Transpose { steps: i32 },
-    Accidental { delta: i8 },
-    SetAccidental { alter: i8 },
-    SetDuration { duration: Duration },
+    Transpose {
+        steps: i32,
+    },
+    Accidental {
+        delta: i8,
+    },
+    SetAccidental {
+        alter: i8,
+    },
+    ToggleTie,
+    ToggleSlur,
+    ToggleArticulation {
+        articulation: Articulation,
+    },
+    SetDynamic {
+        dynamic: Dynamic,
+    },
+    SetDuration {
+        duration: Duration,
+    },
     Copy,
     Cut,
     Paste,
@@ -117,12 +159,24 @@ enum Action {
     Redo,
     InsertMeasure,
     RemoveMeasure,
-    AddStaff { clef: Clef },
+    AddStaff {
+        clef: Clef,
+    },
     RemoveStaff,
-    SetClef { clef: Clef },
-    SetTime { beats: u8, beat_type: u8 },
-    SetKey { fifths: i8 },
-    SetMetadata { title: String, composer: String },
+    SetClef {
+        clef: Clef,
+    },
+    SetTime {
+        beats: u8,
+        beat_type: u8,
+    },
+    SetKey {
+        fifths: i8,
+    },
+    SetMetadata {
+        title: String,
+        composer: String,
+    },
 }
 
 fn start_session(state: &AppState, doc: Document) -> Result<Session, String> {
@@ -197,9 +251,12 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::InsertNote { step, duration } => d.insert_note(step, duration, now),
             Action::InsertRest { duration } => d.insert_rest(duration, now),
             Action::AddToChord { step } => d.add_to_chord(step, now),
-            Action::PlaceNote { at, step, octave, duration } => {
-                d.place_note(at, step, octave, duration, now)
-            }
+            Action::PlaceNote {
+                at,
+                step,
+                octave,
+                duration,
+            } => d.place_note(at, step, octave, duration, now),
             Action::PlaceRest { at, duration } => d.place_rest(at, duration, now),
             Action::AddPitch { at, step, octave } => d.add_pitch(at, step, octave, now),
             Action::DeleteBackward => d.delete_backward(now),
@@ -219,6 +276,10 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::Transpose { steps } => d.transpose(steps, now),
             Action::Accidental { delta } => d.change_accidental(delta, now),
             Action::SetAccidental { alter } => d.set_accidental(alter, now),
+            Action::ToggleTie => d.toggle_tie(now),
+            Action::ToggleSlur => d.toggle_slur(now),
+            Action::ToggleArticulation { articulation } => d.toggle_articulation(articulation, now),
+            Action::SetDynamic { dynamic } => d.set_dynamic(dynamic, now),
             Action::SetDuration { duration } => d.set_duration(duration, now),
             Action::Copy => {
                 copied = d.copy();

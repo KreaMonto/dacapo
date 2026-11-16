@@ -15,8 +15,8 @@ use thiserror::Error;
 use crate::cursor::{self, Caret, Move, SelectionRange};
 use crate::history::{History, Transaction, TxKind};
 use crate::model::{
-    is_measure_rest, Clef, Duration, Event, EventKind, KeySignature, Metadata, Pitch, Score, Step,
-    TimeSignature,
+    is_measure_rest, Articulation, Clef, Duration, Dynamic, Event, EventKind, KeySignature,
+    Metadata, Pitch, Score, Slur, Step, TimeSignature,
 };
 use crate::ops::{apply_all, Op, OpError};
 
@@ -43,6 +43,8 @@ pub enum EditError {
     Op(#[from] OpError),
     #[error("invalid time signature")]
     InvalidTime,
+    #[error("{0}")]
+    NeedsSelection(&'static str),
 }
 
 /// Music copied with Ctrl+C: one list of events per selected staff.
@@ -201,8 +203,26 @@ impl Document {
         }
         let caret_before = self.caret;
         let merge = self.history.would_merge(kind, &caret_before, time_ms);
-        let caret_after =
-            self.apply_commit(kind, ops.clone(), caret_before, caret_after, time_ms, merge)?;
+        let mut ops = ops;
+        let mut inverse = apply_all(&mut self.score, &ops)?;
+        // Slurs whose start or end event was just deleted disappear in the
+        // same step, so undo brings back both the notes and their slurs.
+        let cleanup = self.dangling_slur_ops();
+        if !cleanup.is_empty() {
+            let mut undo_cleanup = apply_all(&mut self.score, &cleanup)?;
+            ops.extend(cleanup);
+            undo_cleanup.append(&mut inverse);
+            inverse = undo_cleanup;
+        }
+        let caret_after = self.record(
+            kind,
+            ops.clone(),
+            inverse,
+            caret_before,
+            caret_after,
+            time_ms,
+            merge,
+        );
         self.pending.push(JournalEntry::Commit {
             kind,
             ops,
@@ -227,6 +247,46 @@ impl Document {
         merge: bool,
     ) -> Result<Caret, EditError> {
         let inverse = apply_all(&mut self.score, &ops)?;
+        Ok(self.record(
+            kind,
+            ops,
+            inverse,
+            caret_before,
+            caret_after,
+            time_ms,
+            merge,
+        ))
+    }
+
+    /// RemoveSlur ops for slurs that point to events no longer in the score,
+    /// highest index first so the indices stay valid.
+    fn dangling_slur_ops(&self) -> Vec<Op> {
+        if self.score.slurs.is_empty() {
+            return Vec::new();
+        }
+        let ids = self.score.event_ids();
+        self.score
+            .slurs
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|(_, s)| !ids.contains(&s.start) || !ids.contains(&s.end))
+            .map(|(index, _)| Op::RemoveSlur { index })
+            .collect()
+    }
+
+    /// Stores an applied step in the history and moves the caret.
+    #[allow(clippy::too_many_arguments)]
+    fn record(
+        &mut self,
+        kind: TxKind,
+        ops: Vec<Op>,
+        inverse: Vec<Op>,
+        caret_before: Caret,
+        caret_after: Caret,
+        time_ms: u64,
+        merge: bool,
+    ) -> Caret {
         let caret_after = cursor::clamp(&self.score, caret_after);
         self.history.push(
             Transaction {
@@ -242,7 +302,7 @@ impl Document {
         self.caret = caret_after;
         self.anchor = None;
         self.revision += 1;
-        Ok(caret_after)
+        caret_after
     }
 
     fn apply_undo(&mut self) -> Result<bool, EditError> {
@@ -448,11 +508,7 @@ impl Document {
                 caret.index = 0;
             }
         }
-        let event = Event {
-            id: self.score.alloc_id(),
-            duration,
-            kind,
-        };
+        let event = Event::new(self.score.alloc_id(), duration, kind);
         ops.push(Op::InsertEvent {
             at: caret.loc(),
             index: caret.index,
@@ -520,7 +576,12 @@ impl Document {
     }
 
     /// Mouse entry: places a rest at `at` (an insertion point).
-    pub fn place_rest(&mut self, at: Caret, duration: Duration, now_ms: u64) -> Result<(), EditError> {
+    pub fn place_rest(
+        &mut self,
+        at: Caret,
+        duration: Duration,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
         self.set_caret(at, false);
         self.insert_rest(duration, now_ms)
     }
@@ -528,7 +589,13 @@ impl Document {
     /// Mouse entry on an existing event (`at.index` is the event's index):
     /// adds a pitch to it, turning a rest into a note. The caret ends up
     /// after the event.
-    pub fn add_pitch(&mut self, at: Caret, step: Step, octave: i8, now_ms: u64) -> Result<(), EditError> {
+    pub fn add_pitch(
+        &mut self,
+        at: Caret,
+        step: Step,
+        octave: i8,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
         let at = cursor::clamp(&self.score, at);
         let Some(event) = self
             .score
@@ -735,6 +802,142 @@ impl Document {
             .collect();
         let caret = self.caret;
         self.commit(TxKind::Edit, ops, caret, now_ms, true)
+    }
+
+    // ----- ties, slurs, articulations, dynamics ---------------------------
+
+    /// The selection's events, or the one before the caret, as owned copies.
+    fn target_events(&self) -> Vec<(crate::ops::VoiceLoc, usize, Event)> {
+        self.pitch_targets()
+            .into_iter()
+            .filter_map(|(at, index)| {
+                let e = self
+                    .score
+                    .voice(at.staff, at.measure, at.voice)?
+                    .get(index)?;
+                Some((at, index, e.clone()))
+            })
+            .collect()
+    }
+
+    /// Replaces each target event by `f(event)`; unchanged events are skipped.
+    fn rewrite_targets(
+        &mut self,
+        targets: Vec<(crate::ops::VoiceLoc, usize, Event)>,
+        now_ms: u64,
+        f: impl Fn(&Event) -> Event,
+    ) -> Result<(), EditError> {
+        let ops = targets
+            .into_iter()
+            .filter_map(|(at, index, e)| {
+                let new = f(&e);
+                (new != e).then_some(Op::ReplaceEvent {
+                    at,
+                    index,
+                    event: new,
+                })
+            })
+            .collect();
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, true)
+    }
+
+    /// Ties the target notes to the following note (or removes the ties if
+    /// they all have one already).
+    pub fn toggle_tie(&mut self, now_ms: u64) -> Result<(), EditError> {
+        let targets: Vec<_> = self
+            .target_events()
+            .into_iter()
+            .filter(|(_, _, e)| !e.is_rest())
+            .collect();
+        let tie = !targets.iter().all(|(_, _, e)| e.tie);
+        self.rewrite_targets(targets, now_ms, |e| Event { tie, ..e.clone() })
+    }
+
+    /// Adds an articulation to the target notes, or removes it when they
+    /// all have it. Only a fermata can go on a rest.
+    pub fn toggle_articulation(&mut self, art: Articulation, now_ms: u64) -> Result<(), EditError> {
+        let targets: Vec<_> = self
+            .target_events()
+            .into_iter()
+            .filter(|(_, _, e)| !e.is_rest() || art == Articulation::Fermata)
+            .collect();
+        let add = !targets
+            .iter()
+            .all(|(_, _, e)| e.articulations.contains(&art));
+        self.rewrite_targets(targets, now_ms, |e| {
+            let mut arts: Vec<Articulation> = e
+                .articulations
+                .iter()
+                .copied()
+                .filter(|a| *a != art)
+                .collect();
+            if add {
+                arts.push(art);
+                arts.sort();
+            }
+            Event {
+                articulations: arts,
+                ..e.clone()
+            }
+        })
+    }
+
+    /// Puts a dynamic under the target events; choosing the one they all
+    /// already have removes it.
+    pub fn set_dynamic(&mut self, dynamic: Dynamic, now_ms: u64) -> Result<(), EditError> {
+        let targets = self.target_events();
+        let value = if targets.iter().all(|(_, _, e)| e.dynamic == Some(dynamic)) {
+            None
+        } else {
+            Some(dynamic)
+        };
+        self.rewrite_targets(targets, now_ms, |e| Event {
+            dynamic: value,
+            ..e.clone()
+        })
+    }
+
+    /// Adds a slur over the selected notes of the top selected staff, or
+    /// removes it if exactly that slur exists.
+    pub fn toggle_slur(&mut self, now_ms: u64) -> Result<(), EditError> {
+        let Some(range) = self.selection() else {
+            return Err(EditError::NeedsSelection(
+                "Select the notes to slur first (Shift+arrows or drag)",
+            ));
+        };
+        let ids: Vec<u64> = cursor::events_in_range(&self.score, &range)
+            .into_iter()
+            .filter(|(at, _)| at.staff == range.staff_lo)
+            .filter_map(|(at, i)| {
+                let e = self.score.voice(at.staff, at.measure, at.voice)?.get(i)?;
+                Some(e.id)
+            })
+            .collect();
+        let (Some(&start), Some(&end)) = (ids.first(), ids.last()) else {
+            return Ok(());
+        };
+        if start == end {
+            return Err(EditError::NeedsSelection("A slur needs at least two notes"));
+        }
+        let op = match self
+            .score
+            .slurs
+            .iter()
+            .position(|s| s.start == start && s.end == end)
+        {
+            Some(index) => Op::RemoveSlur { index },
+            None => Op::AddSlur {
+                index: self.score.slurs.len(),
+                slur: Slur {
+                    id: self.score.alloc_id(),
+                    start,
+                    end,
+                },
+            },
+        };
+        let caret = self.caret;
+        self.commit(TxKind::Edit, vec![op], caret, now_ms, true)
     }
 
     // ----- clipboard -----------------------------------------------------
@@ -1011,13 +1214,21 @@ mod tests {
     #[test]
     fn mouse_entry_places_notes_rests_and_chords() {
         let mut doc = Document::new(Score::new("t", 3));
-        doc.set_key_signature(KeySignature { fifths: 2 }, 0).unwrap();
+        doc.set_key_signature(KeySignature { fifths: 2 }, 0)
+            .unwrap();
         // Click in measure 2, on the C5 space: C is sharp in D major.
         doc.place_note(at(0, 1, 0), C, 5, Q, 10_000).unwrap();
         doc.place_note(at(0, 1, 1), A, 4, Q, 10_100).unwrap();
         doc.place_rest(at(0, 1, 2), Q, 10_200).unwrap();
         let v = doc.score.voice(0, 1, 0).unwrap();
-        assert_eq!(v[0].pitches(), &[Pitch { step: C, alter: 1, octave: 5 }]);
+        assert_eq!(
+            v[0].pitches(),
+            &[Pitch {
+                step: C,
+                alter: 1,
+                octave: 5
+            }]
+        );
         assert_eq!(v[1].pitches(), &[Pitch::new(A, 4)]);
         assert!(v[2].is_rest());
         assert_eq!(doc.caret(), at(0, 1, 3));
@@ -1029,7 +1240,14 @@ mod tests {
         let v = doc.score.voice(0, 1, 0).unwrap();
         assert_eq!(
             v[1].pitches(),
-            &[Pitch { step: F, alter: 1, octave: 4 }, Pitch::new(A, 4)]
+            &[
+                Pitch {
+                    step: F,
+                    alter: 1,
+                    octave: 4
+                },
+                Pitch::new(A, 4)
+            ]
         );
         assert_eq!(v[2].pitches(), &[Pitch::new(E, 4)]);
         assert_eq!(doc.caret(), at(0, 1, 3));
@@ -1052,7 +1270,14 @@ mod tests {
     fn measure_rests() {
         let whole = Duration::new(DurationBase::Whole);
         let mut doc = Document::new(Score::new("t", 2));
-        doc.set_time_signature(TimeSignature { beats: 3, beat_type: 4 }, 0).unwrap();
+        doc.set_time_signature(
+            TimeSignature {
+                beats: 3,
+                beat_type: 4,
+            },
+            0,
+        )
+        .unwrap();
         // A whole rest is a measure rest even in 3/4: not an error.
         doc.place_rest(at(0, 0, 0), whole, 1_000).unwrap();
         assert!(doc.score.validate().is_empty());
@@ -1073,9 +1298,121 @@ mod tests {
     }
 
     #[test]
+    fn ties_articulations_and_dynamics() {
+        let mut doc = Document::new(Score::new("t", 1));
+        type_notes(&mut doc, &[C, C], 0);
+        doc.place_rest(at(0, 0, 2), Q, 300).unwrap();
+        // Caret after the rest: staccato is ignored on rests, fermata is not.
+        doc.toggle_articulation(Articulation::Staccato, 5_000)
+            .unwrap();
+        assert!(doc.score.voice(0, 0, 0).unwrap()[2]
+            .articulations
+            .is_empty());
+        doc.toggle_articulation(Articulation::Fermata, 5_100)
+            .unwrap();
+        assert_eq!(
+            doc.score.voice(0, 0, 0).unwrap()[2].articulations,
+            vec![Articulation::Fermata]
+        );
+
+        // Tie the first note to the second.
+        doc.set_caret(at(0, 0, 1), false);
+        doc.toggle_tie(6_000).unwrap();
+        assert!(doc.score.voice(0, 0, 0).unwrap()[0].tie);
+        doc.toggle_tie(6_100).unwrap();
+        assert!(!doc.score.voice(0, 0, 0).unwrap()[0].tie);
+
+        // Articulations stay sorted and toggle off.
+        doc.toggle_articulation(Articulation::Tenuto, 7_000)
+            .unwrap();
+        doc.toggle_articulation(Articulation::Staccato, 7_100)
+            .unwrap();
+        assert_eq!(
+            doc.score.voice(0, 0, 0).unwrap()[0].articulations,
+            vec![Articulation::Staccato, Articulation::Tenuto]
+        );
+        doc.toggle_articulation(Articulation::Staccato, 7_200)
+            .unwrap();
+        assert_eq!(
+            doc.score.voice(0, 0, 0).unwrap()[0].articulations,
+            vec![Articulation::Tenuto]
+        );
+
+        // Choosing the same dynamic again removes it.
+        doc.set_dynamic(Dynamic::Mf, 8_000).unwrap();
+        assert_eq!(
+            doc.score.voice(0, 0, 0).unwrap()[0].dynamic,
+            Some(Dynamic::Mf)
+        );
+        doc.set_dynamic(Dynamic::Mf, 8_100).unwrap();
+        assert_eq!(doc.score.voice(0, 0, 0).unwrap()[0].dynamic, None);
+    }
+
+    #[test]
+    fn slurs_follow_their_notes() {
+        let mut doc = Document::new(Score::new("t", 2));
+        type_notes(&mut doc, &[C, D, E, F], 0);
+        // No selection: a slur needs one.
+        assert!(matches!(
+            doc.toggle_slur(1_000),
+            Err(EditError::NeedsSelection(_))
+        ));
+        doc.set_caret(at(0, 0, 0), false);
+        doc.set_caret(at(0, 0, 3), true);
+        doc.toggle_slur(2_000).unwrap();
+        assert_eq!(doc.score.slurs.len(), 1);
+        let ids: Vec<u64> = doc
+            .score
+            .voice(0, 0, 0)
+            .unwrap()
+            .iter()
+            .map(|e| e.id)
+            .collect();
+        assert_eq!(
+            (doc.score.slurs[0].start, doc.score.slurs[0].end),
+            (ids[0], ids[2])
+        );
+
+        // Deleting the slur's last note removes the slur in the same step…
+        doc.set_caret(at(0, 0, 3), false);
+        doc.delete_backward(3_000).unwrap();
+        assert!(doc.score.slurs.is_empty());
+        // …and undo restores both.
+        doc.undo().unwrap();
+        assert_eq!(doc.score.voice(0, 0, 0).unwrap().len(), 4);
+        assert_eq!(doc.score.slurs.len(), 1);
+
+        // Same selection again toggles the slur off.
+        doc.set_caret(at(0, 0, 0), false);
+        doc.set_caret(at(0, 0, 3), true);
+        doc.toggle_slur(4_000).unwrap();
+        assert!(doc.score.slurs.is_empty());
+    }
+
+    #[test]
+    fn replay_reproduces_slur_cleanup() {
+        let start = Document::new(Score::new("t", 1));
+        let mut live = start.clone();
+        type_notes(&mut live, &[C, D, E], 0);
+        live.set_caret(at(0, 0, 0), false);
+        live.set_caret(at(0, 0, 3), true);
+        live.toggle_slur(1_000).unwrap();
+        live.set_caret(at(0, 0, 3), false);
+        live.delete_backward(2_000).unwrap();
+        live.undo().unwrap();
+        live.redo().unwrap();
+        let mut replayed = start;
+        for e in live.take_pending() {
+            replayed.replay(&e).unwrap();
+        }
+        assert_eq!(replayed.score, live.score);
+    }
+
+    #[test]
     fn explicit_accidentals() {
         let mut doc = Document::new(Score::new("t", 1));
-        doc.set_key_signature(KeySignature { fifths: 1 }, 0).unwrap();
+        doc.set_key_signature(KeySignature { fifths: 1 }, 0)
+            .unwrap();
         type_notes(&mut doc, &[F], 5_000); // F sharp from the key
         doc.set_accidental(0, 6_000).unwrap(); // natural
         assert_eq!(doc.score.voice(0, 0, 0).unwrap()[0].pitches()[0].alter, 0);
