@@ -1,0 +1,4 @@
+/target
+**/target
+/src-tauri/gen
+*.dacapo.tmp

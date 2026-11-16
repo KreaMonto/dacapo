@@ -1,48 +1,61 @@
-# Encore
+# Da Capo
 
-**Encore** es un editor de partituras open source multiplataforma, construido en Rust y Tauri. Su objetivo es ofrecer una aplicación ligera, segura y extensible para componer, editar y exportar partituras musicalmente correctas.
+**Da Capo** is an open source, cross-platform music notation editor built with Rust and Tauri. It aims to be lightweight, safe and pleasant to use: you write music the way you write text in a word processor, with a blinking caret, Shift-selection, copy/paste and Ctrl+Z, and with no lost work after a crash or a power cut.
 
-## Características principales
+The name comes from the musical direction *da capo* ("from the beginning"). The project is a fresh start inspired by the classic notation editors of the 1990s, such as Encore.
 
-- Editor visual de partituras con pentagrama interactivo.
-- Inserción y edición de notas, silencios, compases y armaduras.
-- Exportación a MusicXML y PDF.
-- Importación de partituras en MusicXML.
-- Reproducción básica de audio con clic interno.
-- Interfaz nativa multiplataforma gracias a Tauri.
+## Status
 
-## Tecnología
+Early development (MVP, phase 1). What works today:
 
-- Backend: Rust
-- UI: Tauri + tecnologías web (HTML/CSS/JavaScript o framework ligero)
-- Formatos de datos: MusicXML, JSON propio
-- Renderizado: SVG/PDF
+- Multi-staff scores (treble, bass, alto and tenor clefs) with four voices per staff.
+- Time and key signatures that can change mid-score.
+- Keyboard note entry: letters, note values, rests, chords, accidentals and transposition.
+- Word-processor editing: caret, Shift/drag selection across staves, cut/copy/paste, grouped undo/redo.
+- Several documents open at once, in tabs.
+- `.dacapo` files with atomic saves and a backup copy.
+- **Crash recovery**: every edit is journaled to disk within half a second, and unsaved work is offered back after a crash.
 
-## Estructura del repositorio
+See [docs/ROADMAP.md](docs/ROADMAP.md) for what comes next.
 
-- `src-tauri/`: código Rust y configuración de Tauri.
-- `src/`: frontend web de la aplicación.
-- `docs/`: documentación técnica y guías.
-- `README.md`: visión general del proyecto.
-- `CONTRIBUTING.md`: guía para colaboradores.
-- `LICENSE`: licencia open source.
+## Technology
 
-## Documentación disponible
+- **Core**: Rust (`crates/dacapo-core`). The musical model, editing engine and persistence have no UI dependency.
+- **App shell**: Tauri 2 (`src-tauri`).
+- **UI**: plain HTML/CSS/JavaScript with SVG rendering (`src`). No Node.js or build step is required.
+- **Formats**: `.dacapo` (JSON) for documents and a binary CRC-checked journal for recovery. MusicXML import/export is planned.
 
-- `docs/INSTALLATION.md` — instalación y configuración local.
-- `docs/USAGE.md` — uso principal de la aplicación.
-- `docs/ARCHITECTURE.md` — diseño técnico y arquitectura del sistema.
-- `docs/ROADMAP.md` — plan de desarrollo y objetivos.
-- `docs/STYLE_GUIDE.md` — estilo de código y contribuciones.
+## Repository layout
 
-## Cómo contribuir
+```
+crates/dacapo-core/   musical model, editing, undo, files, crash recovery (+ tests)
+src-tauri/            Tauri application: commands exposed to the UI
+src/                  web frontend (index.html, app.js, render.js, styles.css)
+dev/                  development helpers (renderer preview)
+docs/                 technical documentation
+```
 
-1. Clona el repositorio.
-2. Revisa `CONTRIBUTING.md`.
-3. Abre un issue si quieres proponer una mejora o reportar un error.
-4. Crea una rama con nombre claro.
-5. Envía un pull request con descripción y pruebas.
+## Documentation
 
-## Licencia
+- [docs/INSTALLATION.md](docs/INSTALLATION.md): setting up a development environment.
+- [docs/USAGE.md](docs/USAGE.md): how to use the editor and its keyboard shortcuts.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): technical design, including the saving and recovery system.
+- [docs/ROADMAP.md](docs/ROADMAP.md): development plan.
+- [docs/STYLE_GUIDE.md](docs/STYLE_GUIDE.md): code and contribution conventions.
 
-Este proyecto está bajo licencia MIT. Consulta `LICENSE` para más detalles.
+## Quick start
+
+```bash
+cargo test -p dacapo-core     # run the core test suite
+cargo run -p dacapo           # launch the app
+```
+
+See [docs/INSTALLATION.md](docs/INSTALLATION.md) for prerequisites, including a Windows Smart App Control caveat.
+
+## Contributing
+
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
