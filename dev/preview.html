@@ -46,6 +46,7 @@
       },
     };
     const el = document.getElementById('score');
+    await document.fonts.load('40px Bravura', '');
     const draw = () => { el.innerHTML = renderScore(view, el.clientWidth).svg; };
     draw();
     addEventListener('resize', draw);

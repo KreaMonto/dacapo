@@ -31,6 +31,14 @@ The palette, from top to bottom:
 - **♯ ♭ ♮** set the accidental of the previous note or of the selection. The key signature's sharps and flats are applied automatically when you place a note.
 - **Voice** shows *Single voice* until you need more. **+ Voice** adds an independent line on the same staff, for example divisi strings or two melodies in one hand. Its buttons then let you switch between voices (also `Alt+1`…`4`). A voice that contains no music disappears again once you leave it.
 
+## Rests that fill a measure
+
+A rest that fills the whole measure is drawn as a whole rest **centered** in the measure, following standard notation. A plain whole rest counts as "rest for the whole measure" in any time signature (3/4, 6/8…), so it is never flagged as an error.
+
+When you place a note or a rest in a measure that only holds a measure rest, the new figure **replaces** the rest.
+
+**Multi-measure rests:** with **Multirests** turned on in the toolbar, consecutive measures where every staff rests are drawn as a single measure. It shows a thick bar and the number of measures above it, as in printed parts. The grouping stops at time or key signature changes. This is a view setting only: the measures still exist, and writing into one of them splits the group.
+
 ## Measures with errors
 
 A measure that holds more beats than its time signature allows is outlined in red and labelled, for example **⚠ Too many beats: 5 of 4**. The status bar counts them (**⚠ 2 measures with errors**). Click that text to jump to the next one.

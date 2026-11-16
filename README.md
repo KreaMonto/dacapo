@@ -23,6 +23,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for what comes next.
 - **Core**: Rust (`crates/dacapo-core`). The musical model, editing engine and persistence have no UI dependency.
 - **App shell**: Tauri 2 (`src-tauri`).
 - **UI**: plain HTML/CSS/JavaScript with SVG rendering (`src`). No Node.js or build step is required.
+- **Engraving**: the [Bravura](https://github.com/steinbergmedia/bravura) SMuFL music font by Steinberg (SIL Open Font License), bundled in `src/fonts/`.
 - **Formats**: `.dacapo` (JSON) for documents and a binary CRC-checked journal for recovery. MusicXML import/export is planned.
 
 ## Repository layout
@@ -58,4 +59,21 @@ Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Da Capo is free software, licensed under the **GNU General Public License v3.0 or later** (GPL-3.0-or-later). See [LICENSE](LICENSE).
+
+In short, you may use, study, modify and share Da Capo, including building your own tools on top of `dacapo-core`. If you distribute a modified version, or software built from it, you must release it under the same license with its source code. This keeps every improvement available to the community.
+
+```
+Da Capo — music notation editor
+Copyright (C) 2026 The Da Capo contributors
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+more details.
+```

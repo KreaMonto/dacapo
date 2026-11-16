@@ -11,6 +11,20 @@ const FILTERS = [{ name: 'Da Capo score', extensions: ['dacapo'] }];
 const KEY_NAMES = ['C♭', 'G♭', 'D♭', 'A♭', 'E♭', 'B♭', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F♯', 'C♯'];
 const DURATION_KEYS = { 1: 'SixtyFourth', 2: 'ThirtySecond', 3: 'Sixteenth', 4: 'Eighth', 5: 'Quarter', 6: 'Half', 7: 'Whole' };
 
+// Small per-user view preferences. Storage may be unavailable; fall back
+// to defaults silently.
+function loadPref(name, fallback) {
+  try {
+    const v = localStorage.getItem(`dacapo.${name}`);
+    return v === null ? fallback : JSON.parse(v);
+  } catch {
+    return fallback;
+  }
+}
+function savePref(name, value) {
+  try { localStorage.setItem(`dacapo.${name}`, JSON.stringify(value)); } catch { /* ignore */ }
+}
+
 const state = {
   docs: new Map(), // id -> DocView
   order: [], // tab order
@@ -21,6 +35,8 @@ const state = {
   mode: 'select',
   // Palette switch: whether the figures are notes or rests.
   kind: 'note',
+  // View preference (per user, not saved in the document).
+  multiRest: loadPref('multiRest', true),
   pointer: null, // last mouse position over the score, for the ghost figure
   layout: null,
   error: null,
@@ -174,7 +190,7 @@ function render() {
   if (!doc) return;
   const scoreEl = $('score');
   const width = scoreEl.clientWidth || 1000;
-  const { svg, layout } = renderScore(doc, width);
+  const { svg, layout } = renderScore(doc, width, { multiRest: state.multiRest });
   scoreEl.innerHTML = svg;
   state.layout = layout;
   scoreEl.classList.toggle('entry', state.mode !== 'select');
@@ -255,6 +271,9 @@ function syncControls(doc) {
   document.querySelector('[data-cmd=select]').classList.toggle('on', state.mode === 'select');
   document.querySelector('.figures').classList.toggle('placing', state.mode !== 'select');
   document.querySelector('[data-cmd=dot]').classList.toggle('on', state.duration.dots > 0);
+  const mr = document.querySelector('[data-cmd=multirest]');
+  mr.classList.toggle('on', state.multiRest);
+  mr.setAttribute('aria-pressed', String(state.multiRest));
   renderVoices(doc);
   if (document.activeElement !== $('clef')) $('clef').value = staff.clef;
   if (document.activeElement !== $('key')) $('key').value = String(attrs.key.fifths);
@@ -520,6 +539,7 @@ const onControlClick = (ev) => {
     undo: () => act({ type: 'undo' }),
     redo: () => act({ type: 'redo' }),
     dot: () => { state.duration = { ...state.duration, dots: state.duration.dots ? 0 : 1 }; render(); },
+    multirest: () => { state.multiRest = !state.multiRest; savePref('multiRest', state.multiRest); render(); },
     'add-measure': () => act({ type: 'insert_measure' }),
     'remove-measure': () => act({ type: 'remove_measure' }),
     'add-staff': () => act({ type: 'add_staff', clef: 'treble' }),
@@ -566,6 +586,9 @@ tauri.event.listen('close-requested', async ({ payload }) => {
 // ----- start -----------------------------------------------------------------
 
 serial(async () => {
+  // Draw only once the music font is ready, or the first frame would use
+  // fallback glyphs in the wrong places.
+  try { await document.fonts.load('40px Bravura', ''); } catch { /* render anyway */ }
   await checkRecovery();
   for (const tab of await invoke('list_documents')) adopt(await invoke('get_document', { id: tab.id }));
   if (state.order.length) state.active = state.order[0];

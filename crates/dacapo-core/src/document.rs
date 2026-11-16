@@ -15,7 +15,8 @@ use thiserror::Error;
 use crate::cursor::{self, Caret, Move, SelectionRange};
 use crate::history::{History, Transaction, TxKind};
 use crate::model::{
-    Clef, Duration, Event, EventKind, KeySignature, Metadata, Pitch, Score, Step, TimeSignature,
+    is_measure_rest, Clef, Duration, Event, EventKind, KeySignature, Metadata, Pitch, Score, Step,
+    TimeSignature,
 };
 use crate::ops::{apply_all, Op, OpError};
 
@@ -426,10 +427,27 @@ impl Document {
         duration: Duration,
         now_ms: u64,
     ) -> Result<(), EditError> {
-        let (mut ops, caret, tx) = match self.delete_selection_ops() {
+        let (mut ops, mut caret, tx) = match self.delete_selection_ops() {
             Some((ops, caret)) => (ops, caret, TxKind::Edit),
             None => (Vec::new(), self.caret, TxKind::Typing),
         };
+        // Writing into a measure that only holds a measure rest replaces the
+        // rest, as in any notation program.
+        if ops.is_empty() {
+            let capacity = self.score.measures[caret.measure].time.measure_ticks();
+            let events = self
+                .score
+                .voice(caret.staff, caret.measure, caret.voice)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            if is_measure_rest(events, capacity) {
+                ops.push(Op::RemoveEvent {
+                    at: caret.loc(),
+                    index: 0,
+                });
+                caret.index = 0;
+            }
+        }
         let event = Event {
             id: self.score.alloc_id(),
             duration,
@@ -1028,6 +1046,30 @@ mod tests {
         assert!(v[2].is_rest());
         doc.undo().unwrap();
         assert!(doc.score.voice(0, 1, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn measure_rests() {
+        let whole = Duration::new(DurationBase::Whole);
+        let mut doc = Document::new(Score::new("t", 2));
+        doc.set_time_signature(TimeSignature { beats: 3, beat_type: 4 }, 0).unwrap();
+        // A whole rest is a measure rest even in 3/4: not an error.
+        doc.place_rest(at(0, 0, 0), whole, 1_000).unwrap();
+        assert!(doc.score.validate().is_empty());
+        // A whole *note* in 3/4 is still an error.
+        doc.place_note(at(0, 1, 0), C, 5, whole, 2_000).unwrap();
+        assert_eq!(doc.score.validate().len(), 1);
+
+        // Writing into a measure-rest measure replaces the rest, wherever
+        // the click landed (before or after the rest).
+        doc.place_note(at(0, 0, 1), G, 4, Q, 9_000).unwrap();
+        let v = doc.score.voice(0, 0, 0).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].pitches(), &[Pitch::new(G, 4)]);
+        assert_eq!(doc.caret(), at(0, 0, 1));
+        // Undo brings the rest back in one step.
+        doc.undo().unwrap();
+        assert!(doc.score.voice(0, 0, 0).unwrap()[0].is_rest());
     }
 
     #[test]

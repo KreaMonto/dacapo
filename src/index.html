@@ -39,6 +39,9 @@
       <button data-cmd="add-staff" title="Add a staff">+ Staff</button>
       <button data-cmd="remove-staff" title="Delete current staff">− Staff</button>
     </div>
+    <div class="group">
+      <button data-cmd="multirest" aria-pressed="true" title="Show consecutive empty measures as one multi-measure rest">𝄩 Multirests</button>
+    </div>
   </header>
 
   <nav class="tabs" id="tabs" role="tablist" aria-label="Open documents"></nav>
@@ -55,20 +58,21 @@
         <button data-kind="rest" role="radio" title="Place rests">Rests</button>
       </div>
       <div class="figures" aria-label="Note value">
-        <button data-dur="Whole" data-note="𝅝" data-rest="𝄻" data-name="Whole" data-key="7" class="glyph"></button>
-        <button data-dur="Half" data-note="𝅗𝅥" data-rest="𝄼" data-name="Half" data-key="6" class="glyph"></button>
-        <button data-dur="Quarter" data-note="♩" data-rest="𝄽" data-name="Quarter" data-key="5" class="glyph"></button>
-        <button data-dur="Eighth" data-note="♪" data-rest="𝄾" data-name="Eighth" data-key="4" class="glyph"></button>
-        <button data-dur="Sixteenth" data-note="𝅘𝅥𝅯" data-rest="𝄿" data-name="16th" data-key="3" class="glyph"></button>
-        <button data-dur="ThirtySecond" data-note="𝅘𝅥𝅰" data-rest="𝅀" data-name="32nd" data-key="2" class="glyph"></button>
+        <!-- SMuFL code points (Bravura): individual notes U+E1D2…, rests U+E4E3… -->
+        <button data-dur="Whole" data-note="&#xE1D2;" data-rest="&#xE4E3;" data-name="Whole" data-key="7" class="glyph"></button>
+        <button data-dur="Half" data-note="&#xE1D3;" data-rest="&#xE4E4;" data-name="Half" data-key="6" class="glyph"></button>
+        <button data-dur="Quarter" data-note="&#xE1D5;" data-rest="&#xE4E5;" data-name="Quarter" data-key="5" class="glyph"></button>
+        <button data-dur="Eighth" data-note="&#xE1D7;" data-rest="&#xE4E6;" data-name="Eighth" data-key="4" class="glyph"></button>
+        <button data-dur="Sixteenth" data-note="&#xE1D9;" data-rest="&#xE4E7;" data-name="16th" data-key="3" class="glyph"></button>
+        <button data-dur="ThirtySecond" data-note="&#xE1DB;" data-rest="&#xE4E8;" data-name="32nd" data-key="2" class="glyph"></button>
       </div>
       <button data-cmd="dot" class="wide" title="Dotted value (.)">• Dot</button>
 
       <h3>Accidentals</h3>
       <div class="row">
-        <button data-alter="1" class="glyph" title="Sharp: applies to the previous note or the selection">♯</button>
-        <button data-alter="-1" class="glyph" title="Flat: applies to the previous note or the selection">♭</button>
-        <button data-alter="0" class="glyph" title="Natural: applies to the previous note or the selection">♮</button>
+        <button data-alter="1" class="glyph" title="Sharp: applies to the previous note or the selection">&#xE262;</button>
+        <button data-alter="-1" class="glyph" title="Flat: applies to the previous note or the selection">&#xE260;</button>
+        <button data-alter="0" class="glyph" title="Natural: applies to the previous note or the selection">&#xE261;</button>
       </div>
 
       <h3>Voice</h3>
