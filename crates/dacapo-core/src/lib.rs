@@ -17,6 +17,7 @@ pub mod file;
 pub mod history;
 pub mod model;
 pub mod ops;
+pub mod playback;
 pub mod recovery;
 pub mod session;
 

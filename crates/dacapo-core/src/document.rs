@@ -940,6 +940,21 @@ impl Document {
         self.commit(TxKind::Edit, vec![op], caret, now_ms, true)
     }
 
+    /// Playback tempo in quarter notes per minute (20–400).
+    pub fn set_tempo(&mut self, bpm: u16, now_ms: u64) -> Result<(), EditError> {
+        if bpm == self.score.tempo {
+            return Ok(());
+        }
+        let caret = self.caret;
+        self.commit(
+            TxKind::Edit,
+            vec![Op::SetTempo { bpm }],
+            caret,
+            now_ms,
+            false,
+        )
+    }
+
     // ----- clipboard -----------------------------------------------------
 
     pub fn copy(&self) -> Option<Clipboard> {

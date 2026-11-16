@@ -400,7 +400,18 @@ pub struct Score {
     /// Phrase marks between events.
     #[serde(default)]
     pub slurs: Vec<Slur>,
+    /// Playback tempo in quarter notes per minute.
+    #[serde(default = "default_tempo")]
+    pub tempo: u16,
 }
+
+/// Tempo of new scores and of files written before tempo existed.
+pub const DEFAULT_TEMPO: u16 = 100;
+fn default_tempo() -> u16 {
+    DEFAULT_TEMPO
+}
+/// Accepted tempo range (quarter notes per minute).
+pub const TEMPO_RANGE: std::ops::RangeInclusive<u16> = 20..=400;
 
 impl Score {
     /// Ids of every event in the score.
@@ -440,6 +451,7 @@ impl Score {
             staves: Vec::new(),
             next_id: 1,
             slurs: Vec::new(),
+            tempo: DEFAULT_TEMPO,
         };
         let staff = score.blank_staff("Staff 1", Clef::Treble);
         score.staves.push(staff);

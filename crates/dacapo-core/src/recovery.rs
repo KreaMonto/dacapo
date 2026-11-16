@@ -40,9 +40,9 @@ pub const DEFAULT_SYNC_INTERVAL: Duration = Duration::from_millis(500);
 // The binary encoding is not self-describing, so any change to the document
 // types must bump these: data from an older build is then reported as
 // unreadable instead of being misread.
-const JOURNAL_MAGIC: &[u8; 4] = b"DCJ\x02";
-const SNAPSHOT_MAGIC: &[u8; 4] = b"DCS\x02";
-const SNAPSHOT_VERSION: u32 = 2;
+const JOURNAL_MAGIC: &[u8; 4] = b"DCJ\x03";
+const SNAPSHOT_MAGIC: &[u8; 4] = b"DCS\x03";
+const SNAPSHOT_VERSION: u32 = 3;
 
 const LOCK_FILE: &str = "lock";
 const MANIFEST_FILE: &str = "manifest.json";
