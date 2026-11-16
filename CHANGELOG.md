@@ -14,6 +14,10 @@ All notable changes to Da Capo are documented here. The format follows [Keep a C
 ### Changed
 - Scores with lyrics are saved as file format 5, which Da Capo 0.2.1 and older cannot open. Scores without lyrics are saved as before.
 - Crash-recovery data is now format 4. Data left by 0.2.0 and 0.2.1 is still read, so unsaved work survives the update.
+- The Select tool and the eraser are icon buttons of the same size, so the eraser is no longer cut off at the edge of the palette (their names are in the tooltips).
+
+### Fixed
+- Note values and rests in the palette are centred in their buttons; the stems and flags of 32nd, 64th and 128th notes are no longer cut off at the top.
 
 ## [0.2.1] - Unreleased
 

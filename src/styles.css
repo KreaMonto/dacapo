@@ -228,7 +228,9 @@ button.on { background: var(--button-active); border-color: var(--accent); color
   color: var(--muted);
 }
 .palette .wide { width: 100%; }
-.palette .tools { display: grid; grid-template-columns: 1fr 38px; gap: 4px; }
+.palette .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.palette .tools .tool { height: 32px; padding: 0; }
+.palette .tools .icon { width: 17px; height: 17px; }
 .palette .row { display: flex; gap: 4px; }
 .palette .row button { flex: 1; padding: 0; }
 /* Palette symbols in Bravura. SMuFL glyphs sit on the baseline with most of
@@ -246,9 +248,12 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .switch button { border: none; background: transparent; padding: 2px 0; min-height: 24px; font-size: 12px; color: var(--muted); }
 .switch button.on { background: var(--button); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); }
 .figures { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+/* Figures: app.js centres each glyph from its measured ink (fitGlyph), so
+   long stems and flags never touch the edge. */
 .figures button { height: 40px; padding: 0; }
-.figures .extended { display: none; }
-.palette.extended-values .figures .extended { display: block; }
+.palette .figures .glyph { display: flex; align-items: flex-start; justify-content: center; font-size: 22px; line-height: 0; padding-top: 26px; overflow: visible; }
+.palette .figures .extended { display: none; }
+.palette.extended-values .figures .extended { display: flex; }
 .figures.placing button.on { background: var(--accent); border-color: var(--accent); color: var(--paper); }
 .voices { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .voices .label { color: var(--muted); font-size: 12px; }

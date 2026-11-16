@@ -257,6 +257,24 @@ function pointerInLayout(clientX, clientY) {
   return clientToLayout(state.layout, $('score'), clientX, clientY);
 }
 
+/**
+ * Centres a Bravura glyph vertically in its button from the glyph's own ink,
+ * measured with canvas. SMuFL glyphs hang from a baseline at very different
+ * heights (a 128th note's stem and flags reach far above it, a whole note
+ * barely leaves it), so one fixed offset cannot fit them all. With
+ * `line-height: 0` the baseline sits at the top of the content box, so the
+ * top padding is exactly where the baseline goes.
+ */
+const glyphCtx = document.createElement('canvas').getContext('2d');
+function fitGlyph(button) {
+  const style = getComputedStyle(button);
+  glyphCtx.font = `${style.fontSize} Bravura`;
+  const m = glyphCtx.measureText(button.textContent);
+  const ink = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+  const height = button.offsetHeight || 40;
+  button.style.paddingTop = `${Math.round((height - ink) / 2 + m.actualBoundingBoxAscent)}px`;
+}
+
 // ----- mouse entry mode ------------------------------------------------------
 
 /** Is the pointer carrying a note or rest (as opposed to Select or the eraser)? */
@@ -318,7 +336,10 @@ function syncControls(doc) {
   document.querySelector('[data-cmd=undo]').disabled = !doc.can_undo;
   document.querySelector('[data-cmd=redo]').disabled = !doc.can_redo;
   document.querySelectorAll('[data-dur]').forEach((b) => {
-    b.textContent = b.dataset[state.kind];
+    if (b.textContent !== b.dataset[state.kind]) {
+      b.textContent = b.dataset[state.kind];
+      fitGlyph(b);
+    }
     b.dataset.tip = `${b.dataset.name} ${state.kind}`;
     b.dataset.desc = 'Choose it, then click on a staff to place it. With a selection, changes its note values.';
     b.setAttribute('aria-label', b.dataset.tip);
