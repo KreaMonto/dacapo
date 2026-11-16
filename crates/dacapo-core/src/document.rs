@@ -836,6 +836,33 @@ impl Document {
         steps: i32,
         now_ms: u64,
     ) -> Result<(), EditError> {
+        self.retune_event(id, pitch, TxKind::Repitch, now_ms, |q| q.shifted(steps))
+    }
+
+    /// Placing an accidental with the mouse: sets the alteration of one
+    /// event's notes, or only of the tone `pitch` in a chord of several
+    /// notes. The caret goes after the event.
+    pub fn set_accidental_at(
+        &mut self,
+        id: EventId,
+        pitch: Option<Pitch>,
+        alter: i8,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let alter = alter.clamp(-2, 2);
+        self.retune_event(id, pitch, TxKind::Edit, now_ms, |q| Pitch { alter, ..q })
+    }
+
+    /// Applies `f` to the notes of one event (only to `pitch` when the
+    /// event is a chord of several notes) and puts the caret after it.
+    fn retune_event(
+        &mut self,
+        id: EventId,
+        pitch: Option<Pitch>,
+        kind: TxKind,
+        now_ms: u64,
+        f: impl Fn(Pitch) -> Pitch,
+    ) -> Result<(), EditError> {
         let Some((staff, measure, voice, index)) = self.score.locate(id) else {
             return Ok(());
         };
@@ -848,7 +875,7 @@ impl Document {
             .iter()
             .map(|q| match only {
                 Some(p) if !(q.step == p.step && q.octave == p.octave) => *q,
-                _ => q.shifted(steps),
+                _ => f(*q),
             })
             .collect();
         let op = Op::ReplaceEvent {
@@ -869,7 +896,7 @@ impl Document {
             voice,
             index: index + 1,
         };
-        self.commit(TxKind::Repitch, vec![op], caret, now_ms, false)
+        self.commit(kind, vec![op], caret, now_ms, false)
     }
 
     /// Moves notes up/down by diatonic steps (Alt+Up/Down; 7 = octave).
@@ -1447,6 +1474,34 @@ mod tests {
             .unwrap();
         assert!(doc.score.voice(0, 0, 0).unwrap().is_empty());
 
+        doc.undo().unwrap();
+        doc.undo().unwrap();
+        assert_eq!(doc.score, before);
+    }
+
+    #[test]
+    fn accidental_from_the_mouse_on_a_note_or_one_chord_tone() {
+        let mut doc = Document::new(Score::new("t", 1));
+        doc.place_note(at(0, 0, 0), F, 4, Q, 10_000).unwrap();
+        doc.place_note(at(0, 0, 1), C, 5, Q, 10_100).unwrap();
+        doc.add_pitch(at(0, 0, 1), E, 5, 10_200).unwrap();
+        let ids: Vec<EventId> = doc
+            .score
+            .voice(0, 0, 0)
+            .unwrap()
+            .iter()
+            .map(|e| e.id)
+            .collect();
+        let before = doc.score.clone();
+
+        doc.set_accidental_at(ids[0], None, 1, 20_000).unwrap();
+        assert_eq!(doc.score.voice(0, 0, 0).unwrap()[0].pitches()[0].alter, 1);
+        assert_eq!(doc.caret, at(0, 0, 1));
+        // In the C–E chord only the E becomes flat.
+        doc.set_accidental_at(ids[1], Some(Pitch::new(E, 5)), -1, 21_000)
+            .unwrap();
+        let chord = doc.score.voice(0, 0, 0).unwrap()[1].pitches().to_vec();
+        assert_eq!((chord[0].alter, chord[1].alter), (0, -1));
         doc.undo().unwrap();
         doc.undo().unwrap();
         assert_eq!(doc.score, before);

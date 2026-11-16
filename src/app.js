@@ -229,6 +229,7 @@ function render() {
   placeLyricInput();
   scoreEl.classList.toggle('entry', entering());
   scoreEl.classList.toggle('erasing', state.mode === 'erase');
+  scoreEl.classList.toggle('marking', state.mode === 'mark');
   drawGhost();
   drawPlayhead();
   syncControls(doc);
@@ -282,7 +283,78 @@ const entering = () => state.mode === 'note' || state.mode === 'rest';
 
 function setMode(mode) {
   state.mode = mode;
+  if (mode !== 'mark') {
+    state.mark = null;
+    markCursor.style.display = 'none';
+  }
   render();
+}
+
+// ----- placing marks with the mouse ----------------------------------------------
+// Accidentals, articulations and dynamics: with a selection, a palette button
+// applies at once (as before). Without one, the pointer takes the mark and
+// each click on a note applies it, until Esc, a right-click or another tool.
+
+const markKey = (b) => (b.dataset.alter ? `alter:${b.dataset.alter}` : b.dataset.artic ? `artic:${b.dataset.artic}` : `dyn:${b.dataset.dyn}`);
+const markCursor = Object.assign(document.createElement('div'), { className: 'mark-cursor glyph' });
+document.body.append(markCursor);
+
+function useMark(b) {
+  if (active()?.selection) {
+    if (b.dataset.alter) act({ type: 'set_accidental', alter: Number(b.dataset.alter) });
+    else if (b.dataset.artic) act({ type: 'toggle_articulation', articulation: b.dataset.artic });
+    else act({ type: 'set_dynamic', dynamic: b.dataset.dyn });
+    return;
+  }
+  const key = markKey(b);
+  if (state.mode === 'mark' && state.mark?.key === key) { setMode('select'); return; }
+  state.mark = { key, glyph: b.textContent, name: b.dataset.tip, alter: b.dataset.alter, artic: b.dataset.artic, dyn: b.dataset.dyn };
+  markCursor.textContent = b.textContent;
+  setMode('mark');
+}
+
+/** Where an event is: { staff, measure, voice, index }, or null. */
+function locateEvent(doc, id) {
+  const staves = doc.score.staves;
+  for (let staff = 0; staff < staves.length; staff++) {
+    for (let measure = 0; measure < staves[staff].measures.length; measure++) {
+      const voices = staves[staff].measures[measure].voices;
+      for (let voice = 0; voice < voices.length; voice++) {
+        const index = voices[voice].findIndex((e) => e.id === id);
+        if (index >= 0) return { staff, measure, voice, index };
+      }
+    }
+  }
+  return null;
+}
+
+/** The note (or, for a fermata or dynamic, the rest) the armed mark would go on. */
+function markTarget(ev) {
+  const p = pointerInLayout(ev.clientX, ev.clientY);
+  const t = p && eraserTarget(state.hits || [], p.x, p.y);
+  if (!t) return null;
+  if (t.rest && state.mark.alter !== undefined) return null;
+  if (t.rest && state.mark.artic && state.mark.artic !== 'fermata') return null;
+  return t;
+}
+
+function placeMark(t) {
+  const m = state.mark;
+  if (m.alter !== undefined) {
+    act({ type: 'set_accidental_at', id: t.id, pitch: t.pitch, alter: Number(m.alter) });
+    return;
+  }
+  const at = locateEvent(active(), t.id);
+  if (!at) return;
+  // Marks go on the event before the caret: put the caret right after it.
+  act({ type: 'set_caret', caret: { ...at, index: at.index + 1 }, extend: false });
+  act(m.artic ? { type: 'toggle_articulation', articulation: m.artic } : { type: 'set_dynamic', dynamic: m.dyn });
+}
+
+function highlightMarkable(id) {
+  const scoreEl = $('score');
+  scoreEl.querySelectorAll('.mark-hover').forEach((g) => g.classList.remove('mark-hover'));
+  if (id !== undefined) scoreEl.querySelectorAll(`g[data-id="${id}"]`).forEach((g) => g.classList.add('mark-hover'));
 }
 
 function currentTarget() {
@@ -351,6 +423,9 @@ function syncControls(doc) {
   });
   document.querySelector('[data-cmd=select]').classList.toggle('on', state.mode === 'select');
   document.querySelector('[data-cmd=erase]').classList.toggle('on', state.mode === 'erase');
+  document.querySelectorAll('[data-alter], [data-artic], [data-dyn]').forEach((b) => {
+    b.classList.toggle('armed', state.mode === 'mark' && state.mark?.key === markKey(b));
+  });
   document.querySelector('.figures').classList.toggle('placing', entering());
   document.querySelector('[data-cmd=dot]').classList.toggle('on', state.duration.dots > 0);
   const mr = document.querySelector('[data-cmd=multirest]');
@@ -414,6 +489,7 @@ function renderStatus() {
         note: `<b>Placing ${value} notes</b> — click a line or space · click a note to add to its chord · Esc to stop`,
         rest: `<b>Placing ${value} rests</b> — click to place · Esc to stop`,
         erase: '<b>Eraser</b> — click a note, or drag a box · Esc to stop',
+        mark: `<b>Placing ${esc(state.mark?.name || '')}</b> — click a note · Esc to stop`,
       }[state.mode]);
     parts.push(doc.dirty ? 'Unsaved changes' : (doc.path ? 'Saved' : 'New document'));
     parts.push(doc.protected
@@ -589,6 +665,13 @@ function caretFromMouse(ev) {
 }
 $('score').addEventListener('mousedown', (ev) => {
   if (ev.button !== 0) return;
+  if (state.mode === 'mark') {
+    ev.preventDefault();
+    page.focus();
+    const t = markTarget(ev);
+    if (t) placeMark(t);
+    return;
+  }
   if (state.mode === 'erase') {
     // Click: erase what is under the crosshair. Drag: a box (see below).
     const p = pointerInLayout(ev.clientX, ev.clientY);
@@ -630,6 +713,11 @@ $('score').addEventListener('mousedown', (ev) => {
   act({ type: 'set_caret', caret, extend: ev.shiftKey });
 });
 $('score').addEventListener('mousemove', (ev) => {
+  if (state.mode === 'mark') {
+    Object.assign(markCursor.style, { display: 'block', left: `${ev.clientX + 14}px`, top: `${ev.clientY - 6}px` });
+    highlightMarkable(markTarget(ev)?.id);
+    return;
+  }
   if (state.mode === 'erase') {
     if (eraser.start) return; // the box drag is followed on window
     const p = pointerInLayout(ev.clientX, ev.clientY);
@@ -683,6 +771,8 @@ $('score').addEventListener('mouseleave', () => {
   drawGhost();
   drawLyricHover(null);
   if (!eraser.start) highlightErasable([]);
+  markCursor.style.display = 'none';
+  highlightMarkable();
 });
 
 // ----- eraser ------------------------------------------------------------------
@@ -1693,9 +1783,7 @@ const onControlClick = (ev) => {
   if (b.dataset.dur) setDuration(b.dataset.dur, true);
   else if (b.dataset.voice) setVoice(Number(b.dataset.voice));
   else if (b.dataset.kind) setKind(b.dataset.kind);
-  else if (b.dataset.alter) act({ type: 'set_accidental', alter: Number(b.dataset.alter) });
-  else if (b.dataset.artic) act({ type: 'toggle_articulation', articulation: b.dataset.artic });
-  else if (b.dataset.dyn) act({ type: 'set_dynamic', dynamic: b.dataset.dyn });
+  else if (b.dataset.alter || b.dataset.artic || b.dataset.dyn) useMark(b);
   else runCommand(b.dataset.cmd);
   page.focus();
 };

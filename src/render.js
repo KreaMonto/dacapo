@@ -23,7 +23,8 @@ export const MAX_VERSES = 8; // mirrors dacapo_core::model::MAX_VERSES
 export const LYRIC_PX = 1.7 * SP; // font size
 export const LYRIC_FONT = 'Georgia, "Times New Roman", serif';
 const LYRIC_LINE = 2.3 * SP; // from one verse's baseline to the next
-const LYRIC_Y0 = 7.4 * SP; // staff top to the first baseline, unless low notes need more
+const LYRIC_Y0 = 8.2 * SP; // staff top to the first baseline, unless low notes need more
+const LYRIC_CLEAR = 1.4 * SP; // least air between the lowest note, stem or beam and the words
 const LYRIC_GAP = 0.6 * SP; // least space between two syllables
 const HYPHEN_ROOM = 0.9 * SP; // extra space when a hyphen sits between them
 const LYRIC_LEAD = 1.1 * SP; // a measure's first note is this far right of where its lyrics may start
@@ -289,19 +290,34 @@ export function layout(view, width, opts = {}) {
         const voices = staff.measures[ms.m].voices;
         const multi = voices.filter((v) => v.length).length > 1;
         voices.forEach((voice, v) => {
-          for (const e of voice) {
+          const headY = (e) => 2 * SP + (mid - Math.min(...pitchesOf(e).map(diatonic))) * (SP / 2);
+          // Beamed groups: a beam under the notes sits lower than a single
+          // stem would (longer stems for extra beams, plus the slant).
+          const beamed = new Set();
+          const groups = isMeasureRest(voice, capacity(ms.attrs)) ? [] : beamGroups(voice, ms.attrs.time);
+          for (const g of groups) {
+            const events = g.map((i) => voice[i]);
+            g.forEach((i) => beamed.add(i));
+            if (multi ? v % 2 === 0 : groupStemsUp(events, mid)) {
+              for (const e of events) low = Math.max(low, headY(e) + 0.5 * SP);
+              continue;
+            }
+            const count = Math.max(...events.map((e) => valueIdx(e.duration) - V_EIGHTH)) + 1;
+            const minLen = Math.max(STEM_LEN, 2.5 * SP + (count - 1) * BEAM_STEP);
+            low = Math.max(low, Math.max(...events.map(headY)) + minLen + SP);
+          }
+          voice.forEach((e, i) => {
             const ds = pitchesOf(e).map(diatonic);
-            if (!ds.length) continue;
+            if (!ds.length || beamed.has(i)) return;
             const lo = Math.min(...ds);
             const hi = Math.max(...ds);
-            const headY = 2 * SP + (mid - lo) * (SP / 2);
             const up = multi ? v % 2 === 0 : (lo + hi) / 2 < mid;
             const stem = valueIdx(e.duration) >= V_HALF && !up;
-            low = Math.max(low, stem ? headY + STEM_LEN + Math.max(0, valueIdx(e.duration) - 5) * 0.5 * SP : headY + 0.5 * SP);
-          }
+            low = Math.max(low, stem ? headY(e) + STEM_LEN + Math.max(0, valueIdx(e.duration) - 5) * 0.5 * SP : headY(e) + 0.5 * SP);
+          });
         });
       }
-      return Math.max(LYRIC_Y0, low + 0.75 * LYRIC_PX + 0.6 * SP);
+      return Math.max(LYRIC_Y0, low + 0.75 * LYRIC_PX + LYRIC_CLEAR);
     });
     // Bottom of each staff's block: the staff itself, or its last verse.
     const bottom = (st) => (verses[st] ? s.lyricY[st] + (verses[st] - 1) * LYRIC_LINE + 0.7 * SP : 4 * SP);
