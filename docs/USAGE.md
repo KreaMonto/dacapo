@@ -19,7 +19,7 @@ The menu bar has **File**, **Edit**, **View**, **Insert**, **Play** and **Help**
 **Help** contains:
 - **Keyboard Shortcuts** (F1).
 - **What's New**, which opens the changelog.
-- **Report a Problem…** and **Source Code on GitHub**, which open in your browser.
+- **Report a Problem…**, **Source Code on GitHub** and **Support Da Capo…**, which open in your browser.
 - **Check for Updates…** and **Automatic Updates** (see [Updates](#updates)).
 - **Credits and Licenses** and **About Da Capo**. They show:
   - the version and platform;
