@@ -150,9 +150,36 @@
         };
       },
     };
+    // Fake updater. `?update=0.3.0` offers that version (download takes ~3 s);
+    // `?update=none` is up to date; without the parameter the check fails,
+    // as it does before the first release exists.
+    const offered = new URLSearchParams(location.search).get('update');
+    let upd = { state: 'idle' };
+    const updater = {
+      check_for_update() {
+        if (!offered) upd = { state: 'error', message: 'fake: no release yet (404)' };
+        else if (offered === 'none') upd = { state: 'up_to_date', current: '0.2.0' };
+        else upd = { state: 'available', version: offered, current: '0.2.0', notes: '', date: '2026-12-01' };
+        return upd;
+      },
+      update_status: () => upd,
+      download_update() {
+        const total = 12e6;
+        let received = 0;
+        upd = { state: 'downloading', version: offered, received, total };
+        const t = setInterval(() => {
+          received = Math.min(total, received + 1e6);
+          upd = received < total ? { ...upd, received } : { state: 'ready', version: offered };
+          if (received >= total) clearInterval(t);
+        }, 250);
+      },
+      install_update() { location.reload(); },
+    };
+    try { localStorage.removeItem('dacapo.updates.lastCheck'); } catch {}
     window.__TAURI__ = {
       core: {
         async invoke(cmd, args) {
+          if (cmd in updater) return updater[cmd](args || {});
           if (cmd in audio) {
             const r = audio[cmd](args || {});
             if (cmd === 'pause') return structuredClone(view);

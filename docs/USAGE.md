@@ -20,6 +20,7 @@ The menu bar has **File**, **Edit**, **View**, **Insert**, **Play** and **Help**
 - **Keyboard Shortcuts** (F1).
 - **What's New**, which opens the changelog.
 - **Report a Problem…** and **Source Code on GitHub**, which open in your browser.
+- **Check for Updates…** and **Automatic Updates** (see [Updates](#updates)).
 - **Credits and Licenses** and **About Da Capo**. They show:
   - the version and platform;
   - the components Da Capo downloaded, such as FluidR3 GM: its version, whether it is installed, and where;
@@ -167,3 +168,15 @@ A measure that holds more beats than its time signature allows is outlined in re
 Every change is written to a recovery journal on disk within half a second. If the app or the computer shuts down unexpectedly, the next start shows a banner listing the recovered documents, with **Restore** and **Discard** buttons. Restoring brings back the work, including the undo history.
 
 The status bar shows **● Recovery on** when protection is active.
+
+## Updates
+
+Da Capo looks for a new version on GitHub a few seconds after it starts, at most once a day. When there is one, it tells you which version it is and links to what's new:
+
+- **Download and Install** downloads it in the background while you keep working. Progress shows in the status bar.
+- **Later** asks again the next day.
+- **Skip This Version** stays quiet until a newer version appears.
+
+When the download is ready (and verified against the project's signing key), Da Capo asks to restart. **Restart Now** installs the update and opens the new version. Unsaved changes are kept: they are offered back when Da Capo starts again, as after a crash. If you choose **Later**, click **⟳ Restart to update** in the status bar whenever you are ready.
+
+**Help → Check for Updates…** checks right away. Turn off **Help → Automatic Updates** if you prefer Da Capo never to contact GitHub on its own.

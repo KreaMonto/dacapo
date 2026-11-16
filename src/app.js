@@ -391,7 +391,13 @@ function renderStatus() {
         + `Downloading sounds <progress max="100" value="${pct}" aria-label="Download progress"></progress> <b>${pct}%</b> · ${MB(s.received)} / ${MB(s.total)} MB</span>`);
     }
     if (s?.state === 'loading') parts.push('<span class="ok">Loading sounds…</span>');
+    const u = updatePart();
+    if (u) parts.push(u);
     parts.push(`<span class="zoom" data-zoom data-tip="Zoom ${Math.round(state.zoom * 100)}%" data-desc="Alt + mouse wheel, or Ctrl + = / Ctrl + −. Click to go back to 100%." data-key="Ctrl+0">${Math.round(state.zoom * 100)}%</span>`);
+  }
+  else {
+    const u = updatePart();
+    if (u) parts.push(u);
   }
   if (state.error) parts.push(`<span class="warn">${esc(state.error)}</span>`);
   $('status').innerHTML = parts.map((p) => `<span>${p}</span>`).join('');
@@ -682,6 +688,7 @@ function setKind(kind) {
 // Status bar: jump to the next measure with errors after the caret.
 $('status').addEventListener('click', (ev) => {
   if (ev.target.closest('[data-zoom]')) { setZoom(1); page.focus(); return; }
+  if (ev.target.closest('[data-update]')) { serial(offerRestart); return; }
   if (!ev.target.closest('[data-jump]')) return;
   const doc = active();
   const errors = measureErrors(doc);
@@ -754,6 +761,8 @@ const commands = {
   'open-repo': () => openExternal('https://github.com/dacapo-editor/dacapo'),
   'report-problem': () => openExternal('https://github.com/dacapo-editor/dacapo/issues'),
   changelog: () => openExternal('https://github.com/dacapo-editor/dacapo/blob/main/CHANGELOG.md'),
+  'check-updates': () => serial(() => checkForUpdates(true)),
+  'auto-updates': () => { savePref('updates.auto', !loadPref('updates.auto', true)); },
 };
 
 function runCommand(cmd) {
@@ -1010,6 +1019,141 @@ function openExternal(url) {
   else window.open(url, '_blank', 'noopener');
 }
 
+// ----- updates ---------------------------------------------------------------
+
+const updates = {
+  status: null, // last update_status from Rust
+  polling: false,
+};
+const DAY_MS = 24 * 60 * 60 * 1000;
+const releaseUrl = (v) => `https://github.com/dacapo-editor/dacapo/releases/tag/v${v}`;
+
+/** Status bar text while an update downloads or waits for a restart. */
+function updatePart() {
+  const u = updates.status;
+  if (u?.state === 'downloading') {
+    const pct = u.total ? Math.min(100, Math.floor((u.received / u.total) * 100)) : 0;
+    return `<span class="download" role="status" data-tip="Downloading Da Capo ${esc(u.version)}" data-desc="You can keep working. Da Capo asks before restarting.">`
+      + `Downloading update <progress max="100" value="${pct}" aria-label="Update download progress"></progress> <b>${pct}%</b></span>`;
+  }
+  if (u?.state === 'ready') {
+    return `<span class="update" data-update data-tip="Da Capo ${esc(u.version)} is ready" data-desc="Click to restart and install it. Unsaved changes are kept.">⟳ Restart to update</span>`;
+  }
+  return '';
+}
+
+/** A dialog with several buttons. Resolves with the value of the one picked (null for Esc). */
+function choiceDialog(title, bodyHtml, buttons) {
+  const dlg = $('dialog');
+  dlg.innerHTML = `<h2>${esc(title)}</h2><div class="dialog-body">${bodyHtml}</div><div class="dialog-actions">${
+    buttons.map((b) => (b.spacer ? '<span class="spacer"></span>'
+      : `<button type="button" data-answer="${esc(b.value)}"${b.primary ? ' class="primary" autofocus' : ''}>${esc(b.label)}</button>`)).join('')}</div>`;
+  dlg.showModal();
+  return new Promise((resolve) => {
+    const done = (answer) => {
+      dlg.removeEventListener('click', onClick);
+      dlg.removeEventListener('cancel', onCancel);
+      if (dlg.open) dlg.close();
+      resolve(answer);
+    };
+    const onClick = (ev) => {
+      const b = ev.target.closest('[data-answer]');
+      if (b) done(b.dataset.answer);
+    };
+    const onCancel = (ev) => { ev.preventDefault(); done(null); };
+    dlg.addEventListener('click', onClick);
+    dlg.addEventListener('cancel', onCancel);
+  });
+}
+
+/**
+ * Looks for a new version. Automatic checks (manual = false) run at most once
+ * a day, stay silent unless there is an update, and respect "Skip This
+ * Version"; Help → Check for Updates always answers.
+ */
+async function checkForUpdates(manual) {
+  if (!manual) {
+    if (!loadPref('updates.auto', true)) return;
+    if (Date.now() - loadPref('updates.lastCheck', 0) < DAY_MS) return;
+  }
+  const current = updates.status?.state;
+  if (current === 'downloading' || current === 'ready') {
+    if (manual) await offerRestart();
+    return;
+  }
+  const s = await invoke('check_for_update');
+  updates.status = s;
+  if (s.state !== 'error') savePref('updates.lastCheck', Date.now());
+  if (s.state === 'available') {
+    if (!manual && loadPref('updates.skip', null) === s.version) return;
+    await offerUpdate(s);
+  } else if (manual && s.state === 'up_to_date') {
+    await choiceDialog('Da Capo is up to date', `<p>You have the latest version, <b>${esc(s.current)}</b>.</p>`,
+      [{ label: 'OK', value: 'ok', primary: true }]);
+  } else if (manual && s.state === 'error') {
+    await choiceDialog('Could not check for updates',
+      `<p>Da Capo could not reach GitHub to look for a new version. Check your internet connection and try again.</p><p class="muted">${esc(s.message)}</p>`,
+      [{ label: 'OK', value: 'ok', primary: true }]);
+  } else if (s.state === 'error') {
+    console.warn('[dacapo] update check failed:', s.message);
+  }
+}
+
+async function offerUpdate(info) {
+  const date = info.date ? ` It was published on ${esc(info.date)}.` : '';
+  const answer = await choiceDialog(`Da Capo ${info.version} is available`,
+    `<p>You have version ${esc(info.current)}.${date} ${link(releaseUrl(info.version), 'See what’s new')}</p>
+     <p>The update downloads in the background while you keep working. Da Capo asks before restarting, and unsaved changes are kept.</p>`,
+    [
+      { label: 'Skip This Version', value: 'skip' },
+      { spacer: true },
+      { label: 'Later', value: 'later' },
+      { label: 'Download and Install', value: 'download', primary: true },
+    ]);
+  if (answer === 'skip') savePref('updates.skip', info.version);
+  if (answer !== 'download') return;
+  await invoke('download_update');
+  pollUpdate();
+}
+
+/** Follows the download in the status bar, then offers to restart. */
+async function pollUpdate() {
+  if (updates.polling) return;
+  updates.polling = true;
+  try {
+    while (true) {
+      const s = await invoke('update_status');
+      updates.status = s;
+      renderStatus();
+      if (s.state === 'ready') { serial(offerRestart); return; }
+      if (s.state === 'error') { showError(`The update could not be downloaded: ${s.message}`); return; }
+      if (s.state !== 'downloading') return;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  } finally {
+    updates.polling = false;
+  }
+}
+
+async function offerRestart() {
+  const u = updates.status;
+  if (u?.state !== 'ready') return;
+  const dirty = [...state.docs.values()].some((d) => d.dirty);
+  const keep = dirty ? '<p>Your unsaved changes are kept: Da Capo offers them back when it starts again.</p>' : '';
+  const answer = await choiceDialog(`Restart to install Da Capo ${u.version}?`,
+    `<p>The update has been downloaded and verified.</p>${keep}`,
+    [{ label: 'Later', value: 'later' }, { label: 'Restart Now', value: 'restart', primary: true }]);
+  if (answer !== 'restart') return;
+  if (playback.playing) await stopPlayback();
+  try {
+    await invoke('install_update');
+  } catch (e) {
+    updates.status = { state: 'error', message: String(e) };
+    renderStatus();
+    showError(`The update could not be installed: ${e}`);
+  }
+}
+
 const link = (url, text) => `<a href="${esc(url)}" data-external>${esc(text ?? url.replace(/^https?:\/\//, ''))}</a>`;
 const OS_NAMES = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
 
@@ -1173,6 +1317,9 @@ const MENUS = [
     { label: 'Report a Problem…', cmd: 'report-problem' },
     { label: 'Source Code on GitHub', cmd: 'open-repo' },
     { sep: true },
+    { label: 'Check for Updates…', cmd: 'check-updates' },
+    { label: 'Automatic Updates', cmd: 'auto-updates', checked: () => loadPref('updates.auto', true) },
+    { sep: true },
     { label: 'Credits and Licenses', cmd: 'credits' },
     { label: 'About Da Capo', cmd: 'about' },
   ] },
@@ -1243,4 +1390,6 @@ serial(async () => {
   // First run of page view: start with the page fitted to the window.
   if (state.view === 'page' && loadPref('zoom', null) === null) fitWidth();
   page.focus();
+  // Look for a new version a little after start-up, at most once a day.
+  setTimeout(() => serial(() => checkForUpdates(false)), 5000);
 });

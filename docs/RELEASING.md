@@ -19,9 +19,28 @@ Releases are built by GitHub Actions (`.github/workflows/release.yml`). It build
 5. Wait for the four build jobs to finish (about 15–20 minutes).
 6. Open **Releases**, check the draft (files and notes), and click **Publish release**. If the workflow was started by hand, publishing creates the tag `v<version>` on the commit that was built.
 
-While the version is `0.x`, releases are marked as **pre-release**.
+Releases are not marked as pre-release, even while the version is `0.x`: the in-app updater and the `releases/latest` links only see full releases.
 
 If a build fails, fix it and run the workflow again: it reuses the existing draft for that version. Delete stale assets from the draft first if a job had already uploaded some.
+
+## In-app updates
+
+Installed copies of Da Capo look for a new version once a day (and from **Help → Check for Updates…**). They read `latest.json` from the latest published release:
+
+```
+https://github.com/dacapo-editor/dacapo/releases/latest/download/latest.json
+```
+
+The workflow generates that file and a signature for every update package. The app only installs packages signed with the project's **updater key**, whose public half is `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`.
+
+### The updater key
+
+- The private key is stored in the repository secret **`TAURI_SIGNING_PRIVATE_KEY`** (Settings → Secrets and variables → Actions). If the key has a password, it goes in **`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`**. The release workflow stops if the key is missing.
+- **Keep a backup of the private key** somewhere safe, outside GitHub (a password manager, for example). If it is lost, installed copies can no longer be updated: users would have to download the next version by hand.
+- Never commit the private key. Only the public key belongs in the repository.
+- To replace the key, generate a new pair with `npx @tauri-apps/cli@2 signer generate -w <path>`, put the new public key in `tauri.conf.json`, and update the secret. Copies installed with the old public key cannot verify updates signed with the new key, so they need one manual update.
+
+On Windows the update runs the `.exe` installer in passive mode (a progress window, no questions). Linux updates work for the AppImage, `.deb` and `.rpm`.
 
 ## Signing
 
