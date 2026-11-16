@@ -1,7 +1,7 @@
 // Da Capo frontend. Owns no musical state: every edit is sent to Rust,
 // which answers with the full document view to redraw.
 
-import { renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, esc } from './render.js';
+import { renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, playheadMarkup, esc } from './render.js';
 import { installTooltips } from './tooltip.js';
 import { installMenuBar } from './menu.js';
 
@@ -218,6 +218,7 @@ function render() {
   state.layout = layout;
   scoreEl.classList.toggle('entry', state.mode !== 'select');
   drawGhost();
+  drawPlayhead();
   syncControls(doc);
   renderStatus();
   scrollCaretIntoView();
@@ -322,6 +323,8 @@ function syncControls(doc) {
   if (document.activeElement !== $('clef')) $('clef').value = staff.clef;
   if (document.activeElement !== $('key')) $('key').value = String(attrs.key.fifths);
   if (document.activeElement !== $('time')) $('time').value = `${attrs.time.beats}/${attrs.time.beat_type}`;
+  if (document.activeElement !== $('tempo')) $('tempo').value = String(doc.score.tempo ?? 100);
+  syncTransport();
   if (document.activeElement !== $('title')) $('title').value = doc.score.metadata.title;
   if (document.activeElement !== $('composer')) $('composer').value = doc.score.metadata.composer;
 }
@@ -381,6 +384,9 @@ function renderStatus() {
       parts.push(`<span class="errors" data-jump data-tip="Measures with errors" data-desc="Click to jump to the next one.">⚠ ${errors.length} measure${errors.length > 1 ? 's' : ''} with errors</span>`);
     }
     if (doc.warning) parts.push(`<span class="warn">${esc(doc.warning)}</span>`);
+    const s = playback.sound;
+    if (s?.state === 'downloading') parts.push(`<span class="ok">Downloading sounds… ${MB(s.received)} / ${MB(s.total)} MB</span>`);
+    if (s?.state === 'loading') parts.push('<span class="ok">Loading sounds…</span>');
     parts.push(`<span class="zoom" data-zoom data-tip="Zoom ${Math.round(state.zoom * 100)}%" data-desc="Alt + mouse wheel, or Ctrl + = / Ctrl + −. Click to go back to 100%." data-key="Ctrl+0">${Math.round(state.zoom * 100)}%</span>`);
   }
   if (state.error) parts.push(`<span class="warn">${esc(state.error)}</span>`);
@@ -481,7 +487,14 @@ document.addEventListener('keydown', (ev) => {
   }
 
   switch (key) {
-    case 'Escape': ev.preventDefault(); return setMode('select');
+    case 'Escape':
+      ev.preventDefault();
+      if (playback.playing) return serial(stopPlayback);
+      return setMode('select');
+    case ' ':
+      ev.preventDefault();
+      if (ev.shiftKey) return runCommand('play-start');
+      return togglePlayback();
     case 'n': case 'N': ev.preventDefault(); return setMode(state.mode === 'select' ? 'note' : 'select');
     case 't': case 'T': return run({ type: 'toggle_tie' });
     case 's': case 'S': return run({ type: 'toggle_slur' });
@@ -726,6 +739,10 @@ const commands = {
   slur: () => act({ type: 'toggle_slur' }),
   select: () => setMode('select'),
   dot: () => { state.duration = { ...state.duration, dots: state.duration.dots ? 0 : 1 }; render(); },
+  // Playback
+  play: () => togglePlayback(),
+  'play-start': () => serial(async () => { if (playback.playing) await stopPlayback(); await startPlayback(true); }),
+  stop: () => serial(stopPlayback),
   // Help
   shortcuts: () => showDialog('shortcuts'),
   about: () => showDialog('about'),
@@ -764,7 +781,150 @@ function printScore() {
   window.print();
 }
 
+// ----- playback --------------------------------------------------------------
+
+const playback = {
+  playing: false,
+  position: null, // { measure, tick } while playing
+  sound: null, // last audio_status from Rust
+  pollTimer: 0,
+};
+
+const MB = (bytes) => (bytes / 1e6).toFixed(0); // decimal MB, as in the download dialog
+
+/** Makes sure the SoundFont is ready; offers to download it the first time. */
+async function ensureSound() {
+  let s = await invoke('audio_status');
+  playback.sound = s;
+  if (s.state === 'ready') return true;
+  if (s.state === 'no_device') {
+    showError(`No audio output: ${s.message}`);
+    return false;
+  }
+  if (s.state === 'missing' || s.state === 'error') {
+    const detail = s.state === 'error' ? `<p class="warn">The last attempt failed: ${esc(s.message)}</p>` : '';
+    const ok = await askDialog('Download the sounds?',
+      `<p>To play music, Da Capo uses <b>FluidR3 GM</b>, a free collection of recorded instruments by Frank Wen (MIT license).</p>
+       <p>It is a one-time download of <b>148 MB</b>, kept on this computer for future sessions.</p>${detail}`,
+      'Download');
+    if (!ok) return false;
+    await invoke('download_soundfont');
+  }
+  // Downloading or loading: wait, showing progress in the status bar.
+  while (true) {
+    s = await invoke('audio_status');
+    playback.sound = s;
+    renderStatus();
+    if (s.state === 'ready') return true;
+    if (s.state === 'error' || s.state === 'no_device') {
+      showError(`Sounds unavailable: ${s.message}`);
+      return false;
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+}
+
+async function startPlayback(fromStart = false) {
+  const doc = active();
+  if (!doc || playback.playing) return;
+  if (!(await ensureSound())) return;
+  await invoke('play', { id: doc.id, fromStart });
+  playback.playing = true;
+  syncTransport();
+  pollPlayback();
+}
+
+/** Pauses, leaving the caret where the music stopped. */
+async function pausePlayback() {
+  if (!playback.playing) return;
+  playback.playing = false;
+  clearTimeout(playback.pollTimer);
+  adopt(await invoke('pause', { id: state.active }));
+  playback.position = null;
+  render();
+}
+
+/** Stops without moving the caret. */
+async function stopPlayback() {
+  playback.playing = false;
+  clearTimeout(playback.pollTimer);
+  await invoke('stop_playback');
+  playback.position = null;
+  drawPlayhead();
+  syncTransport();
+}
+
+function togglePlayback() {
+  return serial(() => (playback.playing ? pausePlayback() : startPlayback(false)));
+}
+
+/** Follows the engine ~30 times per second while playing. */
+async function pollPlayback() {
+  const s = await invoke('playback_state');
+  if (!playback.playing) return; // paused/stopped meanwhile
+  if (!s.playing) {
+    // Reached the end.
+    playback.playing = false;
+    playback.position = null;
+    drawPlayhead();
+    syncTransport();
+    return;
+  }
+  playback.position = { measure: s.measure, tick: s.tick };
+  drawPlayhead(true);
+  playback.pollTimer = setTimeout(pollPlayback, 33);
+}
+
+/** Draws (or removes) the playback line; optionally scrolls to keep it visible. */
+function drawPlayhead(follow = false) {
+  const scoreEl = $('score');
+  scoreEl.querySelectorAll('.playhead').forEach((l) => l.remove());
+  if (!playback.position || !state.layout) return;
+  const ph = playheadMarkup(state.layout, playback.position.measure, playback.position.tick);
+  const svg = ph && scoreEl.querySelector(`svg[data-page="${ph.page}"]`);
+  if (!svg) return;
+  svg.insertAdjacentHTML('beforeend', ph.markup);
+  if (follow) {
+    const r = svg.querySelector('.playhead').getBoundingClientRect();
+    const p = page.getBoundingClientRect();
+    if (r.top < p.top + 20 || r.bottom > p.bottom - 20) page.scrollBy({ top: r.top - p.top - p.height / 4, behavior: 'smooth' });
+    if (r.left < p.left + 40 || r.right > p.right - 80) page.scrollBy({ left: r.left - p.left - p.width / 4, behavior: 'smooth' });
+  }
+}
+
+function syncTransport() {
+  const btn = $('play-btn');
+  btn.querySelector('use').setAttribute('href', playback.playing ? '#i-pause' : '#i-play');
+  btn.setAttribute('aria-label', playback.playing ? 'Pause' : 'Play');
+  btn.classList.toggle('on', playback.playing);
+}
+
 // ----- dialogs ---------------------------------------------------------------
+
+/** A yes/no dialog. Resolves true when the user picks the OK button. */
+function askDialog(title, bodyHtml, okLabel) {
+  const dlg = $('dialog');
+  dlg.innerHTML = `<h2>${esc(title)}</h2><div class="dialog-body">${bodyHtml}</div>
+    <div class="dialog-actions"><button type="button" data-answer="no">Cancel</button><button type="button" data-answer="yes" class="primary" autofocus>${esc(okLabel)}</button></div>`;
+  dlg.showModal();
+  // Resolved from the buttons themselves (and Esc = Cancel): the dialog's
+  // `close` event proved unreliable in the webview when a form closes it.
+  return new Promise((resolve) => {
+    const done = (answer) => {
+      dlg.removeEventListener('click', onClick);
+      dlg.removeEventListener('cancel', onCancel);
+      if (dlg.open) dlg.close();
+      resolve(answer);
+    };
+    const onClick = (ev) => {
+      const b = ev.target.closest('[data-answer]');
+      if (b) done(b.dataset.answer === 'yes');
+    };
+    const onCancel = (ev) => { ev.preventDefault(); done(false); };
+    dlg.addEventListener('click', onClick);
+    dlg.addEventListener('cancel', onCancel);
+  });
+}
 
 const SHORTCUTS = [
   ['Entering music', [
@@ -787,13 +947,23 @@ const SHORTCUTS = [
     ['Ctrl + ← / →', 'Previous / next measure'],
     ['Ctrl + Home / End', 'Start / end of the score'],
     ['Shift + any move', 'Extend the selection'],
+    ['Click / drag', 'Place the caret / select'],
+    ['Shift + click', 'Extend the selection'],
+    ['Ctrl + A', 'Select all'],
+    ['Esc', 'Back to the select tool'],
+  ]],
+  ['Navigation and zoom', [
     ['Wheel', 'Scroll up / down'],
     ['Ctrl + wheel', 'Scroll sideways'],
     ['Alt + wheel', 'Zoom in / out around the pointer'],
     ['Middle button + drag', 'Pan the score'],
-    ['Ctrl + = / − / 0', 'Zoom in / out / 100%'],
-    ['Ctrl + A', 'Select all'],
-    ['Esc', 'Back to the select tool'],
+    ['Ctrl + = / Ctrl + −', 'Zoom in / out'],
+    ['Ctrl + 0', 'Zoom to 100%'],
+  ]],
+  ['Playback', [
+    ['Space', 'Play from the caret / pause'],
+    ['Shift + Space', 'Play from the beginning'],
+    ['Esc (while playing)', 'Stop'],
   ]],
   ['Editing', [
     ['Backspace / Del', 'Delete before / after the caret, or the selection'],
@@ -814,16 +984,22 @@ const SHORTCUTS = [
 
 function showDialog(which) {
   const dlg = $('dialog');
+  // Title and Close stay put; only the body scrolls when the window is short.
+  let title;
+  let body;
   if (which === 'shortcuts') {
-    dlg.innerHTML = `<h2>Keyboard shortcuts</h2><div class="shortcut-cols">${SHORTCUTS.map(([group, rows]) =>
+    title = 'Keyboard and mouse shortcuts';
+    body = `<div class="shortcut-cols">${SHORTCUTS.map(([group, rows]) =>
       `<section><h3>${group}</h3><table>${rows.map(([k, d]) => `<tr><td><kbd>${esc(k)}</kbd></td><td>${esc(d)}</td></tr>`).join('')}</table></section>`).join('')}</div>`;
   } else {
-    dlg.innerHTML = `<h2>Da Capo</h2>
-      <p>An open source music notation editor.</p>
+    title = 'Da Capo';
+    body = `<p>An open source music notation editor.</p>
       <p>Version 0.1.0 · Free software under the GNU General Public License v3.0 or later.</p>
-      <p>Music engraved with the Bravura font by Steinberg Media Technologies, under the SIL Open Font License 1.1.</p>`;
+      <p>Music engraved with the Bravura font by Steinberg Media Technologies, under the SIL Open Font License 1.1.</p>
+      <p>Playback uses the FluidR3_GM SoundFont by Frank Wen (MIT license), downloaded on first use.</p>`;
   }
-  dlg.insertAdjacentHTML('beforeend', '<form method="dialog" class="dialog-actions"><button autofocus>Close</button></form>');
+  dlg.innerHTML = `<h2>${title}</h2><div class="dialog-body">${body}</div>`
+    + '<form method="dialog" class="dialog-actions"><button autofocus>Close</button></form>';
   dlg.showModal();
 }
 $('dialog').addEventListener('close', () => page.focus());
@@ -902,6 +1078,11 @@ const MENUS = [
     { label: 'Delete Current Measure', cmd: 'remove-measure', enabled: hasDoc },
     { label: 'Delete Current Staff', cmd: 'remove-staff', enabled: hasDoc },
   ] },
+  { label: 'Play', items: [
+    { label: 'Play / Pause', cmd: 'play', key: 'Space', enabled: hasDoc },
+    { label: 'Play from Beginning', cmd: 'play-start', key: 'Shift+Space', enabled: hasDoc },
+    { label: 'Stop', cmd: 'stop', key: 'Esc', enabled: () => playback.playing },
+  ] },
   { label: 'Help', items: [
     { label: 'Keyboard Shortcuts', cmd: 'shortcuts', key: 'F1' },
     { label: 'About Da Capo', cmd: 'about' },
@@ -922,6 +1103,13 @@ for (const d of document.querySelectorAll('.palette details')) {
 $('key').innerHTML = KEY_NAMES.map((n, i) => `<option value="${i - 7}">${n} major</option>`).join('');
 $('key').addEventListener('change', (ev) => { act({ type: 'set_key', fifths: Number(ev.target.value) }); page.focus(); });
 $('clef').addEventListener('change', (ev) => { act({ type: 'set_clef', clef: ev.target.value }); page.focus(); });
+$('tempo').addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Enter') return;
+  const bpm = Number(ev.target.value);
+  if (!Number.isInteger(bpm) || bpm < 20 || bpm > 400) { showError('Tempo must be a whole number from 20 to 400'); return; }
+  act({ type: 'set_tempo', bpm });
+  page.focus();
+});
 $('time').addEventListener('keydown', (ev) => {
   if (ev.key !== 'Enter') return;
   const m = ev.target.value.match(/^\s*(\d+)\s*\/\s*(\d+)\s*$/);

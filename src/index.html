@@ -21,6 +21,10 @@
       <symbol id="i-staff-remove" viewBox="0 0 24 24"><path d="M2 5h12M2 8.5h12M2 12h12"/><path d="M2 16h12M2 19.5h12" opacity=".45"/><path d="M16 16h6"/></symbol>
       <symbol id="i-multirest" viewBox="0 0 24 24"><path d="M4 8v8M20 8v8"/><path d="M4 12h16" stroke-width="4"/><path d="M10 3.5h4" opacity=".7"/></symbol>
       <symbol id="i-select" viewBox="0 0 24 24"><path d="M5 3l14 8-6.5 1.8L10 19z"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/></symbol>
+      <symbol id="i-start" viewBox="0 0 24 24"><path d="M6 5v14"/><path d="M9 12l10-7v14z" fill="currentColor"/></symbol>
     </defs>
   </svg>
 
@@ -35,6 +39,15 @@
     <div class="group">
       <button data-cmd="undo" class="ibtn" aria-label="Undo" data-tip="Undo" data-desc="A burst of typing is undone in one step, as in a word processor." data-key="Ctrl+Z"><svg class="icon"><use href="#i-undo"/></svg></button>
       <button data-cmd="redo" class="ibtn" aria-label="Redo" data-tip="Redo" data-key="Ctrl+Y"><svg class="icon"><use href="#i-redo"/></svg></button>
+    </div>
+    <div class="group transport" aria-label="Playback">
+      <button data-cmd="play-start" class="ibtn" aria-label="Play from the beginning" data-tip="Play from the beginning" data-key="Shift+Space"><svg class="icon"><use href="#i-start"/></svg></button>
+      <button data-cmd="play" id="play-btn" class="ibtn play" aria-label="Play" data-tip="Play / pause" data-desc="Plays from the caret. Pausing leaves the caret where the music stopped, so the next Play continues from there." data-key="Space"><svg class="icon"><use href="#i-play"/></svg></button>
+      <button data-cmd="stop" class="ibtn" aria-label="Stop" data-tip="Stop" data-desc="Stops playback without moving the caret." data-key="Esc"><svg class="icon"><use href="#i-stop"/></svg></button>
+      <label class="tempo" data-tip="Tempo" data-desc="Quarter notes per minute (20–400). Press Enter to apply.">
+        <span class="m tempo-note">&#xE1D5;</span> =
+        <input id="tempo" size="3" inputmode="numeric" aria-label="Tempo in quarter notes per minute">
+      </label>
     </div>
     <div class="group">
       <label data-tip="Clef" data-desc="Clef of the staff where the caret is.">Clef

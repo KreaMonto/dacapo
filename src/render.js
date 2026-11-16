@@ -475,6 +475,30 @@ export function clientToLayout(lay, container, clientX, clientY) {
   return { x: p.x + (clientX - best.r.left) * k, y: p.y + (clientY - best.r.top) * k, page: p.index };
 }
 
+/**
+ * The playback cursor at (measure, tick): a line across the whole system.
+ * Returns `{ page, markup }` or null. Inside a multi-measure rest the line
+ * moves proportionally through the merged measures.
+ */
+export function playheadMarkup(lay, measure, tick) {
+  const ms = lay.byMeasure[measure];
+  if (!ms) return null;
+  let x;
+  if (ms.multi) {
+    const fraction = ((measure - ms.m) * ms.cap + tick) / (ms.multi * ms.cap);
+    x = ms.contentX + fraction * ms.contentW;
+  } else {
+    x = lay.tickX(ms, Math.min(tick, ms.cap));
+  }
+  const s = ms.system;
+  const y1 = s.y - 1.5 * SP;
+  const y2 = s.y + (lay.nStaves - 1) * STAFF_GAP + 5.5 * SP;
+  return {
+    page: s.page || 0,
+    markup: `<line class="playhead" x1="${x}" x2="${x}" y1="${y1}" y2="${y2}"/>`,
+  };
+}
+
 /** Inverse of clientToLayout: where a layout point currently is on screen. */
 export function layoutToClient(lay, container, point) {
   const svg = container.querySelector(`svg[data-page="${point.page || 0}"]`);

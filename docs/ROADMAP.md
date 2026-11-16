@@ -53,8 +53,15 @@ This document tracks the development goals and major stages toward a complete op
 
 ## Phase 4: Audio and playback
 
-- [ ] Playback with metronome.
-- [ ] Tempo and volume adjustments.
+- [x] Playback with the FluidR3 GM SoundFont (rustysynth + cpal), downloaded on first use.
+- [x] Play / pause (caret follows) / stop, play from the beginning, playhead that follows the music.
+- [x] Notes sound while entering them.
+- [x] Tempo per score; ties, articulations, slurs and dynamics affect playback.
+- [ ] Metronome / count-in.
+- [ ] Instrument per staff (General MIDI programs) and volume/pan per staff.
+- [ ] Fermatas and tempo changes inside the score.
+- [ ] Choose another SoundFont (.sf2) in the settings.
+- [ ] Verify the downloaded SoundFont with a pinned SHA-256 (today: exact size + RIFF/sfbk signature).
 - [ ] MIDI input (step-time and real-time entry).
 - [ ] Multi-instrument support with instrument names and transposing instruments.
 

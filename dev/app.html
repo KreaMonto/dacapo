@@ -73,6 +73,7 @@
         view.caret = { ...at, index: at.index + 1 };
       },
       set_caret({ caret }) { view.caret = caret; },
+      set_tempo({ bpm }) { snapshot(); view.score.tempo = bpm; },
       // Marks act on the event before the caret (the fake has no selections).
       toggle_tie() { const e = voiceOf(view.caret)[view.caret.index - 1]; if (e && e.kind !== 'rest') { snapshot(); e.tie = !e.tie; } },
       toggle_articulation({ articulation: a }) {
@@ -101,9 +102,43 @@
         if (s) [view.score, view.caret] = JSON.parse(s);
       },
     };
+    // Fake sound engine: "downloads" in ~1.5 s, then plays silently on a
+    // clock so the playhead and transport can be tried.
+    view.score.tempo = 100;
+    const sound = { state: 'missing', t0: 0, playing: false, fromTick: 0, startedAt: 0 };
+    const MEASURE = 3840;
+    const audio = {
+      audio_status() {
+        if (sound.state === 'downloading') {
+          const k = Math.min(1, (Date.now() - sound.t0) / 1500);
+          if (k >= 1) sound.state = 'ready';
+          else return { state: 'downloading', received: Math.round(148398306 * k), total: 148398306 };
+        }
+        return { state: sound.state };
+      },
+      download_soundfont() { sound.state = 'downloading'; sound.t0 = Date.now(); },
+      play({ fromStart }) {
+        sound.playing = true;
+        sound.startedAt = Date.now();
+        sound.fromTick = fromStart ? 0 : view.caret.measure * MEASURE;
+      },
+      playback_state() {
+        if (!sound.playing) return { playing: false, measure: 0, tick: 0 };
+        const ticks = sound.fromTick + ((Date.now() - sound.startedAt) / 1000) * (view.score.tempo / 60) * 960;
+        if (ticks >= view.score.measures.length * MEASURE) { sound.playing = false; return { playing: false, measure: 0, tick: 0 }; }
+        return { playing: true, measure: Math.floor(ticks / MEASURE), tick: Math.floor(ticks % MEASURE) };
+      },
+      pause() { const s = audio.playback_state(); sound.playing = false; view.caret = { ...view.caret, measure: s.measure, index: 0 }; },
+      stop_playback() { sound.playing = false; },
+    };
     window.__TAURI__ = {
       core: {
         async invoke(cmd, args) {
+          if (cmd in audio) {
+            const r = audio[cmd](args || {});
+            if (cmd === 'pause') return structuredClone(view);
+            return r;
+          }
           if (cmd === 'edit') {
             handlers[args.action.type]?.(args.action);
             view.dirty = undo.length > 0;

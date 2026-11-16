@@ -124,6 +124,36 @@ Commands: `new_document`, `open_document`, `get_document`, `edit`, `save_documen
 
 Closing the window with unsaved documents is intercepted: the frontend asks the user, then calls `quit`.
 
+## Playback
+
+**Core: `playback.rs`.** This module turns a `Score` into a `Timeline`: a sorted list of notes with absolute start and end ticks, MIDI key, velocity and staff, plus the start tick of each measure.
+
+- Ties are merged into single notes, including across barlines.
+- Articulations and slurs set how long a note sounds.
+- Dynamics and accents set its velocity.
+- The module has no audio dependency, so it is fully unit-tested.
+
+**App: `src-tauri/src/audio.rs`.** The audio engine:
+
+- **`rustysynth`** synthesizes with a SoundFont.
+- **`cpal`** drives the default output device. The stream lives on a dedicated thread for the whole session.
+- **The audio callback** pulls from a shared `Player`. Its queue holds the timeline converted to *sample* times, and the render loop splits each buffer at the exact sample where a note starts or stops.
+- **Slow work stays off the lock:** loading the 148 MB SoundFont, downloading it, and building a timeline all happen outside it, so the callback is never blocked for long.
+- **Downloading** goes through `ureq` from a pinned GitHub release URL. It writes to a `.part` file and checks the exact size and the `RIFF…sfbk` signature before renaming.
+
+**Commands:**
+
+| Command | What it does |
+|---|---|
+| `play` | Builds the timeline and starts from the caret or the beginning. |
+| `pause` | Stops and moves the caret to the stop position. |
+| `stop_playback` | Stops without moving the caret. |
+| `playback_state` | Returns the current position; the UI polls it about 30 times per second for the playhead. |
+| `audio_status` | Reports whether the SoundFont is missing, downloading, loading or ready. |
+| `download_soundfont` | Starts the SoundFont download. |
+
+Note-entry edits also call `Engine::preview` to sound the note just written.
+
 ## Rendering (`src/render.js`)
 
 `render.js` is a pure function from `DocView` to SVG markup plus a layout object used for hit-testing clicks. It:

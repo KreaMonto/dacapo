@@ -24,6 +24,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for what comes next.
 - **App shell**: Tauri 2 (`src-tauri`).
 - **UI**: plain HTML/CSS/JavaScript with SVG rendering (`src`). No Node.js or build step is required.
 - **Engraving**: the [Bravura](https://github.com/steinbergmedia/bravura) SMuFL music font by Steinberg (SIL Open Font License), bundled in `src/fonts/`.
+- **Playback**: [rustysynth](https://github.com/sinshu/rustysynth) and [cpal](https://github.com/RustAudio/cpal), with the FluidR3 GM SoundFont by Frank Wen (MIT). The SoundFont is downloaded on first use, not stored in the repository.
 - **Formats**: `.dacapo` (JSON) for documents and a binary CRC-checked journal for recovery. MusicXML import/export is planned.
 
 ## Repository layout
