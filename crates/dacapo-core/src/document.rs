@@ -1,0 +1,1303 @@
+//! An open document: score + caret + selection + undo history.
+//!
+//! All user-facing editing commands live here. Each command turns into a
+//! list of [`Op`]s that is applied atomically and recorded both in the undo
+//! history and in a list of pending [`JournalEntry`]s, which the
+//! [`crate::session::Session`] streams to the crash-recovery journal.
+//! Replaying the same entries on the same starting document reproduces the
+//! exact same state, including the undo history.
+
+use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use crate::cursor::{self, Caret, Move, SelectionRange};
+use crate::history::{History, Transaction, TxKind};
+use crate::model::{
+    Clef, Duration, Event, EventKind, KeySignature, Metadata, Pitch, Score, Step, TimeSignature,
+};
+use crate::ops::{apply_all, Op, OpError};
+
+/// One durable change, as written to the recovery journal.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JournalEntry {
+    Commit {
+        kind: TxKind,
+        ops: Vec<Op>,
+        caret_before: Caret,
+        caret_after: Caret,
+        time_ms: u64,
+        merge: bool,
+    },
+    Undo,
+    Redo,
+}
+
+/// Errors returned by editing commands.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum EditError {
+    #[error(transparent)]
+    Op(#[from] OpError),
+    #[error("invalid time signature")]
+    InvalidTime,
+}
+
+/// Music copied with Ctrl+C: one list of events per selected staff.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Clipboard {
+    pub staves: Vec<Vec<Event>>,
+}
+
+impl Clipboard {
+    pub fn is_empty(&self) -> bool {
+        self.staves.iter().all(Vec::is_empty)
+    }
+}
+
+/// An open score with its editing state.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Document {
+    pub score: Score,
+    caret: Caret,
+    /// Selection anchor; the caret is the other end.
+    anchor: Option<Caret>,
+    history: History,
+    /// Bumped on every change (edit, undo, redo).
+    revision: u64,
+    saved_revision: u64,
+    /// File on disk, `None` for untitled documents.
+    pub path: Option<PathBuf>,
+    #[serde(skip)]
+    pending: Vec<JournalEntry>,
+}
+
+const SHARP_ORDER: [Step; 7] = [
+    Step::F,
+    Step::C,
+    Step::G,
+    Step::D,
+    Step::A,
+    Step::E,
+    Step::B,
+];
+
+/// Alteration that the key signature implies for a step.
+pub fn key_alter(key: KeySignature, step: Step) -> i8 {
+    let n = key.fifths.unsigned_abs().min(7) as usize;
+    if key.fifths > 0 && SHARP_ORDER[..n].contains(&step) {
+        1
+    } else if key.fifths < 0 && SHARP_ORDER.iter().rev().take(n).any(|s| *s == step) {
+        -1
+    } else {
+        0
+    }
+}
+
+/// The octave of `step` closest to `reference` (ties go up), the way
+/// letter-key note entry works in most notation programs.
+pub fn nearest_pitch(step: Step, reference: Pitch) -> Pitch {
+    let r = reference.diatonic_index();
+    let base = r.div_euclid(7) * 7 + step.index();
+    let best = [base - 7, base, base + 7]
+        .into_iter()
+        .min_by_key(|c| ((c - r).abs(), if *c >= r { 0 } else { 1 }))
+        .unwrap();
+    Pitch::from_diatonic_index(best)
+}
+
+impl Document {
+    pub fn new(score: Score) -> Self {
+        Document {
+            score,
+            caret: Caret::default(),
+            anchor: None,
+            history: History::default(),
+            revision: 0,
+            saved_revision: 0,
+            path: None,
+            pending: Vec::new(),
+        }
+    }
+
+    /// Document freshly loaded from `path`: clean, empty history.
+    pub fn opened(score: Score, path: PathBuf) -> Self {
+        Document {
+            path: Some(path),
+            ..Document::new(score)
+        }
+    }
+
+    // ----- state ---------------------------------------------------------
+
+    pub fn caret(&self) -> Caret {
+        self.caret
+    }
+
+    pub fn anchor(&self) -> Option<Caret> {
+        self.anchor
+    }
+
+    pub fn selection(&self) -> Option<SelectionRange> {
+        let anchor = self.anchor?;
+        cursor::selection_range(&self.score, &anchor, &self.caret)
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.revision != self.saved_revision
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.history.can_undo()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.history.can_redo()
+    }
+
+    /// Display name: file name, else score title, else "Untitled".
+    pub fn display_name(&self) -> String {
+        if let Some(name) = self.path.as_ref().and_then(|p| p.file_stem()) {
+            return name.to_string_lossy().into_owned();
+        }
+        if !self.score.metadata.title.trim().is_empty() {
+            return self.score.metadata.title.clone();
+        }
+        "Untitled".to_string()
+    }
+
+    /// Records that the current state is what is on disk at `path`.
+    pub fn mark_saved(&mut self, path: PathBuf) {
+        self.path = Some(path);
+        self.saved_revision = self.revision;
+        self.history.seal();
+    }
+
+    /// Journal entries produced since the last call.
+    pub fn take_pending(&mut self) -> Vec<JournalEntry> {
+        std::mem::take(&mut self.pending)
+    }
+
+    // ----- core plumbing -------------------------------------------------
+
+    fn commit(
+        &mut self,
+        kind: TxKind,
+        ops: Vec<Op>,
+        caret_after: Caret,
+        time_ms: u64,
+        keep_selection: bool,
+    ) -> Result<(), EditError> {
+        let anchor = self.anchor;
+        if ops.is_empty() {
+            self.set_caret(caret_after, false);
+            return Ok(());
+        }
+        let caret_before = self.caret;
+        let merge = self.history.would_merge(kind, &caret_before, time_ms);
+        let caret_after =
+            self.apply_commit(kind, ops.clone(), caret_before, caret_after, time_ms, merge)?;
+        self.pending.push(JournalEntry::Commit {
+            kind,
+            ops,
+            caret_before,
+            caret_after,
+            time_ms,
+            merge,
+        });
+        if keep_selection {
+            self.anchor = anchor.map(|a| cursor::clamp(&self.score, a));
+        }
+        Ok(())
+    }
+
+    fn apply_commit(
+        &mut self,
+        kind: TxKind,
+        ops: Vec<Op>,
+        caret_before: Caret,
+        caret_after: Caret,
+        time_ms: u64,
+        merge: bool,
+    ) -> Result<Caret, EditError> {
+        let inverse = apply_all(&mut self.score, &ops)?;
+        let caret_after = cursor::clamp(&self.score, caret_after);
+        self.history.push(
+            Transaction {
+                kind,
+                forward: ops,
+                inverse,
+                caret_before,
+                caret_after,
+                time_ms,
+            },
+            merge,
+        );
+        self.caret = caret_after;
+        self.anchor = None;
+        self.revision += 1;
+        Ok(caret_after)
+    }
+
+    fn apply_undo(&mut self) -> Result<bool, EditError> {
+        let Some(tx) = self.history.take_undo() else {
+            return Ok(false);
+        };
+        if let Err(e) = apply_all(&mut self.score, &tx.inverse) {
+            self.history.push_undo_keep_redo(tx);
+            return Err(e.into());
+        }
+        self.caret = cursor::clamp(&self.score, tx.caret_before);
+        self.anchor = None;
+        self.revision += 1;
+        self.history.push_redo(tx);
+        Ok(true)
+    }
+
+    fn apply_redo(&mut self) -> Result<bool, EditError> {
+        let Some(tx) = self.history.take_redo() else {
+            return Ok(false);
+        };
+        if let Err(e) = apply_all(&mut self.score, &tx.forward) {
+            self.history.push_redo(tx);
+            return Err(e.into());
+        }
+        self.caret = cursor::clamp(&self.score, tx.caret_after);
+        self.anchor = None;
+        self.revision += 1;
+        self.history.push_undo_keep_redo(tx);
+        Ok(true)
+    }
+
+    /// Re-applies a journal entry during crash recovery. Produces no new
+    /// pending entries.
+    pub fn replay(&mut self, entry: &JournalEntry) -> Result<(), EditError> {
+        match entry {
+            JournalEntry::Commit {
+                kind,
+                ops,
+                caret_before,
+                caret_after,
+                time_ms,
+                merge,
+            } => {
+                self.apply_commit(
+                    *kind,
+                    ops.clone(),
+                    *caret_before,
+                    *caret_after,
+                    *time_ms,
+                    *merge,
+                )?;
+            }
+            JournalEntry::Undo => {
+                self.apply_undo()?;
+            }
+            JournalEntry::Redo => {
+                self.apply_redo()?;
+            }
+        }
+        Ok(())
+    }
+
+    // ----- caret & selection ---------------------------------------------
+
+    /// Places the caret. With `extend` the selection grows from the anchor
+    /// (Shift+click / Shift+arrow behaviour).
+    pub fn set_caret(&mut self, caret: Caret, extend: bool) {
+        let caret = cursor::clamp(&self.score, caret);
+        if extend {
+            if self.anchor.is_none() {
+                self.anchor = Some(self.caret);
+            }
+        } else {
+            self.anchor = None;
+        }
+        if caret != self.caret {
+            self.history.seal();
+        }
+        self.caret = caret;
+    }
+
+    pub fn move_caret(&mut self, mv: Move, extend: bool) {
+        // Like a word processor: Left/Right without Shift collapse a
+        // selection to its edge instead of moving.
+        if !extend && matches!(mv, Move::Left | Move::Right) {
+            if let (Some(anchor), Some(_)) = (self.anchor, self.selection()) {
+                let a = cursor::time_of(&self.score, &anchor);
+                let h = cursor::time_of(&self.score, &self.caret);
+                let take_anchor = (mv == Move::Left) == (a < h);
+                let target = if take_anchor { anchor } else { self.caret };
+                self.set_caret(
+                    Caret {
+                        staff: self.caret.staff,
+                        ..target
+                    },
+                    false,
+                );
+                return;
+            }
+        }
+        let next = cursor::moved(&self.score, self.caret, mv);
+        self.set_caret(next, extend);
+    }
+
+    pub fn select_all(&mut self) {
+        let last_staff = self.score.staves.len() - 1;
+        let last_measure = self.score.measures.len() - 1;
+        let voice = self.caret.voice;
+        self.anchor = Some(Caret {
+            staff: 0,
+            measure: 0,
+            voice,
+            index: 0,
+        });
+        let index = cursor::voice_len(&self.score, last_staff, last_measure, voice);
+        self.caret = Caret {
+            staff: last_staff,
+            measure: last_measure,
+            voice,
+            index,
+        };
+        self.history.seal();
+    }
+
+    /// Removal ops for the selection plus the caret position afterwards.
+    fn delete_selection_ops(&self) -> Option<(Vec<Op>, Caret)> {
+        let range = self.selection()?;
+        let mut targets = cursor::events_in_range(&self.score, &range);
+        // Remove back to front so earlier indices stay valid.
+        targets.sort_by_key(|t| std::cmp::Reverse(a_key(t)));
+        let ops = targets
+            .into_iter()
+            .map(|(at, index)| Op::RemoveEvent { at, index })
+            .collect();
+        let staff = range.staff_lo;
+        let caret = Caret {
+            staff,
+            measure: range.start.measure,
+            voice: range.voice,
+            index: cursor::index_at_tick(
+                &self.score,
+                staff,
+                range.start.measure,
+                range.voice,
+                range.start.tick,
+            ),
+        };
+        Some((ops, caret))
+    }
+
+    // ----- entering music ------------------------------------------------
+
+    /// Most recent pitch before the caret in its voice, else the clef's
+    /// middle line.
+    fn reference_pitch(&self, c: Caret) -> Pitch {
+        let mut measure = c.measure;
+        let mut limit = c.index;
+        loop {
+            if let Some(events) = self.score.voice(c.staff, measure, c.voice) {
+                let limit = limit.min(events.len());
+                if let Some(p) = events[..limit]
+                    .iter()
+                    .rev()
+                    .find_map(|e| e.pitches().first())
+                {
+                    return *p;
+                }
+            }
+            if measure == 0 {
+                break;
+            }
+            measure -= 1;
+            limit = usize::MAX;
+        }
+        self.score.staves[c.staff].clef.middle_line()
+    }
+
+    fn insert_event(
+        &mut self,
+        kind: EventKind,
+        duration: Duration,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let (mut ops, caret, tx) = match self.delete_selection_ops() {
+            Some((ops, caret)) => (ops, caret, TxKind::Edit),
+            None => (Vec::new(), self.caret, TxKind::Typing),
+        };
+        let event = Event {
+            id: self.score.alloc_id(),
+            duration,
+            kind,
+        };
+        ops.push(Op::InsertEvent {
+            at: caret.loc(),
+            index: caret.index,
+            event,
+        });
+        let after = Caret {
+            index: caret.index + 1,
+            ..caret
+        };
+        self.commit(tx, ops, after, now_ms, false)
+    }
+
+    /// Types a note (letter key). Octave follows the previous note and the
+    /// accidental follows the key signature.
+    pub fn insert_note(
+        &mut self,
+        step: Step,
+        duration: Duration,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let reference = self.reference_pitch(self.caret);
+        let mut pitch = nearest_pitch(step, reference);
+        pitch.alter = key_alter(self.score.measures[self.caret.measure].key, step);
+        self.insert_event(
+            EventKind::Chord {
+                pitches: vec![pitch],
+            },
+            duration,
+            now_ms,
+        )
+    }
+
+    pub fn insert_rest(&mut self, duration: Duration, now_ms: u64) -> Result<(), EditError> {
+        self.insert_event(EventKind::Rest, duration, now_ms)
+    }
+
+    /// Natural pitch adjusted by the key signature of `measure`.
+    fn pitch_in_key(&self, measure: usize, step: Step, octave: i8) -> Pitch {
+        Pitch {
+            step,
+            octave: octave.clamp(0, 9),
+            alter: key_alter(self.score.measures[measure].key, step),
+        }
+    }
+
+    /// Mouse entry: places a note with an explicit pitch at `at` (an
+    /// insertion point). The key signature decides the accidental.
+    pub fn place_note(
+        &mut self,
+        at: Caret,
+        step: Step,
+        octave: i8,
+        duration: Duration,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        self.set_caret(at, false);
+        let pitch = self.pitch_in_key(self.caret.measure, step, octave);
+        self.insert_event(
+            EventKind::Chord {
+                pitches: vec![pitch],
+            },
+            duration,
+            now_ms,
+        )
+    }
+
+    /// Mouse entry: places a rest at `at` (an insertion point).
+    pub fn place_rest(&mut self, at: Caret, duration: Duration, now_ms: u64) -> Result<(), EditError> {
+        self.set_caret(at, false);
+        self.insert_rest(duration, now_ms)
+    }
+
+    /// Mouse entry on an existing event (`at.index` is the event's index):
+    /// adds a pitch to it, turning a rest into a note. The caret ends up
+    /// after the event.
+    pub fn add_pitch(&mut self, at: Caret, step: Step, octave: i8, now_ms: u64) -> Result<(), EditError> {
+        let at = cursor::clamp(&self.score, at);
+        let Some(event) = self
+            .score
+            .voice(at.staff, at.measure, at.voice)
+            .and_then(|v| v.get(at.index))
+            .cloned()
+        else {
+            return Ok(());
+        };
+        let after = Caret {
+            index: at.index + 1,
+            ..at
+        };
+        self.set_caret(after, false);
+        let pitch = self.pitch_in_key(at.measure, step, octave);
+        let mut pitches = event.pitches().to_vec();
+        if pitches.contains(&pitch) {
+            return Ok(());
+        }
+        pitches.push(pitch);
+        pitches.sort_by_key(|p| p.diatonic_index());
+        let op = Op::ReplaceEvent {
+            at: at.loc(),
+            index: at.index,
+            event: Event {
+                kind: EventKind::Chord { pitches },
+                ..event
+            },
+        };
+        self.commit(TxKind::Typing, vec![op], after, now_ms, false)
+    }
+
+    /// Adds a pitch above the top of the chord just before the caret
+    /// (Shift+letter). Turns a rest into a note.
+    pub fn add_to_chord(&mut self, step: Step, now_ms: u64) -> Result<(), EditError> {
+        let c = self.caret;
+        if c.index == 0 {
+            return Ok(());
+        }
+        let Some(event) = self
+            .score
+            .voice(c.staff, c.measure, c.voice)
+            .and_then(|v| v.get(c.index - 1))
+            .cloned()
+        else {
+            return Ok(());
+        };
+        let mut pitches = event.pitches().to_vec();
+        let top = pitches.iter().max_by_key(|p| p.diatonic_index()).copied();
+        let mut pitch = match top {
+            Some(top) => {
+                let mut p = nearest_pitch(step, top);
+                if p.diatonic_index() <= top.diatonic_index() {
+                    p = p.shifted(7);
+                }
+                p
+            }
+            None => nearest_pitch(step, self.reference_pitch(c)),
+        };
+        pitch.alter = key_alter(self.score.measures[c.measure].key, step);
+        if pitches.contains(&pitch) {
+            return Ok(());
+        }
+        pitches.push(pitch);
+        pitches.sort_by_key(|p| p.diatonic_index());
+        let replaced = Event {
+            kind: EventKind::Chord { pitches },
+            ..event
+        };
+        let op = Op::ReplaceEvent {
+            at: c.loc(),
+            index: c.index - 1,
+            event: replaced,
+        };
+        self.commit(TxKind::Typing, vec![op], c, now_ms, false)
+    }
+
+    // ----- deleting ------------------------------------------------------
+
+    /// Backspace.
+    pub fn delete_backward(&mut self, now_ms: u64) -> Result<(), EditError> {
+        if let Some((ops, caret)) = self.delete_selection_ops() {
+            return self.commit(TxKind::Edit, ops, caret, now_ms, false);
+        }
+        let c = self.caret;
+        if c.index == 0 {
+            self.move_caret(Move::Left, false);
+            return Ok(());
+        }
+        let op = Op::RemoveEvent {
+            at: c.loc(),
+            index: c.index - 1,
+        };
+        self.commit(
+            TxKind::Deleting,
+            vec![op],
+            Caret {
+                index: c.index - 1,
+                ..c
+            },
+            now_ms,
+            false,
+        )
+    }
+
+    /// Delete key.
+    pub fn delete_forward(&mut self, now_ms: u64) -> Result<(), EditError> {
+        if let Some((ops, caret)) = self.delete_selection_ops() {
+            return self.commit(TxKind::Edit, ops, caret, now_ms, false);
+        }
+        let c = self.caret;
+        if c.index >= cursor::voice_len(&self.score, c.staff, c.measure, c.voice) {
+            return Ok(());
+        }
+        let op = Op::RemoveEvent {
+            at: c.loc(),
+            index: c.index,
+        };
+        self.commit(TxKind::Deleting, vec![op], c, now_ms, false)
+    }
+
+    // ----- changing pitches ----------------------------------------------
+
+    /// Events affected by pitch commands: the selection, or the event
+    /// just before the caret.
+    fn pitch_targets(&self) -> Vec<(crate::ops::VoiceLoc, usize)> {
+        if let Some(range) = self.selection() {
+            return cursor::events_in_range(&self.score, &range);
+        }
+        let c = self.caret;
+        if c.index > 0 {
+            vec![(c.loc(), c.index - 1)]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn repitch(&mut self, now_ms: u64, f: impl Fn(Pitch) -> Pitch) -> Result<(), EditError> {
+        let ops: Vec<Op> = self
+            .pitch_targets()
+            .into_iter()
+            .filter_map(|(at, index)| {
+                let event = self
+                    .score
+                    .voice(at.staff, at.measure, at.voice)?
+                    .get(index)?;
+                let EventKind::Chord { pitches } = &event.kind else {
+                    return None;
+                };
+                let pitches = pitches.iter().map(|p| f(*p)).collect();
+                Some(Op::ReplaceEvent {
+                    at,
+                    index,
+                    event: Event {
+                        kind: EventKind::Chord { pitches },
+                        ..event.clone()
+                    },
+                })
+            })
+            .collect();
+        let caret = self.caret;
+        self.commit(TxKind::Repitch, ops, caret, now_ms, true)
+    }
+
+    /// Moves notes up/down by diatonic steps (Alt+Up/Down; 7 = octave).
+    pub fn transpose(&mut self, steps: i32, now_ms: u64) -> Result<(), EditError> {
+        self.repitch(now_ms, |p| p.shifted(steps))
+    }
+
+    /// Raises (+1) or lowers (-1) the accidental, within double sharp/flat.
+    pub fn change_accidental(&mut self, delta: i8, now_ms: u64) -> Result<(), EditError> {
+        self.repitch(now_ms, |p| Pitch {
+            alter: (p.alter + delta).clamp(-2, 2),
+            ..p
+        })
+    }
+
+    /// Changes the rhythmic value of the selection / previous event.
+    pub fn set_duration(&mut self, duration: Duration, now_ms: u64) -> Result<(), EditError> {
+        let ops: Vec<Op> = self
+            .pitch_targets()
+            .into_iter()
+            .filter_map(|(at, index)| {
+                let event = self
+                    .score
+                    .voice(at.staff, at.measure, at.voice)?
+                    .get(index)?;
+                (event.duration != duration).then(|| Op::ReplaceEvent {
+                    at,
+                    index,
+                    event: Event {
+                        duration,
+                        ..event.clone()
+                    },
+                })
+            })
+            .collect();
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, true)
+    }
+
+    // ----- clipboard -----------------------------------------------------
+
+    pub fn copy(&self) -> Option<Clipboard> {
+        let range = self.selection()?;
+        let mut staves = vec![Vec::new(); range.staff_hi - range.staff_lo + 1];
+        for (at, index) in cursor::events_in_range(&self.score, &range) {
+            if let Some(e) = self
+                .score
+                .voice(at.staff, at.measure, at.voice)
+                .and_then(|v| v.get(index))
+            {
+                staves[at.staff - range.staff_lo].push(e.clone());
+            }
+        }
+        Some(Clipboard { staves })
+    }
+
+    pub fn cut(&mut self, now_ms: u64) -> Result<Option<Clipboard>, EditError> {
+        let Some(clip) = self.copy() else {
+            return Ok(None);
+        };
+        if let Some((ops, caret)) = self.delete_selection_ops() {
+            self.commit(TxKind::Edit, ops, caret, now_ms, false)?;
+        }
+        Ok(Some(clip))
+    }
+
+    /// Inserts copied music at the caret (replacing the selection). Each
+    /// copied staff goes to the staff below the previous one.
+    pub fn paste(&mut self, clip: &Clipboard, now_ms: u64) -> Result<(), EditError> {
+        if clip.is_empty() {
+            return Ok(());
+        }
+        let (mut ops, caret) = self
+            .delete_selection_ops()
+            .unwrap_or_else(|| (Vec::new(), self.caret));
+        let tick = cursor::tick_at(
+            &self.score,
+            caret.staff,
+            caret.measure,
+            caret.voice,
+            caret.index,
+        );
+        let mut first_len = 0;
+        for (k, events) in clip.staves.iter().enumerate() {
+            let staff = caret.staff + k;
+            if staff >= self.score.staves.len() {
+                break;
+            }
+            let start = if k == 0 {
+                caret.index
+            } else {
+                cursor::index_at_tick(&self.score, staff, caret.measure, caret.voice, tick)
+            };
+            let at = crate::ops::VoiceLoc {
+                staff,
+                ..caret.loc()
+            };
+            for (i, e) in events.iter().enumerate() {
+                let event = Event {
+                    id: self.score.alloc_id(),
+                    ..e.clone()
+                };
+                ops.push(Op::InsertEvent {
+                    at,
+                    index: start + i,
+                    event,
+                });
+            }
+            if k == 0 {
+                first_len = events.len();
+            }
+        }
+        let after = Caret {
+            index: caret.index + first_len,
+            ..caret
+        };
+        self.commit(TxKind::Edit, ops, after, now_ms, false)
+    }
+
+    // ----- structure -----------------------------------------------------
+
+    /// Adds an empty measure at `index` (copying the attributes in force).
+    pub fn insert_measure(&mut self, index: usize, now_ms: u64) -> Result<(), EditError> {
+        let index = index.min(self.score.measures.len());
+        let attrs = self.score.measures[index.saturating_sub(1).min(self.score.measures.len() - 1)];
+        let op = Op::InsertMeasure {
+            index,
+            attrs,
+            contents: Vec::new(),
+        };
+        let caret = self.caret;
+        self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
+    }
+
+    pub fn append_measure(&mut self, now_ms: u64) -> Result<(), EditError> {
+        self.insert_measure(self.score.measures.len(), now_ms)
+    }
+
+    pub fn remove_measure(&mut self, index: usize, now_ms: u64) -> Result<(), EditError> {
+        let caret = self.caret;
+        self.commit(
+            TxKind::Edit,
+            vec![Op::RemoveMeasure { index }],
+            caret,
+            now_ms,
+            false,
+        )
+    }
+
+    pub fn add_staff(
+        &mut self,
+        name: impl Into<String>,
+        clef: Clef,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let staff = self.score.blank_staff(name, clef);
+        let op = Op::InsertStaff {
+            index: self.score.staves.len(),
+            staff,
+        };
+        let caret = self.caret;
+        self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
+    }
+
+    pub fn remove_staff(&mut self, index: usize, now_ms: u64) -> Result<(), EditError> {
+        let caret = self.caret;
+        self.commit(
+            TxKind::Edit,
+            vec![Op::RemoveStaff { index }],
+            caret,
+            now_ms,
+            false,
+        )
+    }
+
+    pub fn set_clef(&mut self, staff: usize, clef: Clef, now_ms: u64) -> Result<(), EditError> {
+        let caret = self.caret;
+        self.commit(
+            TxKind::Edit,
+            vec![Op::SetStaffClef { staff, clef }],
+            caret,
+            now_ms,
+            false,
+        )
+    }
+
+    pub fn set_staff_name(
+        &mut self,
+        staff: usize,
+        name: String,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let caret = self.caret;
+        self.commit(
+            TxKind::Edit,
+            vec![Op::SetStaffName { staff, name }],
+            caret,
+            now_ms,
+            false,
+        )
+    }
+
+    /// Changes the time signature from the caret's measure up to the next
+    /// existing change.
+    pub fn set_time_signature(
+        &mut self,
+        time: TimeSignature,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        if !time.is_valid() {
+            return Err(EditError::InvalidTime);
+        }
+        let from = self.caret.measure;
+        let old = self.score.measures[from].time;
+        let ops = self.score.measures[from..]
+            .iter()
+            .enumerate()
+            .take_while(|(_, a)| a.time == old)
+            .map(|(i, a)| Op::SetMeasureAttrs {
+                index: from + i,
+                attrs: crate::model::MeasureAttrs { time, ..*a },
+            })
+            .collect();
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
+    }
+
+    /// Changes the key signature from the caret's measure up to the next
+    /// existing change.
+    pub fn set_key_signature(&mut self, key: KeySignature, now_ms: u64) -> Result<(), EditError> {
+        let from = self.caret.measure;
+        let old = self.score.measures[from].key;
+        let ops = self.score.measures[from..]
+            .iter()
+            .enumerate()
+            .take_while(|(_, a)| a.key == old)
+            .map(|(i, a)| Op::SetMeasureAttrs {
+                index: from + i,
+                attrs: crate::model::MeasureAttrs { key, ..*a },
+            })
+            .collect();
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
+    }
+
+    pub fn set_metadata(&mut self, metadata: Metadata, now_ms: u64) -> Result<(), EditError> {
+        if metadata == self.score.metadata {
+            return Ok(());
+        }
+        let caret = self.caret;
+        self.commit(
+            TxKind::Edit,
+            vec![Op::SetMetadata { metadata }],
+            caret,
+            now_ms,
+            false,
+        )
+    }
+
+    // ----- undo / redo ---------------------------------------------------
+
+    pub fn undo(&mut self) -> Result<bool, EditError> {
+        let done = self.apply_undo()?;
+        if done {
+            self.pending.push(JournalEntry::Undo);
+        }
+        Ok(done)
+    }
+
+    pub fn redo(&mut self) -> Result<bool, EditError> {
+        let done = self.apply_redo()?;
+        if done {
+            self.pending.push(JournalEntry::Redo);
+        }
+        Ok(done)
+    }
+}
+
+fn a_key(t: &(crate::ops::VoiceLoc, usize)) -> (usize, usize, usize, usize) {
+    (t.0.staff, t.0.measure, t.0.voice, t.1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{DurationBase, Step::*};
+
+    const Q: Duration = Duration {
+        base: DurationBase::Quarter,
+        dots: 0,
+    };
+
+    fn steps(doc: &Document, staff: usize, measure: usize) -> Vec<Option<Step>> {
+        doc.score
+            .voice(staff, measure, 0)
+            .unwrap()
+            .iter()
+            .map(|e| e.pitches().first().map(|p| p.step))
+            .collect()
+    }
+
+    fn at(staff: usize, measure: usize, index: usize) -> Caret {
+        Caret {
+            staff,
+            measure,
+            voice: 0,
+            index,
+        }
+    }
+
+    #[test]
+    fn mouse_entry_places_notes_rests_and_chords() {
+        let mut doc = Document::new(Score::new("t", 3));
+        doc.set_key_signature(KeySignature { fifths: 2 }, 0).unwrap();
+        // Click in measure 2, on the C5 space: C is sharp in D major.
+        doc.place_note(at(0, 1, 0), C, 5, Q, 10_000).unwrap();
+        doc.place_note(at(0, 1, 1), A, 4, Q, 10_100).unwrap();
+        doc.place_rest(at(0, 1, 2), Q, 10_200).unwrap();
+        let v = doc.score.voice(0, 1, 0).unwrap();
+        assert_eq!(v[0].pitches(), &[Pitch { step: C, alter: 1, octave: 5 }]);
+        assert_eq!(v[1].pitches(), &[Pitch::new(A, 4)]);
+        assert!(v[2].is_rest());
+        assert_eq!(doc.caret(), at(0, 1, 3));
+
+        // Clicking on the A adds a third below it; clicking on the rest
+        // turns it into a note.
+        doc.add_pitch(at(0, 1, 1), F, 4, 10_300).unwrap();
+        doc.add_pitch(at(0, 1, 2), E, 4, 10_400).unwrap();
+        let v = doc.score.voice(0, 1, 0).unwrap();
+        assert_eq!(
+            v[1].pitches(),
+            &[Pitch { step: F, alter: 1, octave: 4 }, Pitch::new(A, 4)]
+        );
+        assert_eq!(v[2].pitches(), &[Pitch::new(E, 4)]);
+        assert_eq!(doc.caret(), at(0, 1, 3));
+        // Same pitch twice is ignored.
+        doc.add_pitch(at(0, 1, 2), E, 4, 10_500).unwrap();
+        assert_eq!(doc.score.voice(0, 1, 0).unwrap()[2].pitches().len(), 1);
+
+        // Each chord edit was a click elsewhere, so each is its own step;
+        // the three placed events before them are one step.
+        doc.undo().unwrap();
+        doc.undo().unwrap();
+        let v = doc.score.voice(0, 1, 0).unwrap();
+        assert_eq!(v[1].pitches().len(), 1);
+        assert!(v[2].is_rest());
+        doc.undo().unwrap();
+        assert!(doc.score.voice(0, 1, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn mouse_entry_groups_consecutive_clicks() {
+        let mut doc = Document::new(Score::new("t", 2));
+        doc.place_note(at(0, 0, 0), G, 4, Q, 0).unwrap();
+        doc.place_note(at(0, 0, 1), A, 4, Q, 300).unwrap();
+        doc.place_note(at(0, 0, 2), B, 4, Q, 600).unwrap();
+        // Jump to another measure: new undo step.
+        doc.place_note(at(0, 1, 0), C, 5, Q, 900).unwrap();
+        doc.undo().unwrap();
+        assert_eq!(doc.score.voice(0, 0, 0).unwrap().len(), 3);
+        assert!(doc.score.voice(0, 1, 0).unwrap().is_empty());
+        doc.undo().unwrap();
+        assert!(doc.score.voice(0, 0, 0).unwrap().is_empty());
+    }
+
+    fn type_notes(doc: &mut Document, notes: &[Step], start_ms: u64) {
+        for (i, s) in notes.iter().enumerate() {
+            doc.insert_note(*s, Q, start_ms + i as u64 * 100).unwrap();
+        }
+    }
+
+    #[test]
+    fn typing_is_one_undo_step() {
+        let mut doc = Document::new(Score::new("t", 2));
+        type_notes(&mut doc, &[C, D, E], 0);
+        assert_eq!(steps(&doc, 0, 0), vec![Some(C), Some(D), Some(E)]);
+        assert_eq!(doc.caret().index, 3);
+        assert!(doc.undo().unwrap());
+        assert!(steps(&doc, 0, 0).is_empty());
+        assert_eq!(doc.caret().index, 0);
+        assert!(!doc.can_undo());
+        assert!(doc.redo().unwrap());
+        assert_eq!(steps(&doc, 0, 0).len(), 3);
+        assert_eq!(doc.caret().index, 3);
+    }
+
+    #[test]
+    fn pause_or_caret_move_starts_new_step() {
+        let mut doc = Document::new(Score::new("t", 2));
+        type_notes(&mut doc, &[C, D], 0);
+        // Long pause.
+        doc.insert_note(E, Q, 10_000).unwrap();
+        // Caret moves away and back.
+        doc.move_caret(Move::Left, false);
+        doc.move_caret(Move::Right, false);
+        doc.insert_note(F, Q, 10_100).unwrap();
+        doc.undo().unwrap();
+        assert_eq!(steps(&doc, 0, 0), vec![Some(C), Some(D), Some(E)]);
+        doc.undo().unwrap();
+        assert_eq!(steps(&doc, 0, 0), vec![Some(C), Some(D)]);
+        doc.undo().unwrap();
+        assert!(steps(&doc, 0, 0).is_empty());
+    }
+
+    #[test]
+    fn new_edit_clears_redo() {
+        let mut doc = Document::new(Score::new("t", 1));
+        type_notes(&mut doc, &[C], 0);
+        doc.undo().unwrap();
+        type_notes(&mut doc, &[G], 5_000);
+        assert!(!doc.can_redo());
+    }
+
+    #[test]
+    fn octave_follows_previous_note_and_key() {
+        let mut doc = Document::new(Score::new("t", 1));
+        doc.set_key_signature(KeySignature { fifths: 1 }, 0)
+            .unwrap();
+        type_notes(&mut doc, &[C, B, F], 10_000);
+        let pitches: Vec<Pitch> = doc
+            .score
+            .voice(0, 0, 0)
+            .unwrap()
+            .iter()
+            .map(|e| e.pitches()[0])
+            .collect();
+        // C closest to B4 (treble middle line) is C5; B closest to C5 is B4;
+        // F closest to B4 is F4 (3 steps down vs 4 up) and is sharp in G major.
+        assert_eq!(pitches[0], Pitch::new(C, 5));
+        assert_eq!(pitches[1], Pitch::new(B, 4));
+        assert_eq!(
+            pitches[2],
+            Pitch {
+                step: F,
+                alter: 1,
+                octave: 4
+            }
+        );
+        // Repeating the same letter stays on the same note.
+        assert_eq!(nearest_pitch(C, Pitch::new(C, 4)), Pitch::new(C, 4));
+    }
+
+    #[test]
+    fn backspace_and_delete() {
+        let mut doc = Document::new(Score::new("t", 1));
+        type_notes(&mut doc, &[C, D, E, F], 0);
+        doc.delete_backward(5_000).unwrap();
+        doc.delete_backward(5_100).unwrap();
+        assert_eq!(steps(&doc, 0, 0), vec![Some(C), Some(D)]);
+        doc.move_caret(Move::MeasureStart, false);
+        doc.delete_forward(6_000).unwrap();
+        assert_eq!(steps(&doc, 0, 0), vec![Some(D)]);
+        // The two backspaces were one step.
+        doc.undo().unwrap();
+        doc.undo().unwrap();
+        assert_eq!(steps(&doc, 0, 0).len(), 4);
+    }
+
+    #[test]
+    fn shift_selection_delete_and_replace_by_typing() {
+        let mut doc = Document::new(Score::new("t", 1));
+        type_notes(&mut doc, &[C, D, E, F], 0);
+        doc.move_caret(Move::MeasureStart, false);
+        doc.move_caret(Move::Right, false);
+        doc.move_caret(Move::Right, true);
+        doc.move_caret(Move::Right, true);
+        assert!(doc.selection().is_some());
+        doc.insert_note(A, Q, 9_000).unwrap();
+        assert_eq!(steps(&doc, 0, 0), vec![Some(C), Some(A), Some(F)]);
+        doc.undo().unwrap();
+        assert_eq!(steps(&doc, 0, 0), vec![Some(C), Some(D), Some(E), Some(F)]);
+    }
+
+    #[test]
+    fn multi_staff_selection_copy_paste() {
+        let mut doc = Document::new(Score::new("t", 2));
+        doc.add_staff("Bass", Clef::Bass, 0).unwrap();
+        type_notes(&mut doc, &[C, D], 1_000);
+        doc.move_caret(Move::Down, false);
+        type_notes(&mut doc, &[E, F], 5_000);
+        // Select both staves, first measure.
+        doc.set_caret(
+            Caret {
+                staff: 0,
+                measure: 0,
+                voice: 0,
+                index: 0,
+            },
+            false,
+        );
+        doc.set_caret(
+            Caret {
+                staff: 1,
+                measure: 0,
+                voice: 0,
+                index: 2,
+            },
+            true,
+        );
+        let clip = doc.copy().unwrap();
+        assert_eq!(clip.staves.len(), 2);
+        assert_eq!(clip.staves[0].len(), 2);
+        doc.set_caret(
+            Caret {
+                staff: 0,
+                measure: 1,
+                voice: 0,
+                index: 0,
+            },
+            false,
+        );
+        doc.paste(&clip, 9_000).unwrap();
+        assert_eq!(steps(&doc, 0, 1), vec![Some(C), Some(D)]);
+        assert_eq!(steps(&doc, 1, 1), vec![Some(E), Some(F)]);
+        // Pasted events get fresh ids.
+        assert_ne!(
+            doc.score.voice(0, 1, 0).unwrap()[0].id,
+            doc.score.voice(0, 0, 0).unwrap()[0].id
+        );
+        // Cut removes from both staves.
+        doc.set_caret(
+            Caret {
+                staff: 0,
+                measure: 0,
+                voice: 0,
+                index: 0,
+            },
+            false,
+        );
+        doc.set_caret(
+            Caret {
+                staff: 1,
+                measure: 0,
+                voice: 0,
+                index: 2,
+            },
+            true,
+        );
+        doc.cut(10_000).unwrap();
+        assert!(steps(&doc, 0, 0).is_empty());
+        assert!(steps(&doc, 1, 0).is_empty());
+    }
+
+    #[test]
+    fn transpose_keeps_selection_and_groups() {
+        let mut doc = Document::new(Score::new("t", 1));
+        type_notes(&mut doc, &[C, E], 0);
+        doc.select_all();
+        doc.transpose(1, 5_000).unwrap();
+        doc.transpose(1, 5_100).unwrap();
+        assert!(doc.selection().is_some());
+        assert_eq!(steps(&doc, 0, 0), vec![Some(E), Some(G)]);
+        doc.undo().unwrap();
+        assert_eq!(steps(&doc, 0, 0), vec![Some(C), Some(E)]);
+    }
+
+    #[test]
+    fn time_signature_change_runs_until_next_change() {
+        let mut doc = Document::new(Score::new("t", 4));
+        doc.set_caret(
+            Caret {
+                measure: 2,
+                ..Caret::default()
+            },
+            false,
+        );
+        doc.set_time_signature(
+            TimeSignature {
+                beats: 3,
+                beat_type: 4,
+            },
+            0,
+        )
+        .unwrap();
+        doc.set_caret(
+            Caret {
+                measure: 1,
+                ..Caret::default()
+            },
+            false,
+        );
+        doc.set_time_signature(
+            TimeSignature {
+                beats: 6,
+                beat_type: 8,
+            },
+            0,
+        )
+        .unwrap();
+        let beats: Vec<u8> = doc.score.measures.iter().map(|m| m.time.beats).collect();
+        assert_eq!(beats, vec![4, 6, 3, 3]);
+    }
+
+    #[test]
+    fn replay_reproduces_state_exactly() {
+        let start = Document::new(Score::new("t", 2));
+        let mut live = start.clone();
+        live.add_staff("Bass", Clef::Bass, 0).unwrap();
+        type_notes(&mut live, &[C, D, E], 100);
+        live.add_to_chord(G, 400).unwrap();
+        live.delete_backward(5_000).unwrap();
+        live.undo().unwrap();
+        live.redo().unwrap();
+        live.undo().unwrap();
+        live.select_all();
+        live.transpose(2, 9_000).unwrap();
+        let entries = live.take_pending();
+
+        let mut replayed = start;
+        for e in &entries {
+            replayed.replay(e).unwrap();
+        }
+        assert_eq!(replayed.score, live.score);
+        assert_eq!(replayed.history, live.history);
+        assert_eq!(replayed.revision(), live.revision());
+    }
+
+    #[test]
+    fn dirty_tracking() {
+        let mut doc = Document::new(Score::new("t", 1));
+        assert!(!doc.is_dirty());
+        type_notes(&mut doc, &[C], 0);
+        assert!(doc.is_dirty());
+        doc.mark_saved("x.dacapo".into());
+        assert!(!doc.is_dirty());
+        assert_eq!(doc.display_name(), "x");
+    }
+}
