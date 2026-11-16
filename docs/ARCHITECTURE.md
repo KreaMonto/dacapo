@@ -1,0 +1,143 @@
+# Da Capo Architecture
+
+This document describes the technical design of Da Capo and the reasons behind its key decisions.
+
+## Overview
+
+```
+┌──────────────────────────────┐
+│  Web UI  (src/)              │  draws SVG, turns keys/clicks into Actions
+└──────────────┬───────────────┘
+               │ invoke("edit", { id, action })   ▲ DocView (score, caret, selection…)
+┌──────────────▼───────────────┐
+│  Tauri shell  (src-tauri/)   │  owns the open Sessions, dialogs, window events
+└──────────────┬───────────────┘
+┌──────────────▼───────────────┐
+│  dacapo-core  (crates/)      │  model · ops · cursor · history · document
+│                              │  file (.dacapo) · recovery (journal) · session
+└──────────────────────────────┘
+```
+
+**Rust is the single source of truth.** The frontend holds no musical state of its own. It sends an `Action`, receives the complete view of the document, and redraws. A crash or reload of the web view therefore cannot lose work, and everything that needs protecting lives in one place.
+
+`dacapo-core` has no UI or Tauri dependency, so it can be tested with plain `cargo test`. It could also power other front ends later, such as a CLI converter or a WebAssembly build.
+
+## Musical model (`model.rs`)
+
+A `Score` is a grid:
+
+- **Columns**: global measures (`Vec<MeasureAttrs>`), each with its time and key signature.
+- **Rows**: staves (`Vec<Staff>`), each with a clef and one `StaffMeasure` per column.
+- **Cells**: a `StaffMeasure` holds `MAX_VOICES` (4) independent voices.
+- **Voices**: an ordered `Vec<Event>`. An `Event` is a rest or a chord, and a single note is a one-pitch chord.
+
+Time is measured in ticks (960 per quarter note). Pitches use scientific notation (C4 = middle C) with a diatonic step, an alteration and an octave, so the spelling (F♯ vs G♭) is preserved.
+
+Events and staves carry stable numeric ids, which the UI uses for hit-testing and future features such as ties and slurs. `Score::next_id` is a high-water mark: an id is never reused.
+
+**Measure model vs. flowing text.** Notes live inside measures, as in MusicXML and most notation programs. Inserting a note does not push later notes into the next measure yet. Overfull measures are allowed while editing, highlighted in red, and reported by `Score::validate`. Automatic reflow (spilling over the barline with ties) is planned.
+
+## Edit operations (`ops.rs`)
+
+Every change to a score is an `Op`: insert/remove/replace event, insert/remove measure, set measure attributes, insert/remove staff, set clef, set name, set metadata.
+
+- `Op::apply` mutates the score and **returns the exact inverse op**. This is the foundation of undo/redo.
+- `apply_all` applies a batch atomically. If one op fails, the ones already applied are rolled back.
+- Ops are serializable and **deterministic**. Ids are allocated before an op is built and stored inside it, so replaying the same ops always produces the same score.
+
+## Caret and selection (`cursor.rs`)
+
+The editor behaves like a word processor:
+
+- The **caret** sits between events of one voice (`staff, measure, voice, index`), the way a text cursor sits between characters.
+- A **selection** is the region between an *anchor* and the caret (Shift+arrows, Shift+click, mouse drag). Across several staves it is interpreted by musical time, so dragging over a piano system selects the same beats in both hands, as Encore's selection did.
+- Typing with a selection replaces it, and Backspace or Delete removes it.
+
+## Undo/redo (`history.rs`)
+
+Each user action becomes a `Transaction` containing forward ops, inverse ops, the caret before and after, and a timestamp. Consecutive actions of the same kind are **merged into one undo step**, as in Word:
+
+- A burst of typed notes is one step. So is a run of Backspaces, or repeated transpositions.
+- A burst ends when the caret is moved by the user, the action kind changes, the user pauses for more than 2 s, or the document is saved.
+- Undo restores the caret position as well.
+
+The history is capped at 1,000 steps.
+
+## Documents and sessions
+
+- `Document` (`document.rs`) is an open score plus its caret, selection, history, revision counter and file path. It implements every editing command: `insert_note`, `delete_backward`, `paste`, `transpose`, `set_time_signature`, and so on. Each command records `JournalEntry`s.
+- `Session` (`session.rs`) wraps a document with its recovery writer. The Tauri layer keeps one session per open tab, so **several documents can be open at once**, each protected independently.
+
+## Saving files (`file.rs`)
+
+`.dacapo` files are pretty-printed JSON:
+
+```json
+{ "format": "dacapo", "format_version": 1, "score": { … } }
+```
+
+Saving is **atomic**:
+
+1. Copy the existing file to `name.dacapo.bak`.
+2. Write the new content to `name.dacapo.tmp`.
+3. Flush it to the physical disk (`fsync`).
+4. Rename it over `name.dacapo`.
+
+A crash at any moment leaves either the complete old file or the complete new one, never a half-written file. Loading checks the format marker, refuses files from newer versions, and validates the structure.
+
+## Crash recovery (`recovery.rs`)
+
+Goal: **if the computer loses power, at most about half a second of work is lost.** This applies to untitled documents too.
+
+Each open document has a folder under the app's local data directory (on Windows, `%LOCALAPPDATA%\org.dacapo.editor\recovery\<session-uuid>\`):
+
+| File | Content |
+|---|---|
+| `lock` | Exclusively locked by the running process (OS file lock). |
+| `manifest.json` | Human-readable: name, original path, timestamps. |
+| `snapshot.bin` | Full document state (including undo history) at journal sequence *N*. |
+| `journal.bin` | Every change after *N*, one record each. |
+
+**Binary records with checksums.** Each journal record is `[length u32][CRC32 u32][payload]`, where the payload is a `JournalRecord { seq, entry }` encoded with postcard. The snapshot uses the same framing behind a magic header.
+
+**While editing:**
+
+1. Every change is appended to the journal by a **background thread**, so the UI never waits for the disk.
+2. The thread forces the journal to the physical disk at least every **500 ms** (`DEFAULT_SYNC_INTERVAL`).
+3. Every 200 changes or 60 seconds, a new snapshot is written atomically and the journal is truncated. Records carry sequence numbers, so a crash between those two steps is harmless: records already in the snapshot are skipped.
+4. Saving writes a fresh snapshot that marks the document clean.
+
+**On start-up**, the app scans the recovery folder. A session whose `lock` can be acquired belongs to a process that is no longer running:
+
+- If it had no unsaved changes, it is deleted silently.
+- Otherwise the user is offered **Restore** or **Discard**. Restoring loads the snapshot and replays the journal. A record torn by a power cut fails its CRC and is ignored together with everything after it.
+
+Because the journal contains full transactions, **the undo history survives the crash too**.
+
+**On normal close**, the session folder is deleted after the user saves or confirms discarding. If the process is killed (for example on logoff), dirty sessions keep their folder, so the work is offered back next time.
+
+## Tauri layer (`src-tauri/`)
+
+Commands: `new_document`, `open_document`, `get_document`, `edit`, `save_document`, `close_document`, `list_documents`, `list_recoverable`, `recover_document`, `discard_recoverable`, `quit`.
+
+`edit` takes a tagged `Action` (for example `{ "type": "insert_note", "step": "C", "duration": { "base": "Quarter", "dots": 0 } }`) and returns a `DocView`. The clipboard lives on the Rust side and is shared between documents.
+
+Closing the window with unsaved documents is intercepted: the frontend asks the user, then calls `quit`.
+
+## Rendering (`src/render.js`)
+
+`render.js` is a pure function from `DocView` to SVG markup plus a layout object used for hit-testing clicks. It:
+
+1. Packs measures into systems.
+2. Justifies them.
+3. Places events proportionally to time, so all staves line up vertically.
+4. Draws clefs, key and time signatures, noteheads, stems, flags, ledger lines, accidentals, dots, rests, the selection and the caret.
+
+Glyphs currently come from the Unicode Musical Symbols block (Segoe UI Symbol on Windows). Moving to the SMuFL font Bravura is planned. `dev/preview.html` renders sample data without Tauri, for working on the renderer in a normal browser.
+
+## Design principles
+
+- **Never lose work**: atomic saves, journaling and recovery are part of the core, not an add-on.
+- **Word-processor ergonomics**: caret, selection and grouped undo.
+- **Deterministic core**: the same ops always give the same result, which makes the core testable and replayable.
+- **Separation**: the model knows nothing about rendering, and the UI knows nothing about persistence.

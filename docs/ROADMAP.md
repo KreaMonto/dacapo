@@ -1,0 +1,75 @@
+# Da Capo Roadmap
+
+This document tracks the development goals and major stages toward a complete open source notation editor.
+
+## Phase 1: Foundation and MVP *(in progress)*
+
+- [x] Musical data model: staves, measures, four voices, notes, chords, rests.
+- [x] Invertible edit operations.
+- [x] Word-processor caret and selection, including multi-staff selection.
+- [x] Undo/redo with Word-style grouping.
+- [x] Several documents open at once, in tabs.
+- [x] `.dacapo` file format with atomic saving and a `.bak` copy.
+- [x] Crash recovery: CRC-checked binary journal, snapshots, recovery on start-up.
+- [x] Basic SVG rendering: clefs, key and time signatures, notes, rests, accidentals, ledger lines.
+- [x] Keyboard note entry and editing shortcuts.
+- [ ] First run on Windows (blocked by Smart App Control on the main development machine; see INSTALLATION.md).
+- [ ] Basic MusicXML export.
+
+## Phase 2: Interactive editing
+
+- [ ] Automatic measure reflow: notes that overflow a measure continue in the next one, tied across the barline.
+- [ ] Ties and slurs.
+- [ ] Beaming (grouping eighths and shorter notes by beat).
+- [ ] Mouse note entry with a tool palette, in the spirit of Encore.
+- [ ] Rectangle (marquee) selection and dragging notes up and down to change pitch.
+- [ ] Note property panel.
+- [ ] Insert vs. overwrite mode (the Insert key, as in a word processor).
+- [ ] Tuplets.
+
+## Phase 3: Export and formats
+
+- [ ] MusicXML import.
+- [ ] PDF export with page layout.
+- [ ] Print.
+- [ ] Recent files list and file association for `.dacapo`.
+
+## Phase 4: Audio and playback
+
+- [ ] Playback with metronome.
+- [ ] Tempo and volume adjustments.
+- [ ] MIDI input (step-time and real-time entry).
+- [ ] Multi-instrument support with instrument names and transposing instruments.
+
+## Phase 5: UX and collaboration
+
+- [ ] SMuFL music font (Bravura) for engraving-quality glyphs.
+- [ ] Light/dark theme switch (currently follows the system).
+- [ ] Customizable keyboard shortcuts.
+- [ ] Localization of the application (English first; Spanish next).
+- [ ] Complete user documentation.
+
+## Planned: version history
+
+Separate from crash recovery. Recovery protects the *current* session. Version history lets the user go back to *earlier* states of a score, for example "how it looked yesterday".
+
+- Keep periodic snapshots of saved documents (for example on every save, thinned out over time), in the user's data folder or next to the file.
+- A "Versions…" panel to browse, compare and restore them.
+- Retention settings (how many versions, for how long).
+- It can reuse the snapshot format and the deterministic op journal already present in the core.
+
+## Future ideas
+
+- Orchestral scores with staff groups, brackets and part extraction.
+- Lyrics and chord symbols.
+- Guitar tablature.
+- Plugins for effects and advanced dynamics.
+- Automatic transposition mode.
+- Harmonic analysis and composition assistance.
+
+## Good first contributions
+
+- Document the Tauri commands with usage examples.
+- Add unit tests for edge cases in `cursor.rs`.
+- Improve glyph placement in `render.js`, using `dev/preview.html`.
+- Add more time-signature and key-signature presets to the toolbar.
