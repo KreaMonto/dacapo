@@ -4,8 +4,10 @@
 //! [`Action`]s and redraws from the [`DocView`] it gets back, so a frontend
 //! crash can never lose work.
 
+mod audio;
+
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use dacapo_core::cursor::{Caret, Move, SelectionRange};
 use dacapo_core::document::{Clipboard, Document};
@@ -24,6 +26,7 @@ use uuid::Uuid;
 struct AppState {
     store: Option<RecoveryStore>,
     inner: Mutex<Inner>,
+    audio: Arc<audio::Engine>,
 }
 
 #[derive(Default)]
@@ -177,6 +180,9 @@ enum Action {
         title: String,
         composer: String,
     },
+    SetTempo {
+        bpm: u16,
+    },
 }
 
 fn start_session(state: &AppState, doc: Document) -> Result<Session, String> {
@@ -246,6 +252,17 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
     let now = now_ms();
     let session = inner.find(&id)?;
     let mut copied: Option<Clipboard> = None;
+    // Entering or re-pitching notes plays them, so you hear what you write.
+    let preview = matches!(
+        action,
+        Action::InsertNote { .. }
+            | Action::AddToChord { .. }
+            | Action::PlaceNote { .. }
+            | Action::AddPitch { .. }
+            | Action::Transpose { .. }
+            | Action::Accidental { .. }
+            | Action::SetAccidental { .. }
+    );
     let result = session.edit(|d| -> Result<(), String> {
         let r = match action {
             Action::InsertNote { step, duration } => d.insert_note(step, duration, now),
@@ -312,14 +329,95 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::SetMetadata { title, composer } => {
                 d.set_metadata(Metadata { title, composer }, now)
             }
+            Action::SetTempo { bpm } => d.set_tempo(bpm, now),
         };
         r.map_err(|e| e.to_string())
     });
+    if result.is_ok() && preview {
+        let d = session.doc();
+        let c = d.caret();
+        if let Some(e) = c
+            .index
+            .checked_sub(1)
+            .and_then(|i| d.score.voice(c.staff, c.measure, c.voice)?.get(i))
+        {
+            let keys: Vec<u8> = e
+                .pitches()
+                .iter()
+                .map(|p| p.midi().clamp(0, 127) as u8)
+                .collect();
+            state.audio.preview(c.staff, &keys);
+        }
+    }
     if let Some(c) = copied {
         inner.clipboard = Some(c);
     }
     result?;
     Ok(view(inner.find(&id)?))
+}
+
+// ----- playback ------------------------------------------------------------
+
+#[tauri::command]
+fn audio_status(state: State<AppState>) -> audio::SoundStatus {
+    state.audio.status()
+}
+
+/// Starts downloading FluidR3_GM (the UI asked the user first).
+#[tauri::command]
+fn download_soundfont(state: State<AppState>) {
+    state.audio.download_soundfont();
+}
+
+/// Plays the document from the caret (or from the beginning).
+#[tauri::command]
+fn play(state: State<AppState>, id: String, from_start: bool) -> Result<(), String> {
+    let mut inner = state.inner.lock().unwrap();
+    let doc = inner.find(&id)?.doc();
+    let timeline = dacapo_core::playback::build(&doc.score);
+    let from = if from_start {
+        0
+    } else {
+        let c = doc.caret();
+        let tick = dacapo_core::cursor::tick_at(&doc.score, c.staff, c.measure, c.voice, c.index);
+        timeline.tick_at(c.measure, tick)
+    };
+    state.audio.play(timeline, from)
+}
+
+/// Pauses and moves the caret to where the music stopped, so pressing play
+/// again continues from there (like a word processor's read-aloud).
+#[tauri::command]
+fn pause(state: State<AppState>, id: String) -> Result<serde_json::Value, String> {
+    let stopped = state.audio.stop();
+    let mut inner = state.inner.lock().unwrap();
+    let session = inner.find(&id)?;
+    session.edit(|d| {
+        let c = d.caret();
+        let measure = stopped.measure.min(d.score.measures.len() - 1);
+        let index =
+            dacapo_core::cursor::index_at_tick(&d.score, c.staff, measure, c.voice, stopped.tick);
+        d.set_caret(
+            Caret {
+                measure,
+                index,
+                ..c
+            },
+            false,
+        );
+    });
+    Ok(view(session))
+}
+
+/// Stops without moving the caret.
+#[tauri::command]
+fn stop_playback(state: State<AppState>) {
+    state.audio.stop();
+}
+
+#[tauri::command]
+fn playback_state(state: State<AppState>) -> audio::PlaybackState {
+    state.audio.state()
 }
 
 #[tauri::command]
@@ -421,9 +519,16 @@ pub fn run() {
                     "[dacapo] could not open the recovery folder; documents are not protected"
                 );
             }
+            // SoundFonts live next to the recovery data, outside the repo.
+            let soundfonts = app
+                .path()
+                .app_local_data_dir()
+                .map(|d| d.join("soundfonts"))
+                .unwrap_or_else(|_| PathBuf::from("soundfonts"));
             app.manage(AppState {
                 store,
                 inner: Mutex::new(Inner::default()),
+                audio: Arc::new(audio::Engine::start(soundfonts)),
             });
             Ok(())
         })
@@ -458,6 +563,12 @@ pub fn run() {
             recover_document,
             discard_recoverable,
             quit,
+            audio_status,
+            download_soundfont,
+            play,
+            pause,
+            stop_playback,
+            playback_state,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Da Capo")
