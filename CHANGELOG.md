@@ -2,6 +2,11 @@
 
 All notable changes to Da Capo are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/). While the version is 0.x, minor versions may include breaking changes.
 
+## [Unreleased]
+
+### Changed
+- The palette now runs from the toolbar down, and the document tabs sit above the page, to the right of the palette.
+
 ## [0.2.2] - 2026-11-16
 
 ### Added
