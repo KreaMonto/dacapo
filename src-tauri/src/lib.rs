@@ -14,7 +14,7 @@ use dacapo_core::cursor::{Caret, Move, SelectionRange};
 use dacapo_core::document::{Clipboard, Document};
 use dacapo_core::file;
 use dacapo_core::model::{
-    Articulation, Clef, Duration, Dynamic, Issue, KeySignature, Metadata, Score, Step,
+    Articulation, Clef, Duration, Dynamic, Issue, KeySignature, LyricJoin, Metadata, Score, Step,
     TimeSignature,
 };
 use dacapo_core::recovery::{Recoverable, RecoveryStore};
@@ -170,6 +170,15 @@ enum Action {
     SetDynamic {
         dynamic: Dynamic,
     },
+    /// The syllable event `id` sings in `verse` (0 = first); empty text
+    /// removes it.
+    SetLyric {
+        id: u64,
+        verse: usize,
+        text: String,
+        #[serde(default)]
+        join: LyricJoin,
+    },
     SetDuration {
         duration: Duration,
     },
@@ -321,6 +330,12 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::ToggleSlur => d.toggle_slur(now),
             Action::ToggleArticulation { articulation } => d.toggle_articulation(articulation, now),
             Action::SetDynamic { dynamic } => d.set_dynamic(dynamic, now),
+            Action::SetLyric {
+                id,
+                verse,
+                text,
+                join,
+            } => d.set_lyric(id, verse, &text, join, now),
             Action::SetDuration { duration } => d.set_duration(duration, now),
             Action::Copy => {
                 copied = d.copy();

@@ -100,6 +100,8 @@ Each open document has a folder under the app's local data directory (on Windows
 
 **Binary records with checksums.** Each journal record is `[length u32][CRC32 u32][payload]`, where the payload is a `JournalRecord { seq, entry }` encoded with postcard. The snapshot uses the same framing behind a magic header.
 
+**Format versions.** The binary encoding is not self-describing, so the magic header carries a version that changes whenever the document types change (version 4 added lyrics). Data written by the previous release must stay readable, because an in-app update restarts the program and returns unsaved work through crash recovery: `recovery.rs` still decodes version 3, and `tests/recovery_compat.rs` checks it against data written by Da Capo 0.2.1. When a type changes again, keep the old layout readable the same way (see `reading_pre_lyrics` in `model.rs`) and add a fixture from the release being replaced.
+
 **While editing:**
 
 1. Every change is appended to the journal by a **background thread**, so the UI never waits for the disk.

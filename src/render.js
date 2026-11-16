@@ -15,6 +15,39 @@ const MARGIN_X = 28;
 const MARGIN_TOP = 5 * SP;
 const TICKS_WHOLE = 3840;
 
+// ----- lyrics ------------------------------------------------------------------
+// Each event carries one syllable per verse (`event.lyrics[verse]`). Verses
+// are lines of text under the staff; a staff gets as many lines as its
+// longest list of syllables anywhere in the score.
+export const MAX_VERSES = 8; // mirrors dacapo_core::model::MAX_VERSES
+export const LYRIC_PX = 1.7 * SP; // font size
+export const LYRIC_FONT = 'Georgia, "Times New Roman", serif';
+const LYRIC_LINE = 2.3 * SP; // from one verse's baseline to the next
+const LYRIC_Y0 = 7.4 * SP; // staff top to the first baseline, unless low notes need more
+const LYRIC_GAP = 0.6 * SP; // least space between two syllables
+const HYPHEN_ROOM = 0.9 * SP; // extra space when a hyphen sits between them
+const LYRIC_LEAD = 1.1 * SP; // a measure's first note is this far right of where its lyrics may start
+
+let measureCtx;
+const widthCache = new Map();
+/** Width of a syllable in layout units (estimated where no canvas exists). */
+function textWidth(text) {
+  let w = widthCache.get(text);
+  if (w !== undefined) return w;
+  if (measureCtx === undefined) {
+    try {
+      measureCtx = document.createElement('canvas').getContext('2d');
+      measureCtx.font = `${LYRIC_PX}px ${LYRIC_FONT}`;
+    } catch {
+      measureCtx = null;
+    }
+  }
+  w = measureCtx ? measureCtx.measureText(text).width : text.length * LYRIC_PX * 0.5;
+  widthCache.set(text, w);
+  return w;
+}
+const syllableAt = (e, verse) => (e.lyrics && e.lyrics[verse] && e.lyrics[verse].text ? e.lyrics[verse] : null);
+
 // ----- paper (page view) -----------------------------------------------------
 // Pages are laid out in staff spaces assuming the common 7 mm staff
 // (1 space = 1.75 mm), so a page keeps its real proportions on screen and in
@@ -129,6 +162,8 @@ export function isMeasureRest(events, cap) {
  * - `opts.multiRest`: merge runs of rest-only measures into one multi-measure rest.
  * - `opts.view`: 'wrap' (fill `width`, default), 'continuous' (one endless
  *   line) or 'page' (systems flow onto pages of `opts.paper`, as printed).
+ * - `opts.lyricEdit`: `{ staff, verse }` being typed, so a verse that has no
+ *   text yet already gets its line.
  */
 export function layout(view, width, opts = {}) {
   const score = view.score;
@@ -140,12 +175,24 @@ export function layout(view, width, opts = {}) {
     : mode === 'continuous' ? Infinity
       : Math.max(300, width - 2 * MARGIN_X);
 
+  // Lines of lyrics under each staff.
+  const verses = score.staves.map((staff, s) => {
+    let n = opts.lyricEdit && opts.lyricEdit.staff === s ? opts.lyricEdit.verse + 1 : 0;
+    for (const cell of staff.measures) {
+      for (const voice of cell.voices) for (const e of voice) if (e.lyrics) n = Math.max(n, e.lyrics.length);
+    }
+    return Math.min(n, MAX_VERSES);
+  });
+
   const single = score.measures.map((attrs, m) => {
     let maxEvents = 0;
     let maxFill = 0;
     let restOnly = true;
     // Per staff: the fullest voice, when it exceeds the time signature.
     const overfull = new Map();
+    // Room the syllables need: [ticks between two of them, width], and
+    // [ticks from the last one to the barline, width].
+    const lyricNeeds = [];
     score.staves.forEach((staff, s) => {
       staff.measures[m].voices.forEach((voice, v) => {
         const mrest = isMeasureRest(voice, capacity(attrs));
@@ -154,14 +201,37 @@ export function layout(view, width, opts = {}) {
         maxFill = Math.max(maxFill, fill);
         if (fill > capacity(attrs)) overfull.set(s, Math.max(overfull.get(s) || 0, fill));
         if (v === 0 ? !mrest : voice.length > 0) restOnly = false;
+        for (let k = 0; k < verses[s]; k++) {
+          let tick = 0;
+          let last = null; // { tick, right, hyphen }
+          for (const e of voice) {
+            const syl = syllableAt(e, k);
+            if (syl) {
+              const w = textWidth(syl.text);
+              if (last) lyricNeeds.push([tick - last.tick, last.right + w / 2 + LYRIC_GAP + (last.hyphen ? HYPHEN_ROOM : 0)]);
+              // How far it reaches right of its note: half of it, or more
+              // when the barline on its left stops it (see drawLyrics).
+              last = { tick, right: tick === 0 ? Math.max(w / 2, w - LYRIC_LEAD) : w / 2, hyphen: syl.join === 'hyphen' };
+            }
+            tick += durationTicks(e.duration);
+          }
+          if (last) lyricNeeds.push([-last.tick, last.right - 1.2 * SP]);
+        }
       });
     });
     const cap = Math.max(capacity(attrs), maxFill, 1);
     const prev = m > 0 ? score.measures[m - 1] : null;
+    // Events are spaced by time, so two syllables `dt` ticks apart need the
+    // whole measure to be `cap / dt` times as wide as they are.
+    let lyricW = 0;
+    for (const [dt, need] of lyricNeeds) {
+      const ticks = dt > 0 ? dt : cap + dt; // (negative: measured from the barline)
+      if (ticks > 0 && need > 0) lyricW = Math.max(lyricW, (need * cap) / ticks);
+    }
     return {
       m, mEnd: m, attrs, cap, restOnly,
       overfull,
-      content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP),
+      content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP, Math.min(lyricW, 80 * SP) + 2.6 * SP),
       timeChange: !prev || prev.time.beats !== attrs.time.beats || prev.time.beat_type !== attrs.time.beat_type,
       keyChange: !!prev && prev.key.fifths !== attrs.key.fifths,
     };
@@ -207,7 +277,39 @@ export function layout(view, width, opts = {}) {
     sys.measures.push(ms);
   }
 
-  const systemHeight = (nStaves - 1) * STAFF_GAP + 4 * SP;
+  // Staff positions inside each system. A staff with lyrics takes more
+  // room: the text starts below the lowest note of that line of music.
+  for (const s of systems) {
+    s.lyricY = score.staves.map((staff, st) => {
+      if (!verses[st]) return LYRIC_Y0;
+      const mid = CLEF_MIDDLE[staff.clef];
+      let low = 0; // lowest ink, from the staff top
+      for (const ms of s.measures) {
+        if (ms.multi) continue;
+        const voices = staff.measures[ms.m].voices;
+        const multi = voices.filter((v) => v.length).length > 1;
+        voices.forEach((voice, v) => {
+          for (const e of voice) {
+            const ds = pitchesOf(e).map(diatonic);
+            if (!ds.length) continue;
+            const lo = Math.min(...ds);
+            const hi = Math.max(...ds);
+            const headY = 2 * SP + (mid - lo) * (SP / 2);
+            const up = multi ? v % 2 === 0 : (lo + hi) / 2 < mid;
+            const stem = valueIdx(e.duration) >= V_HALF && !up;
+            low = Math.max(low, stem ? headY + STEM_LEN + Math.max(0, valueIdx(e.duration) - 5) * 0.5 * SP : headY + 0.5 * SP);
+          }
+        });
+      }
+      return Math.max(LYRIC_Y0, low + 0.75 * LYRIC_PX + 0.6 * SP);
+    });
+    // Bottom of each staff's block: the staff itself, or its last verse.
+    const bottom = (st) => (verses[st] ? s.lyricY[st] + (verses[st] - 1) * LYRIC_LINE + 0.7 * SP : 4 * SP);
+    s.staffY = [0];
+    for (let st = 0; st + 1 < nStaves; st++) s.staffY.push(s.staffY[st] + Math.max(STAFF_GAP, bottom(st) + 3.3 * SP));
+    s.span = s.staffY[nStaves - 1] + 4 * SP; // first staff line to last staff line
+    s.height = s.staffY[nStaves - 1] + Math.max(4 * SP, bottom(nStaves - 1) - 2 * SP);
+  }
   // Vertical placement. Page view flows systems onto pages (a system that
   // would cross the bottom margin starts the next page); the other views
   // stack them on one endless sheet.
@@ -215,14 +317,14 @@ export function layout(view, width, opts = {}) {
   let page = 0;
   let y = geo ? geo.margin + TITLE_BLOCK + MARGIN_TOP : MARGIN_TOP;
   systems.forEach((s, i) => {
-    if (geo && i > 0 && y + systemHeight + 2 * SP > pageTop(page) + geo.h - geo.margin) {
+    if (geo && i > 0 && y + s.height + 2 * SP > pageTop(page) + geo.h - geo.margin) {
       page++;
       y = pageTop(page) + geo.margin + MARGIN_TOP;
     }
     s.index = i;
     s.page = page;
     s.y = y;
-    y += systemHeight + SYSTEM_GAP;
+    y += s.height + SYSTEM_GAP;
     // Justify every system but the last (unless it is already nearly full).
     const last = i === systems.length - 1;
     const stretch = Number.isFinite(avail) && (!last || s.width > avail * 0.75) ? (avail - s.width) / s.measures.length : 0;
@@ -249,10 +351,12 @@ export function layout(view, width, opts = {}) {
     : [{ index: 0, x: 0, y: 0, w: totalWidth, h: totalHeight }];
 
   return {
-    systems, measures, byMeasure, nStaves, pages, mode, geo, marginX,
+    systems, measures, byMeasure, nStaves, pages, mode, geo, marginX, verses,
     width: totalWidth,
     height: totalHeight,
-    staffTop: (ms, staff) => ms.system.y + staff * STAFF_GAP,
+    staffTop: (ms, staff) => ms.system.y + ms.system.staffY[staff],
+    /** Baseline of a verse under a staff of a system. */
+    lyricY: (system, staff, verse) => system.y + system.staffY[staff] + system.lyricY[staff] + verse * LYRIC_LINE,
     tickX: (ms, tick) => ms.contentX + (tick / ms.cap) * ms.contentW,
   };
 }
@@ -285,19 +389,27 @@ function gapX(lay, ms, events, index) {
   return Math.max(lay.tickX(ms, tick) - 1.0 * SP, lay.tickX(ms, lastStart) + 1.6 * SP);
 }
 
+/** The staff of a system whose middle line is closest to y. */
+function nearestStaff(s, y) {
+  let best = 0;
+  s.staffY.forEach((sy, st) => {
+    if (Math.abs(y - (s.y + sy + 2 * SP)) < Math.abs(y - (s.y + s.staffY[best] + 2 * SP))) best = st;
+  });
+  return best;
+}
+
 /** Maps a click to a caret position. */
 export function hitTest(lay, view, x, y, voice) {
-  const span = (lay.nStaves - 1) * STAFF_GAP + 4 * SP;
   let best = null;
   for (const s of lay.systems) {
     const top = s.y - 3 * SP;
-    const bottom = s.y + span + 3 * SP;
+    const bottom = s.y + s.span + 3 * SP;
     const dist = y < top ? top - y : y > bottom ? y - bottom : 0;
     if (!best || dist < best.dist) best = { s, dist };
   }
   if (!best) return null;
   const s = best.s;
-  const staff = Math.max(0, Math.min(lay.nStaves - 1, Math.round((y - s.y - 2 * SP) / STAFF_GAP)));
+  const staff = nearestStaff(s, y);
   const ms = s.measures.find((m) => x < m.x + m.w) || s.measures[s.measures.length - 1];
   if (ms.multi) return { staff, measure: ms.m, voice, index: 0 };
   const events = view.score.staves[staff].measures[ms.m].voices[voice];
@@ -347,10 +459,10 @@ export function renderScore(view, width, opts = {}) {
     push(`<text class="mnum" x="${s.x0}" y="${s.y - 1.6 * SP}">${first.m + 1}</text>`);
     // System bracket.
     if (lay.nStaves > 1) {
-      push(`<line class="bar" x1="${s.x0}" x2="${s.x0}" y1="${s.y}" y2="${s.y + (lay.nStaves - 1) * STAFF_GAP + 4 * SP}"/>`);
+      push(`<line class="bar" x1="${s.x0}" x2="${s.x0}" y1="${s.y}" y2="${s.y + s.span}"/>`);
     }
     for (let st = 0; st < lay.nStaves; st++) {
-      const top = s.y + st * STAFF_GAP;
+      const top = s.y + s.staffY[st];
       for (let l = 0; l < 5; l++) {
         push(`<line class="staff" x1="${s.x0}" x2="${xEnd}" y1="${top + l * SP}" y2="${top + l * SP}"/>`);
       }
@@ -446,7 +558,7 @@ export function renderScore(view, width, opts = {}) {
           const gi = groupOf.get(i);
           const opts = gi === undefined ? {} : { up: groupUp[gi], beamed: true };
           const info = drawEvent(push, e, xs[i], top, yOf, mid, v, multi, ms.attrs.key.fifths, cls, opts);
-          return Object.assign(info, { e, ms, top, staff: st, voice: v, cls });
+          return Object.assign(info, { e, ms, top, staff: st, voice: v, cls, sung: lay.verses[st] > 0 });
         });
         const starts = eventStarts(events);
         groups.forEach((g, gi) => drawBeams(push, g.map((i) => infos[i]), g.map((i) => starts[i]), groupUp[gi], multi ? null : yOf(mid), cls));
@@ -467,10 +579,24 @@ export function renderScore(view, width, opts = {}) {
 
   drawTies(push, seqs, onPage);
   drawSlurs(push, score.slurs || [], byId, seqs, onPage);
+  drawLyrics(push, lay, seqs, onPage, opts.lyricEdit);
 
-  // Caret.
+  // Where lyrics can be typed: every drawn note, in score order per staff
+  // and voice. A note tied from the previous one continues its syllable.
+  const slots = [];
+  for (const seq of seqs.values()) {
+    seq.forEach((n, i) => {
+      const prev = seq[i - 1];
+      slots.push({
+        id: n.e.id, staff: n.staff, voice: n.voice, x: n.x, system: n.ms.system, page: n.ms.system.page || 0,
+        singable: !n.rest && !(prev && !prev.rest && prev.e.tie),
+      });
+    });
+  }
+
+  // Caret (the lyric editor shows its own text cursor instead).
   const c = view.caret;
-  const cms = lay.byMeasure[c.measure];
+  const cms = opts.lyricEdit ? null : lay.byMeasure[c.measure];
   if (cms) {
     onPage(cms.system.page);
     const events = score.staves[c.staff].measures[c.measure].voices[c.voice];
@@ -484,7 +610,101 @@ export function renderScore(view, width, opts = {}) {
   const z = opts.zoom || 1;
   const pages = lay.pages.map((p, i) =>
     `<svg xmlns="http://www.w3.org/2000/svg" data-page="${i}" width="${p.w * z}" height="${p.h * z}" viewBox="${p.x} ${p.y} ${p.w} ${p.h}">${outs[i].join('')}</svg>`);
-  return { pages, svg: pages[0], layout: lay, hits };
+  return { pages, svg: pages[0], layout: lay, hits, slots };
+}
+
+/**
+ * Lyrics: the syllables of every verse, the hyphens between the syllables of
+ * a word and the extender lines of syllables held over several notes.
+ * `edit` ({ id, verse }) is the syllable being typed: its text is left out
+ * (the editor's input sits there) but still takes its room.
+ */
+function drawLyrics(push, lay, seqs, onPage, edit) {
+  const attrs = `font-family='${LYRIC_FONT}' font-size="${LYRIC_PX}"`;
+  const hyphenW = textWidth('-');
+  for (const seq of seqs.values()) {
+    const nVerses = Math.max(0, ...seq.map((n) => (n.e.lyrics || []).length));
+    for (let k = 0; k < nVerses; k++) {
+      const yOf = (n) => lay.lyricY(n.ms.system, n.staff, k);
+      const hyphen = (n, x) => {
+        onPage(n.ms.system.page);
+        push(`<text class="lyric" ${attrs} text-anchor="middle" x="${x}" y="${yOf(n)}">-</text>`);
+      };
+      const line = (n, x1, x2) => {
+        if (x2 - x1 < 0.8 * SP) return;
+        onPage(n.ms.system.page);
+        push(`<line class="lyric-line" x1="${x1}" x2="${x2}" y1="${yOf(n)}" y2="${yOf(n)}"/>`);
+      };
+      // The extender of the syllable at seq[a.i] runs to the last note
+      // before the next syllable or rest.
+      const extend = (a) => {
+        let j = a.i;
+        while (seq[j + 1] && !seq[j + 1].rest && !syllableAt(seq[j + 1].e, k)) j++;
+        if (j === a.i) return;
+        const end = seq[j];
+        if (end.ms.system === a.n.ms.system) {
+          line(a.n, a.right + 0.25 * SP, end.left + end.w);
+        } else {
+          line(a.n, a.right + 0.25 * SP, systemEnd(a.n.ms) - 0.5 * SP);
+          line(end, end.ms.system.measures[0].contentX - 1.4 * SP, end.left + end.w);
+        }
+      };
+      let prev = null; // the last syllable drawn: { n, i, right, join }
+      seq.forEach((n, i) => {
+        const syl = syllableAt(n.e, k);
+        if (!syl) return;
+        const w = textWidth(syl.text);
+        const sameLine = prev && prev.n.ms.system === n.ms.system;
+        // Centred under the note, pushed right if the previous syllable is
+        // in the way or if it would reach back into the previous measure.
+        const left = Math.max(n.x - w / 2, n.ms.contentX - LYRIC_LEAD,
+          sameLine ? prev.right + LYRIC_GAP * (prev.join === 'hyphen' ? 2 : 1) : -Infinity);
+        if (prev && prev.join === 'hyphen') {
+          if (sameLine) hyphen(n, (prev.right + left) / 2);
+          else hyphen(prev.n, prev.right + hyphenW);
+        }
+        if (prev && prev.join === 'extender') extend(prev);
+        onPage(n.ms.system.page);
+        // With several verses, each is numbered where it begins.
+        if (!prev && lay.verses[n.staff] > 1) {
+          push(`<text class="lyric" ${attrs} text-anchor="end" x="${left - 0.5 * SP}" y="${yOf(n)}">${k + 1}.</text>`);
+        }
+        if (!(edit && edit.id === n.e.id && edit.verse === k)) {
+          push(`<text class="lyric" ${attrs} text-anchor="middle" x="${left + w / 2}" y="${yOf(n)}">${esc(syl.text)}</text>`);
+        }
+        prev = { n, i, right: left + w, join: syl.join };
+      });
+      if (prev && prev.join === 'hyphen') hyphen(prev.n, prev.right + hyphenW);
+      if (prev && prev.join === 'extender') extend(prev);
+    }
+  }
+}
+
+/**
+ * The note and verse whose lyric a click at (x, y) would edit, or null when
+ * the pointer is not on a line of lyrics. Besides the existing verses, the
+ * line just below the last one counts (it starts a new verse); a staff
+ * without lyrics offers one line where its first verse would go.
+ */
+export function lyricTarget(lay, slots, x, y) {
+  for (const s of lay.systems) {
+    for (let st = 0; st < lay.nStaves; st++) {
+      const n = lay.verses[st];
+      const first = s.y + s.staffY[st] + s.lyricY[st];
+      const top = first - 0.72 * LYRIC_LINE;
+      const lines = Math.min(n + 1, MAX_VERSES);
+      if (y < top || y > top + lines * LYRIC_LINE) continue;
+      let best = null;
+      for (const slot of slots) {
+        if (slot.system !== s || slot.staff !== st || !slot.singable) continue;
+        const d = Math.abs(x - slot.x);
+        if (d <= 4 * SP && (!best || d < best.d)) best = { d, slot };
+      }
+      if (!best) return null;
+      return { id: best.slot.id, staff: st, verse: Math.min(lines - 1, Math.floor((y - top) / LYRIC_LINE)) };
+    }
+  }
+  return null;
 }
 
 /**
@@ -522,7 +742,7 @@ export function playheadMarkup(lay, measure, tick) {
   }
   const s = ms.system;
   const y1 = s.y - 1.5 * SP;
-  const y2 = s.y + (lay.nStaves - 1) * STAFF_GAP + 5.5 * SP;
+  const y2 = s.y + s.span + 1.5 * SP;
   return {
     page: s.page || 0,
     markup: `<line class="playhead" x1="${x}" x2="${x}" y1="${y1}" y2="${y2}"/>`,
@@ -824,7 +1044,10 @@ function drawAttachments(push, info) {
     push(`<text class="m mark" x="${x}" y="${fy}">${FERMATA}</text>`);
   }
   if (e.dynamic) {
-    const dy = Math.max(top + 6.6 * SP, info.lo + 2.2 * SP, below ? y + 2 * SP : -Infinity);
+    // Below the staff; above it when the staff has lyrics, as in vocal music.
+    const dy = info.sung
+      ? Math.min(top - 1.6 * SP, info.hi - 1.4 * SP, below ? Infinity : y - 1.6 * SP)
+      : Math.max(top + 6.6 * SP, info.lo + 2.2 * SP, below ? y + 2 * SP : -Infinity);
     push(`<text class="m mark" x="${x}" y="${dy}">${DYNAMIC[e.dynamic]}</text>`);
   }
   if (arts.length || e.dynamic) push('</g>');
@@ -930,7 +1153,7 @@ export function pointerTarget(lay, view, x, y, voice) {
   let best = null;
   for (const s of lay.systems) {
     for (let st = 0; st < lay.nStaves; st++) {
-      const center = s.y + st * STAFF_GAP + 2 * SP;
+      const center = s.y + s.staffY[st] + 2 * SP;
       const dist = Math.abs(y - center);
       if (!best || dist < best.dist) best = { s, st, dist };
     }
@@ -940,7 +1163,7 @@ export function pointerTarget(lay, view, x, y, voice) {
   const ms = s.measures.find((m) => x >= m.x && x < m.x + m.w);
   if (!ms) return null;
 
-  const top = s.y + staff * STAFF_GAP;
+  const top = s.y + s.staffY[staff];
   const clef = view.score.staves[staff].clef;
   const mid = CLEF_MIDDLE[clef];
   const d = mid + Math.round((top + 2 * SP - y) / (SP / 2));

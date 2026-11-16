@@ -1,0 +1,201 @@
+{
+  "format": "dacapo",
+  "format_version": 3,
+  "score": {
+    "metadata": {
+      "title": "Fixture",
+      "composer": ""
+    },
+    "measures": [
+      {
+        "time": {
+          "beats": 4,
+          "beat_type": 4
+        },
+        "key": {
+          "fifths": 0
+        }
+      },
+      {
+        "time": {
+          "beats": 4,
+          "beat_type": 4
+        },
+        "key": {
+          "fifths": 0
+        }
+      },
+      {
+        "time": {
+          "beats": 4,
+          "beat_type": 4
+        },
+        "key": {
+          "fifths": 0
+        }
+      },
+      {
+        "time": {
+          "beats": 4,
+          "beat_type": 4
+        },
+        "key": {
+          "fifths": 0
+        }
+      }
+    ],
+    "staves": [
+      {
+        "id": 1,
+        "name": "Staff 1",
+        "clef": "treble",
+        "measures": [
+          {
+            "voices": [
+              [
+                {
+                  "id": 2,
+                  "duration": {
+                    "base": "Quarter",
+                    "dots": 0
+                  },
+                  "kind": {
+                    "chord": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "alter": 0,
+                          "octave": 5
+                        }
+                      ]
+                    }
+                  },
+                  "tie": false,
+                  "articulations": [],
+                  "dynamic": null
+                },
+                {
+                  "id": 3,
+                  "duration": {
+                    "base": "Quarter",
+                    "dots": 0
+                  },
+                  "kind": {
+                    "chord": {
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "alter": 0,
+                          "octave": 5
+                        }
+                      ]
+                    }
+                  },
+                  "tie": true,
+                  "articulations": [],
+                  "dynamic": null
+                },
+                {
+                  "id": 4,
+                  "duration": {
+                    "base": "Eighth",
+                    "dots": 1
+                  },
+                  "kind": {
+                    "chord": {
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "alter": 0,
+                          "octave": 5
+                        }
+                      ]
+                    }
+                  },
+                  "tie": false,
+                  "articulations": [
+                    "staccato"
+                  ],
+                  "dynamic": null
+                },
+                {
+                  "id": 5,
+                  "duration": {
+                    "base": "Quarter",
+                    "dots": 0
+                  },
+                  "kind": "rest",
+                  "tie": false,
+                  "articulations": [],
+                  "dynamic": null
+                },
+                {
+                  "id": 6,
+                  "duration": {
+                    "base": "Quarter",
+                    "dots": 0
+                  },
+                  "kind": {
+                    "chord": {
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "alter": 0,
+                          "octave": 5
+                        },
+                        {
+                          "step": "B",
+                          "alter": 0,
+                          "octave": 5
+                        }
+                      ]
+                    }
+                  },
+                  "tie": false,
+                  "articulations": [],
+                  "dynamic": "mf"
+                }
+              ],
+              [],
+              [],
+              []
+            ]
+          },
+          {
+            "voices": [
+              [],
+              [],
+              [],
+              []
+            ]
+          },
+          {
+            "voices": [
+              [],
+              [],
+              [],
+              []
+            ]
+          },
+          {
+            "voices": [
+              [],
+              [],
+              [],
+              []
+            ]
+          }
+        ]
+      }
+    ],
+    "next_id": 9,
+    "slurs": [
+      {
+        "id": 7,
+        "start": 4,
+        "end": 6
+      }
+    ],
+    "tempo": 100
+  }
+}

@@ -90,7 +90,7 @@ Separate from crash recovery. Recovery protects the *current* session. Version h
 ## Future ideas
 
 - Orchestral scores with staff groups, brackets and part extraction.
-- Lyrics and chord symbols.
+- Chord symbols.
 - Guitar tablature.
 - Plugins for effects and advanced dynamics.
 - Automatic transposition mode.

@@ -147,6 +147,34 @@ A measure that holds more beats than its time signature allows is outlined in re
 | `Ctrl` + `Alt` + `↑` / `↓` | Move it up or down an octave. |
 | `Alt` + `1`…`4` | Switch voice. Each voice has its own color. |
 
+## Lyrics
+
+Lyrics are written **under the notes**, one syllable per note, so they move, copy and paste with the music.
+
+To start, either:
+
+- click **under a staff**, below the note where the words begin (a dashed box shows where you would type), or
+- press **Ctrl+L** (or **Insert → Lyrics**) to start at the note next to the caret.
+
+A text field opens under the note. Type the syllable, then:
+
+| Key | Action |
+|---|---|
+| `Space` | End the word and go to the next note. |
+| `-` | End the syllable and go to the next note; a hyphen joins the two (`can-tar`). |
+| `_` | Hold the syllable over the following notes: an extender line is drawn up to the last note before the next syllable. |
+| `←` / `→` | Move inside the text; at its edge, go to the previous or next note. |
+| `Tab` / `Shift` + `Tab` | Next or previous note. |
+| `Backspace` | In an empty syllable, go back to the previous note. |
+| `↓` / `↑` | Next or previous **verse**. |
+| `Esc` or `Enter` | Finish (what you typed is kept). |
+
+- Rests are skipped, and a note tied from the previous one continues its syllable. Press `Space` on an empty syllable to skip a note.
+- **Verses**: press `↓` to write a second line of words under the same notes, or click just below the last line. A staff can have up to 8 verses; they are numbered when there is more than one, and a verse disappears when its last syllable is deleted.
+- To change a syllable, click it. To delete it, clear its text.
+- Each syllable is one **Ctrl+Z** step. With nothing typed in the field, Ctrl+Z undoes the previous syllable; otherwise it undoes your typing.
+- On a staff with lyrics, dynamics are drawn above the staff, as in vocal music.
+
 ## Moving and selecting
 
 | Key | Action |
