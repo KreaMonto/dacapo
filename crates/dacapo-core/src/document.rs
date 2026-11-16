@@ -688,6 +688,13 @@ impl Document {
         })
     }
 
+    /// Sets an explicit accidental (palette ♯ ♭ ♮ buttons) on the
+    /// selection or the previous event.
+    pub fn set_accidental(&mut self, alter: i8, now_ms: u64) -> Result<(), EditError> {
+        let alter = alter.clamp(-2, 2);
+        self.repitch(now_ms, |p| Pitch { alter, ..p })
+    }
+
     /// Changes the rhythmic value of the selection / previous event.
     pub fn set_duration(&mut self, duration: Duration, now_ms: u64) -> Result<(), EditError> {
         let ops: Vec<Op> = self
@@ -1021,6 +1028,20 @@ mod tests {
         assert!(v[2].is_rest());
         doc.undo().unwrap();
         assert!(doc.score.voice(0, 1, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn explicit_accidentals() {
+        let mut doc = Document::new(Score::new("t", 1));
+        doc.set_key_signature(KeySignature { fifths: 1 }, 0).unwrap();
+        type_notes(&mut doc, &[F], 5_000); // F sharp from the key
+        doc.set_accidental(0, 6_000).unwrap(); // natural
+        assert_eq!(doc.score.voice(0, 0, 0).unwrap()[0].pitches()[0].alter, 0);
+        doc.set_accidental(-1, 6_100).unwrap(); // flat
+        assert_eq!(doc.score.voice(0, 0, 0).unwrap()[0].pitches()[0].alter, -1);
+        // Both changes are one undo step (repitch burst).
+        doc.undo().unwrap();
+        assert_eq!(doc.score.voice(0, 0, 0).unwrap()[0].pitches()[0].alter, 1);
     }
 
     #[test]

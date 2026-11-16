@@ -108,6 +108,7 @@ enum Action {
     SelectAll,
     Transpose { steps: i32 },
     Accidental { delta: i8 },
+    SetAccidental { alter: i8 },
     SetDuration { duration: Duration },
     Copy,
     Cut,
@@ -217,6 +218,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             }
             Action::Transpose { steps } => d.transpose(steps, now),
             Action::Accidental { delta } => d.change_accidental(delta, now),
+            Action::SetAccidental { alter } => d.set_accidental(alter, now),
             Action::SetDuration { duration } => d.set_duration(duration, now),
             Action::Copy => {
                 copied = d.copy();
