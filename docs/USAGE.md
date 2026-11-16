@@ -14,7 +14,20 @@ The tab of a document with unsaved changes shows a dot (●). Closing it asks wh
 
 ## Menus
 
-The menu bar has **File**, **Edit**, **View**, **Insert** and **Help**. Press **Alt** to move into it, or **Alt + first letter** (Alt+F, Alt+E, Alt+V…) to open a menu. Then use the arrows, Enter, and Esc. **Help → Keyboard Shortcuts** (F1) lists every shortcut.
+The menu bar has **File**, **Edit**, **View**, **Insert**, **Play** and **Help**.
+
+**Help** contains:
+- **Keyboard Shortcuts** (F1).
+- **What's New**, which opens the changelog.
+- **Report a Problem…** and **Source Code on GitHub**, which open in your browser.
+- **Credits and Licenses** and **About Da Capo**. They show:
+  - the version and platform;
+  - the components Da Capo downloaded, such as FluidR3 GM: its version, whether it is installed, and where;
+  - credits for every project Da Capo is built on, with licenses and links.
+
+  **Copy version info** puts a short summary on the clipboard to paste into a bug report.
+
+The rest of the menu bar: Press **Alt** to move into it, or **Alt + first letter** (Alt+F, Alt+E, Alt+V…) to open a menu. Then use the arrows, Enter, and Esc. **Help → Keyboard Shortcuts** (F1) lists every shortcut.
 
 ## Views
 

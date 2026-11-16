@@ -508,6 +508,34 @@ body[data-view="continuous"] .meta input { width: 400px; text-align: left; }
 }
 .dialog-actions { flex: none; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 24px 16px; border-top: 1px solid var(--chrome-border); }
 .dialog-actions .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.dialog-actions .spacer { flex: 1; }
+.dialog a { color: var(--accent); text-decoration: none; }
+.dialog a:hover { text-decoration: underline; }
+.dialog .muted { color: var(--muted); }
+.dialog .ok { color: var(--voice2); }
+
+/* About */
+.about-head { display: flex; gap: 14px; align-items: center; margin: 4px 0 10px; }
+.about-head img { border-radius: 12px; flex: none; }
+.about-name { font-size: 20px; font-weight: 600; }
+.about-version {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 1px 8px;
+  margin-left: 4px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  vertical-align: 3px;
+}
+.about-links { margin: 0 0 14px; }
+.dialog-body h3 { margin: 16px 0 6px; }
+.about-table { width: 100%; border-collapse: collapse; }
+.about-table th, .about-table td { text-align: left; vertical-align: top; padding: 5px 0; border-top: 1px solid var(--chrome-border); }
+.about-table th { width: 38%; padding-right: 12px; font-weight: 600; }
+.about-table td[colspan] { border-top: none; padding-top: 0; }
+.about-table .path { font: 11px Consolas, "Cascadia Mono", monospace; color: var(--muted); word-break: break-all; }
+.credits td .muted { font-size: 12px; margin-top: 1px; }
 
 /* ----- Printing -------------------------------------------------------------- */
 /* Only the pages, black on white, one per sheet (the @page size is set by

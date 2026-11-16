@@ -25,6 +25,21 @@ pub const SOUNDFONT_FILE: &str = "FluidR3_GM.sf2";
 /// Exact size of that release asset, used to reject truncated downloads.
 pub const SOUNDFONT_SIZE: u64 = 148_398_306;
 
+/// What the About dialog says about the downloaded SoundFont.
+#[derive(Clone, Debug, Serialize)]
+pub struct SoundFontInfo {
+    pub name: &'static str,
+    pub version: &'static str,
+    pub author: &'static str,
+    pub license: &'static str,
+    pub homepage: &'static str,
+    pub source_url: &'static str,
+    pub installed: bool,
+    pub path: String,
+    pub size_bytes: u64,
+    pub status: SoundStatus,
+}
+
 /// State of the sound engine, shown in the UI.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
@@ -253,6 +268,28 @@ impl Engine {
 
     pub fn status(&self) -> SoundStatus {
         self.status.lock().unwrap().clone()
+    }
+
+    /// Identity and install state of the SoundFont, for the About dialog.
+    pub fn soundfont_info(&self) -> SoundFontInfo {
+        let path = self.soundfont_path();
+        let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        SoundFontInfo {
+            name: "FluidR3 GM",
+            version: "3.1",
+            author: "Frank Wen",
+            license: "MIT",
+            homepage: "https://github.com/pianobooster/fluid-soundfont",
+            source_url: SOUNDFONT_URL,
+            installed: size > 0,
+            path: path.display().to_string(),
+            size_bytes: size,
+            status: self.status(),
+        }
+    }
+
+    pub fn soundfont_dir(&self) -> &Path {
+        &self.soundfont_dir
     }
 
     fn set_status(&self, s: SoundStatus) {

@@ -420,6 +420,126 @@ fn playback_state(state: State<AppState>) -> audio::PlaybackState {
     state.audio.state()
 }
 
+// ----- about -----------------------------------------------------------------
+
+/// A third-party component credited in the About dialog.
+#[derive(Serialize)]
+struct Credit {
+    name: &'static str,
+    version: &'static str,
+    author: &'static str,
+    license: &'static str,
+    url: &'static str,
+    role: &'static str,
+}
+
+#[derive(Serialize)]
+struct AboutInfo {
+    name: &'static str,
+    version: &'static str,
+    license: &'static str,
+    repository: &'static str,
+    issues: &'static str,
+    os: &'static str,
+    arch: &'static str,
+    tauri: &'static str,
+    file_format: u32,
+    data_dir: String,
+    soundfont: audio::SoundFontInfo,
+    credits: Vec<Credit>,
+}
+
+const REPOSITORY: &str = "https://github.com/KreaMonto/dacapo";
+
+/// Everything the Help → About dialog shows: version, platform, the
+/// SoundFont downloaded by the app, and credits for what Da Capo is built on.
+#[tauri::command]
+fn about_info(app: tauri::AppHandle, state: State<AppState>) -> AboutInfo {
+    AboutInfo {
+        name: "Da Capo",
+        version: env!("CARGO_PKG_VERSION"),
+        license: "GPL-3.0-or-later",
+        repository: REPOSITORY,
+        issues: "https://github.com/KreaMonto/dacapo/issues",
+        os: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
+        tauri: tauri::VERSION,
+        file_format: file::FORMAT_VERSION,
+        data_dir: app
+            .path()
+            .app_local_data_dir()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default(),
+        soundfont: state.audio.soundfont_info(),
+        credits: vec![
+            Credit {
+                name: "Bravura",
+                version: "bundled",
+                author: "Steinberg Media Technologies",
+                license: "SIL Open Font License 1.1",
+                url: "https://github.com/steinbergmedia/bravura",
+                role: "Music font (SMuFL) used to engrave the score",
+            },
+            Credit {
+                name: "FluidR3 GM",
+                version: "3.1",
+                author: "Frank Wen",
+                license: "MIT",
+                url: "https://github.com/pianobooster/fluid-soundfont",
+                role: "Instrument sounds for playback (downloaded on first use)",
+            },
+            Credit {
+                name: "RustySynth",
+                version: "1.3",
+                author: "Nobuaki Tanaka",
+                license: "MIT",
+                url: "https://github.com/sinshu/rustysynth",
+                role: "SoundFont synthesizer",
+            },
+            Credit {
+                name: "cpal",
+                version: "0.15",
+                author: "The RustAudio developers",
+                license: "Apache-2.0",
+                url: "https://github.com/RustAudio/cpal",
+                role: "Audio output",
+            },
+            Credit {
+                name: "Tauri",
+                version: tauri::VERSION,
+                author: "The Tauri Programme",
+                license: "MIT or Apache-2.0",
+                url: "https://tauri.app",
+                role: "Desktop application framework",
+            },
+            Credit {
+                name: "ureq",
+                version: "2",
+                author: "Martin Algesten and contributors",
+                license: "MIT or Apache-2.0",
+                url: "https://github.com/algesten/ureq",
+                role: "Downloading the SoundFont",
+            },
+            Credit {
+                name: "serde · postcard · crc32fast",
+                version: "1",
+                author: "Their respective authors",
+                license: "MIT or Apache-2.0",
+                url: "https://serde.rs",
+                role: "Saving files and crash-recovery data",
+            },
+        ],
+    }
+}
+
+/// Opens the folder that holds the downloaded SoundFont.
+#[tauri::command]
+fn reveal_soundfont_folder(state: State<AppState>) -> Result<String, String> {
+    let dir = state.audio.soundfont_dir().to_path_buf();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.display().to_string())
+}
+
 #[tauri::command]
 fn save_document(
     state: State<AppState>,
@@ -508,6 +628,8 @@ fn quit(app: tauri::AppHandle, state: State<AppState>) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Opens links (website, licenses) and folders with the system's apps.
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let store = app
                 .path()
@@ -569,6 +691,8 @@ pub fn run() {
             pause,
             stop_playback,
             playback_state,
+            about_info,
+            reveal_soundfont_folder,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Da Capo")

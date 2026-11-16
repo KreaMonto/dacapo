@@ -750,6 +750,10 @@ const commands = {
   // Help
   shortcuts: () => showDialog('shortcuts'),
   about: () => showDialog('about'),
+  credits: () => showDialog('credits'),
+  'open-repo': () => openExternal('https://github.com/KreaMonto/dacapo'),
+  'report-problem': () => openExternal('https://github.com/KreaMonto/dacapo/issues'),
+  changelog: () => openExternal('https://github.com/KreaMonto/dacapo/blob/main/CHANGELOG.md'),
 };
 
 function runCommand(cmd) {
@@ -986,29 +990,104 @@ const SHORTCUTS = [
   ]],
 ];
 
-function showDialog(which) {
+// Title and Close stay put; only the body scrolls when the window is short.
+function openDialog(title, body, extraButtons = '') {
   const dlg = $('dialog');
-  // Title and Close stay put; only the body scrolls when the window is short.
-  let title;
-  let body;
-  if (which === 'shortcuts') {
-    title = 'Keyboard and mouse shortcuts';
-    body = `<div class="shortcut-cols">${SHORTCUTS.map(([group, rows]) =>
-      `<section><h3>${group}</h3><table>${rows.map(([k, d]) => `<tr><td><kbd>${esc(k)}</kbd></td><td>${esc(d)}</td></tr>`).join('')}</table></section>`).join('')}</div>`;
-  } else {
-    title = 'Da Capo';
-    body = `<p>An open source music notation editor.</p>
-      <p>Version 0.1.0 · Free software under the GNU General Public License v3.0 or later.</p>
-      <p>Music engraved with the Bravura font by Steinberg Media Technologies, under the SIL Open Font License 1.1.</p>
-      <p>Playback uses the FluidR3_GM SoundFont by Frank Wen (MIT license), downloaded on first use.</p>`;
-  }
   dlg.innerHTML = `<h2>${title}</h2><div class="dialog-body">${body}</div>`
-    + '<form method="dialog" class="dialog-actions"><button autofocus>Close</button></form>';
+    + `<div class="dialog-actions">${extraButtons}<span class="spacer"></span><button type="button" data-close autofocus>Close</button></div>`;
   dlg.showModal();
 }
-$('dialog').addEventListener('close', () => page.focus());
-// Clicking the backdrop closes the dialog.
-$('dialog').addEventListener('click', (ev) => { if (ev.target === ev.currentTarget) ev.currentTarget.close(); });
+
+function showDialog(which) {
+  if (which === 'about' || which === 'credits') return serial(() => showAbout(which === 'credits'));
+  openDialog('Keyboard and mouse shortcuts', `<div class="shortcut-cols">${SHORTCUTS.map(([group, rows]) =>
+    `<section><h3>${group}</h3><table>${rows.map(([k, d]) => `<tr><td><kbd>${esc(k)}</kbd></td><td>${esc(d)}</td></tr>`).join('')}</table></section>`).join('')}</div>`);
+}
+
+/** Opens a web page in the system browser (the webview cannot navigate away). */
+function openExternal(url) {
+  if (tauri.opener?.openUrl) tauri.opener.openUrl(url).catch(showError);
+  else window.open(url, '_blank', 'noopener');
+}
+
+const link = (url, text) => `<a href="${esc(url)}" data-external>${esc(text ?? url.replace(/^https?:\/\//, ''))}</a>`;
+const OS_NAMES = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
+
+/** Help → About: version, platform, downloaded components and credits. */
+async function showAbout(scrollToCredits = false) {
+  const a = await invoke('about_info');
+  const sf = a.soundfont;
+  const platform = `${OS_NAMES[a.os] || a.os} ${a.arch}`;
+  // Plain-text summary for bug reports.
+  const summary = [
+    `Da Capo ${a.version} (${platform})`,
+    `Tauri ${a.tauri} · file format ${a.file_format}`,
+    `SoundFont: ${sf.name} ${sf.version} ${sf.installed ? `installed (${MB(sf.size_bytes)} MB)` : 'not downloaded'}`,
+  ].join('\n');
+  const sfState = sf.installed
+    ? `<span class="ok">● Installed</span> · ${MB(sf.size_bytes)} MB`
+    : sf.status.state === 'downloading'
+      ? `<span class="ok">Downloading…</span>`
+      : '<span class="muted">Not downloaded yet — it is offered the first time you press Play.</span>';
+  const body = `
+    <div class="about-head">
+      <img src="dacapo-icon.png" alt="" width="56" height="56">
+      <div>
+        <div class="about-name">Da Capo <span class="about-version">${esc(a.version)}</span></div>
+        <div class="muted">Open source music notation editor · ${esc(platform)}</div>
+        <div class="muted">Free software under the ${link('https://www.gnu.org/licenses/gpl-3.0.html', 'GNU GPL v3.0 or later')}.</div>
+      </div>
+    </div>
+    <p class="about-links">${link(a.repository, 'Source code')} · ${link(a.issues, 'Report a problem')} · ${link(`${a.repository}/blob/main/CHANGELOG.md`, 'What’s new')}</p>
+
+    <h3>Downloaded by Da Capo</h3>
+    <table class="about-table">
+      <tr><th>${esc(sf.name)} ${esc(sf.version)}</th><td>${sfState}</td></tr>
+      <tr><td colspan="2" class="muted">Instrument sounds by ${esc(sf.author)} · ${esc(sf.license)} license · ${link(sf.homepage, 'more information')}</td></tr>
+      ${sf.installed ? `<tr><td colspan="2" class="path" title="${esc(sf.path)}">${esc(sf.path)}</td></tr>` : ''}
+    </table>
+
+    <h3 id="about-credits">Credits</h3>
+    <p class="muted">Da Capo is built on the work of these projects. Thank you!</p>
+    <table class="about-table credits">
+      ${a.credits.map((c) => `<tr>
+        <th>${link(c.url, c.name)} <span class="muted">${esc(c.version)}</span></th>
+        <td>${esc(c.role)}<div class="muted">${esc(c.author)} · ${esc(c.license)}</div></td>
+      </tr>`).join('')}
+    </table>
+
+    <h3>Technical details</h3>
+    <table class="about-table">
+      <tr><th>Version</th><td>${esc(a.version)}</td></tr>
+      <tr><th>Platform</th><td>${esc(platform)} · Tauri ${esc(a.tauri)}</td></tr>
+      <tr><th>File format</th><td>.dacapo version ${a.file_format}</td></tr>
+      <tr><th>Data folder</th><td class="path" title="${esc(a.data_dir)}">${esc(a.data_dir)}</td></tr>
+    </table>`;
+  openDialog('About Da Capo', body,
+    `<button type="button" data-copy>Copy version info</button>${sf.installed ? '<button type="button" data-reveal>Show SoundFont file</button>' : ''}`);
+  const dlg = $('dialog');
+  dlg.dataset.summary = summary;
+  dlg.dataset.sfPath = sf.path;
+  if (scrollToCredits) $('about-credits').scrollIntoView();
+}
+
+const dialogEl = $('dialog');
+dialogEl.addEventListener('close', () => page.focus());
+dialogEl.addEventListener('click', (ev) => {
+  // Clicking the backdrop closes the dialog.
+  if (ev.target === ev.currentTarget) { ev.currentTarget.close(); return; }
+  const a = ev.target.closest('a[data-external]');
+  if (a) { ev.preventDefault(); openExternal(a.getAttribute('href')); return; }
+  if (ev.target.closest('[data-close]')) { dialogEl.close(); return; }
+  const copy = ev.target.closest('[data-copy]');
+  if (copy) {
+    navigator.clipboard.writeText(dialogEl.dataset.summary || '').then(() => { copy.textContent = 'Copied ✓'; }, showError);
+    return;
+  }
+  if (ev.target.closest('[data-reveal]')) {
+    tauri.opener?.revealItemInDir?.(dialogEl.dataset.sfPath)?.catch?.(showError);
+  }
+});
 
 // Toolbar and palette.
 const onControlClick = (ev) => {
@@ -1089,6 +1168,12 @@ const MENUS = [
   ] },
   { label: 'Help', items: [
     { label: 'Keyboard Shortcuts', cmd: 'shortcuts', key: 'F1' },
+    { sep: true },
+    { label: 'What’s New', cmd: 'changelog' },
+    { label: 'Report a Problem…', cmd: 'report-problem' },
+    { label: 'Source Code on GitHub', cmd: 'open-repo' },
+    { sep: true },
+    { label: 'Credits and Licenses', cmd: 'credits' },
     { label: 'About Da Capo', cmd: 'about' },
   ] },
 ];
