@@ -14,20 +14,26 @@ The tab of a document with unsaved changes shows a dot (●). Closing it asks wh
 
 ## Entering music with the mouse
 
-This works like the note palette in Encore:
+This works like the note palette in Encore. The **palette** on the left holds the tools for entering music.
 
-1. Click a note value in the toolbar (𝅝 𝅗𝅥 ♩ ♪ 𝅘𝅥𝅯 𝅘𝅥𝅰). The pointer turns into that figure.
+1. Click a figure in the palette. The pointer turns into that figure.
 2. Move over a staff. The figure snaps to the nearest line or space and shows the pitch name (for example `F♯4`). A dashed line marks where it will be inserted.
 3. Click to place it. Notes you place one after another undo together with a single Ctrl+Z.
 4. Click **on an existing note** (the label shows `+`) to add the pitch to its chord. Clicking on a rest turns it into a note.
 
 More details:
 
-- **𝄽** switches between placing rests and placing notes.
-- **•** adds a dot to the figure.
-- `N` toggles entry mode. **Esc**, a right-click or the **↖** tool returns to the select tool.
-- The key signature applies its sharps and flats automatically. Use `+` / `-` afterwards to change the accidental.
-- Notes go into the current voice (`Alt+1`…`4`).
+The palette, from top to bottom:
+
+- **↖ Select** returns to normal editing: click to place the caret, drag to select. **Esc** and a right-click do the same, and `N` toggles entry mode.
+- **Notes | Rests** switches the figures between notes and their matching rests.
+- **• Dot** makes the figure dotted.
+- **♯ ♭ ♮** set the accidental of the previous note or of the selection. The key signature's sharps and flats are applied automatically when you place a note.
+- **Voice** shows *Single voice* until you need more. **+ Voice** adds an independent line on the same staff, for example divisi strings or two melodies in one hand. Its buttons then let you switch between voices (also `Alt+1`…`4`). A voice that contains no music disappears again once you leave it.
+
+## Measures with errors
+
+A measure that holds more beats than its time signature allows is outlined in red and labelled, for example **⚠ Too many beats: 5 of 4**. The status bar counts them (**⚠ 2 measures with errors**). Click that text to jump to the next one.
 
 ## Entering music with the keyboard
 
@@ -68,14 +74,13 @@ More details:
 | `Ctrl` + `Y` or `Ctrl` + `Shift` + `Z` | Redo. |
 | `Ctrl` + `Enter` | Insert a measure after the current one. |
 
-## Score structure (toolbar)
+## Score structure (top toolbar)
 
 - **Clef**: clef of the staff containing the caret.
 - **Key** and **Time**: apply from the caret's measure until the next change. For Time, type something like `3/4` and press Enter.
 - **+ Measure / − Measure**: insert after, or delete, the current measure.
 - **+ Staff / − Staff**: add a staff at the bottom, or delete the current staff.
 
-Measures with more beats than their time signature allows are tinted red, and the status bar counts them.
 
 ## Crash protection
 

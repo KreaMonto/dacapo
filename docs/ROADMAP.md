@@ -26,6 +26,9 @@ This document tracks the development goals and major stages toward a complete op
 - [ ] MIDI keyboard input (also listed under phase 4).
 - [ ] Stable measure widths while entering notes (today the layout re-flows on every insertion).
 - [ ] Rectangle (marquee) selection and dragging notes up and down to change pitch.
+- [x] Side palette: figures with a notes/rests switch, dot, accidentals, voices on demand.
+- [x] Measures with errors labelled in red and counted in the status bar (click to jump).
+- [ ] **New score wizard**, like Encore's: title, tempo, key, time signature, number of measures, and instrument templates (piano grand staff, string quartet, voice + piano, guitar with tablature).
 - [ ] Note property panel.
 - [ ] Insert vs. overwrite mode (the Insert key, as in a word processor).
 - [ ] Tuplets.

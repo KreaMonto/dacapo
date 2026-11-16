@@ -4,7 +4,7 @@
     {
       "name": "renderer-preview",
       "runtimeExecutable": "docker",
-      "runtimeArgs": ["run", "--rm", "--name", "dacapo-preview", "-p", "8765:80", "-v", "C:/proyectos/new_encore:/usr/share/nginx/html:ro", "nginx:alpine"],
+      "runtimeArgs": ["run", "--rm", "--init", "-p", "8765:80", "-v", "C:/proyectos/new_encore:/usr/share/nginx/html:ro", "nginx:alpine"],
       "port": 8765
     }
   ]
