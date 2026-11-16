@@ -2,7 +2,7 @@
 
 All notable changes to Da Capo are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/). While the version is 0.x, minor versions may include breaking changes.
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-11-16
 
 ### Added
 - **Playback** with the FluidR3 GM SoundFont, downloaded on first use with progress in the status bar.
@@ -30,6 +30,7 @@ All notable changes to Da Capo are documented here. The format follows [Keep a C
 - **About dialog** with version, credits and the components downloaded by the app.
 - **Installers** for Windows, macOS (Apple silicon and Intel) and Linux, built by GitHub Actions and published on GitHub Releases (see `docs/RELEASING.md`).
 - **Automatic updates**: Da Capo checks for a new version once a day, asks before downloading it, downloads it in the background, and installs it when you restart. Unsaved changes are kept through the restart. Help → Check for Updates… checks on demand; automatic checks can be turned off with Help → Automatic Updates. Updates are verified with the project's signing key.
+- **Help → Support Da Capo…** opens the page about donating to and helping the project.
 
 ### Changed
 - **License** changed from MIT to **GPL-3.0-or-later**.
