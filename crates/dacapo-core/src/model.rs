@@ -198,6 +198,20 @@ impl Event {
     }
 }
 
+/// Whether a voice is a single *measure rest*: one rest that fills the
+/// whole measure. By convention a plain whole rest means "rest for the whole
+/// measure" in any time signature (3/4, 6/8, …), so it counts too.
+pub fn is_measure_rest(events: &[Event], capacity: u32) -> bool {
+    match events {
+        [e] => {
+            e.is_rest()
+                && (e.ticks() == capacity
+                    || (e.duration.base == DurationBase::Whole && e.duration.dots == 0))
+        }
+        _ => false,
+    }
+}
+
 /// Clef of a staff.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -419,7 +433,7 @@ impl Score {
                 let capacity = self.measures[m].time.measure_ticks();
                 for (v, events) in cell.voices.iter().enumerate() {
                     let ticks: u32 = events.iter().map(Event::ticks).sum();
-                    if ticks > capacity {
+                    if ticks > capacity && !is_measure_rest(events, capacity) {
                         issues.push(Issue::Overfull {
                             staff: s,
                             measure: m,
