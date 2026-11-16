@@ -1,5 +1,7 @@
 # Builds the installers for Windows, macOS and Linux and attaches them to a
 # draft GitHub Release, together with latest.json for the in-app updater.
+# Windows builds are signed with SignPath once the SIGNPATH_* settings exist
+# (see docs/RELEASING.md); until then they are published unsigned.
 # Review the draft and click "Publish release": from then on, installed
 # copies of Da Capo offer the new version.
 #
@@ -62,7 +64,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
+          SIGNED: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
         run: |
+          if [[ "$SIGNED" == "true" ]]; then
+            WINDOWS_NOTE="The Windows installers are signed ([code signing policy](https://github.com/$GITHUB_REPOSITORY/blob/main/docs/CODE_SIGNING.md)), but SmartScreen may still warn while the certificate builds reputation. The macOS and Linux builds are not signed. Your system may warn you the first time:"
+          else
+            WINDOWS_NOTE="These builds are not signed yet, so your system may warn you the first time:"
+          fi
           tag="v$VERSION"
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
             --jq ".[] | select(.tag_name == \"$tag\") | .id" | head -n1)
@@ -79,7 +87,7 @@ jobs:
           | macOS, Intel | \`Da.Capo_${VERSION}_x64.dmg\` |
           | Linux | \`.AppImage\` (any distribution), \`.deb\` (Debian, Ubuntu) or \`.rpm\` (Fedora, openSUSE) |
 
-          These builds are not signed yet, so your system may warn you the first time:
+          $WINDOWS_NOTE
 
           - **Windows**: if SmartScreen says "Windows protected your PC", click **More info → Run anyway**.
           - **macOS**: if macOS says the app cannot be opened, go to **System Settings → Privacy & Security** and click **Open Anyway**.
@@ -109,6 +117,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p dacapo-core --locked
 
+  # macOS and Linux. Windows has its own job below, because its files are
+  # signed between building and publishing.
   build:
     name: Build (${{ matrix.name }})
     needs: [prepare, test]
@@ -116,10 +126,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Windows
-            os: windows-latest
-            args: ''
-            rust_targets: ''
           - name: macOS Apple silicon
             os: macos-latest
             args: --target aarch64-apple-darwin
@@ -167,7 +173,178 @@ jobs:
           tauriScript: npx --yes @tauri-apps/cli@2
           releaseId: ${{ needs.prepare.outputs.release_id }}
           args: ${{ matrix.args }}
-          # latest.json, read by the in-app updater. Windows updates use the
-          # .exe installer, the one the download page recommends.
+          # latest.json, read by the in-app updater. The Windows entries are
+          # added by the updater-json job.
           uploadUpdaterJson: true
-          updaterJsonPreferNsis: true
+
+  windows:
+    name: Build (Windows)
+    needs: [prepare, test]
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      # Signing is on once the SignPath project is set up (docs/RELEASING.md).
+      SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      TAURI: npx --yes @tauri-apps/cli@2
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build the program
+        run: $TAURI build --no-bundle
+
+      - name: Upload the program for signing
+        if: env.SIGN == 'true'
+        id: unsigned-app
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-app
+          path: target/release/dacapo.exe
+          if-no-files-found: error
+
+      - name: Sign the program (SignPath)
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'dacapo' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: app
+          github-artifact-id: ${{ steps.unsigned-app.outputs.artifact-id }}
+          parameters: |
+            version: "${{ env.VERSION }}"
+          # Each request waits for an approver to approve it in SignPath.
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-app
+
+      - name: Put the signed program in place
+        if: env.SIGN == 'true'
+        run: cp signed-app/dacapo.exe target/release/dacapo.exe
+
+      - name: Build the installers
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $TAURI bundle --bundles nsis,msi
+          # Release asset names use dots instead of spaces, as GitHub does.
+          mkdir installers
+          for f in target/release/bundle/nsis/*-setup.exe target/release/bundle/msi/*.msi; do
+            name=$(basename "$f")
+            cp "$f" "installers/${name// /.}"
+          done
+          ls -l installers
+
+      - name: Upload the installers for signing
+        if: env.SIGN == 'true'
+        id: unsigned-installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-installers
+          path: |
+            installers/*.exe
+            installers/*.msi
+          if-no-files-found: error
+
+      - name: Sign the installers (SignPath)
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'dacapo' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: installers
+          github-artifact-id: ${{ steps.unsigned-installers.outputs.artifact-id }}
+          parameters: |
+            version: "${{ env.VERSION }}"
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-installers
+
+      - name: Put the signed installers in place
+        if: env.SIGN == 'true'
+        run: |
+          rm -rf installers
+          mv signed-installers installers
+
+      # Authenticode signing changes the files, so the updater signatures
+      # (.sig) are made afterwards, from the final files.
+      - name: Sign the update packages
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for f in installers/*.exe installers/*.msi; do
+            rm -f "$f.sig"
+            $TAURI signer sign --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$f"
+          done
+          ls -l installers
+
+      - name: Attach the installers to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+        run: |
+          for f in installers/*; do
+            name=$(basename "$f")
+            # Replace an asset left by an earlier run of this workflow.
+            old=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --paginate \
+              --jq ".[] | select(.name == \"$name\") | .id")
+            if [[ -n "$old" ]]; then
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$old"
+            fi
+            gh api -X POST -H "Content-Type: application/octet-stream" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=$name" \
+              --input "$f" --jq .name
+          done
+
+  # Runs after every build, so no other job rewrites latest.json afterwards.
+  updater-json:
+    name: Add Windows to latest.json
+    needs: [prepare, build, windows]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+    steps:
+      - name: Add the Windows installers to latest.json
+        run: |
+          api="repos/$GITHUB_REPOSITORY/releases"
+          assets=$(gh api "$api/$RELEASE_ID/assets" --paginate)
+          asset_id() { jq -r --arg n "$1" '.[] | select(.name == $n) | .id' <<<"$assets"; }
+          download() { gh api -H "Accept: application/octet-stream" "$api/assets/$(asset_id "$1")"; }
+
+          if [[ -n "$(asset_id latest.json)" ]]; then
+            download latest.json > current.json
+          else
+            jq -n --arg v "$VERSION" '{version: $v, notes: "", pub_date: (now | todate), platforms: {}}' > current.json
+          fi
+
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
+          nsis="Da.Capo_${VERSION}_x64-setup.exe"
+          msi="Da.Capo_${VERSION}_x64_en-US.msi"
+          # Plain "windows-x86_64" points at the .exe (NSIS), the installer
+          # the download page recommends.
+          jq --arg nsis_url "$base/$nsis" --arg nsis_sig "$(download "$nsis.sig")" \
+             --arg msi_url "$base/$msi" --arg msi_sig "$(download "$msi.sig")" '
+            .platforms["windows-x86_64"]      = {signature: $nsis_sig, url: $nsis_url} |
+            .platforms["windows-x86_64-nsis"] = {signature: $nsis_sig, url: $nsis_url} |
+            .platforms["windows-x86_64-msi"]  = {signature: $msi_sig,  url: $msi_url}
+          ' current.json > latest.new.json
+          jq '.platforms | keys' latest.new.json
+
+          if [[ -n "$(asset_id latest.json)" ]]; then
+            gh api -X DELETE "$api/assets/$(asset_id latest.json)"
+          fi
+          gh api -X POST -H "Content-Type: application/json" \
+            "https://uploads.github.com/$api/$RELEASE_ID/assets?name=latest.json" \
+            --input latest.new.json --jq .name
