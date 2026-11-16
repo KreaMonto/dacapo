@@ -21,7 +21,10 @@ This document tracks the development goals and major stages toward a complete op
 - [ ] Automatic measure reflow: notes that overflow a measure continue in the next one, tied across the barline.
 - [ ] Ties and slurs.
 - [ ] Beaming (grouping eighths and shorter notes by beat).
-- [ ] Mouse note entry with a tool palette, in the spirit of Encore.
+- [x] Mouse note entry: the pointer carries the chosen figure, snaps to lines and spaces, and clicking on a note builds a chord.
+- [ ] Computer keyboard as a piano (two rows of keys = white and black keys, as in DAWs), as an alternative to letter entry.
+- [ ] MIDI keyboard input (also listed under phase 4).
+- [ ] Stable measure widths while entering notes (today the layout re-flows on every insertion).
 - [ ] Rectangle (marquee) selection and dragging notes up and down to change pitch.
 - [ ] Note property panel.
 - [ ] Insert vs. overwrite mode (the Insert key, as in a word processor).

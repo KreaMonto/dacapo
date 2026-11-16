@@ -12,7 +12,24 @@ Da Capo is designed to feel like a word processor whose "text" is music. A blink
 
 The tab of a document with unsaved changes shows a dot (●). Closing it asks whether to save.
 
-## Entering music
+## Entering music with the mouse
+
+This works like the note palette in Encore:
+
+1. Click a note value in the toolbar (𝅝 𝅗𝅥 ♩ ♪ 𝅘𝅥𝅯 𝅘𝅥𝅰). The pointer turns into that figure.
+2. Move over a staff. The figure snaps to the nearest line or space and shows the pitch name (for example `F♯4`). A dashed line marks where it will be inserted.
+3. Click to place it. Notes you place one after another undo together with a single Ctrl+Z.
+4. Click **on an existing note** (the label shows `+`) to add the pitch to its chord. Clicking on a rest turns it into a note.
+
+More details:
+
+- **𝄽** switches between placing rests and placing notes.
+- **•** adds a dot to the figure.
+- `N` toggles entry mode. **Esc**, a right-click or the **↖** tool returns to the select tool.
+- The key signature applies its sharps and flats automatically. Use `+` / `-` afterwards to change the accidental.
+- Notes go into the current voice (`Alt+1`…`4`).
+
+## Entering music with the keyboard
 
 | Key | Action |
 |---|---|
