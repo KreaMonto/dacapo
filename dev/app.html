@@ -130,6 +130,25 @@
       },
       pause() { const s = audio.playback_state(); sound.playing = false; view.caret = { ...view.caret, measure: s.measure, index: 0 }; },
       stop_playback() { sound.playing = false; },
+      about_info() {
+        return {
+          name: 'Da Capo', version: '0.2.0', license: 'GPL-3.0-or-later',
+          repository: 'https://github.com/KreaMonto/dacapo', issues: 'https://github.com/KreaMonto/dacapo/issues',
+          os: 'windows', arch: 'x86_64', tauri: '2.x (fake)', file_format: 3,
+          data_dir: 'C:\\Users\\you\\AppData\\Local\\org.dacapo.editor',
+          soundfont: {
+            name: 'FluidR3 GM', version: '3.1', author: 'Frank Wen', license: 'MIT',
+            homepage: 'https://github.com/pianobooster/fluid-soundfont', source_url: '',
+            installed: sound.state === 'ready', path: 'C:\\Users\\you\\AppData\\Local\\org.dacapo.editor\\soundfonts\\FluidR3_GM.sf2',
+            size_bytes: sound.state === 'ready' ? 148398306 : 0, status: audio.audio_status(),
+          },
+          credits: [
+            { name: 'Bravura', version: 'bundled', author: 'Steinberg Media Technologies', license: 'SIL Open Font License 1.1', url: 'https://github.com/steinbergmedia/bravura', role: 'Music font (SMuFL) used to engrave the score' },
+            { name: 'FluidR3 GM', version: '3.1', author: 'Frank Wen', license: 'MIT', url: 'https://github.com/pianobooster/fluid-soundfont', role: 'Instrument sounds for playback (downloaded on first use)' },
+            { name: 'RustySynth', version: '1.3', author: 'Nobuaki Tanaka', license: 'MIT', url: 'https://github.com/sinshu/rustysynth', role: 'SoundFont synthesizer' },
+          ],
+        };
+      },
     };
     window.__TAURI__ = {
       core: {

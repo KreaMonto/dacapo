@@ -3,7 +3,9 @@ resolver = "2"
 members = ["crates/dacapo-core", "src-tauri"]
 
 [workspace.package]
-version = "0.1.0"
+# The single source of the app version: Tauri reads it from here (there is
+# no "version" in tauri.conf.json), and the About dialog shows it.
+version = "0.2.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 rust-version = "1.89"
