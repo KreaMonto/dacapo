@@ -124,6 +124,20 @@
         const arts = e.articulations || [];
         e.articulations = arts.includes(a) ? arts.filter((x) => x !== a) : [...arts, a];
       },
+      set_lyric({ id, verse, text, join }) {
+        for (const st of view.score.staves) for (const m of st.measures) for (const v of m.voices) {
+          const e = v.find((x) => x.id === id);
+          if (!e || e.kind === 'rest') continue;
+          snapshot();
+          const lyrics = [...(e.lyrics || [])];
+          while (lyrics.length <= verse) lyrics.push({ text: '', join: 'none' });
+          lyrics[verse] = { text, join: text ? join : 'none' };
+          while (lyrics.length && !lyrics.at(-1).text) lyrics.pop();
+          e.lyrics = lyrics;
+          const mi = st.measures.indexOf(m);
+          view.caret = { staff: view.score.staves.indexOf(st), measure: mi, voice: m.voices.indexOf(v), index: v.indexOf(e) + 1 };
+        }
+      },
       set_dynamic({ dynamic }) { const e = voiceOf(view.caret)[view.caret.index - 1]; if (e) { snapshot(); e.dynamic = e.dynamic === dynamic ? null : dynamic; } },
       toggle_slur() {
         const v = voiceOf(view.caret);

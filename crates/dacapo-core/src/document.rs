@@ -16,7 +16,8 @@ use crate::cursor::{self, Caret, Move, SelectionRange};
 use crate::history::{History, Transaction, TxKind};
 use crate::model::{
     is_measure_rest, Articulation, Clef, Duration, Dynamic, Event, EventId, EventKind,
-    KeySignature, Metadata, Pitch, Score, Slur, Step, TimeSignature,
+    KeySignature, LyricJoin, Metadata, Pitch, Score, Slur, Step, Syllable, TimeSignature,
+    MAX_SYLLABLE_CHARS, MAX_VERSES,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
 
@@ -1009,6 +1010,77 @@ impl Document {
         })
     }
 
+    /// Writes (or, with an empty `text`, removes) the syllable that event
+    /// `id` sings in `verse` (0 = first verse). Rests cannot carry lyrics.
+    ///
+    /// Each call is its own undo step, like a word in a word processor. The
+    /// caret goes after the event, so the view follows the lyrics as they
+    /// are typed and undo comes back to the same place.
+    pub fn set_lyric(
+        &mut self,
+        id: EventId,
+        verse: usize,
+        text: &str,
+        join: LyricJoin,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let Some((staff, measure, voice, index)) = self.score.locate(id) else {
+            return Ok(());
+        };
+        let event = &self.score.staves[staff].measures[measure].voices[voice][index];
+        if event.is_rest() || verse >= MAX_VERSES {
+            return Ok(());
+        }
+        // A syllable is one piece of a word: no control characters, and
+        // whitespace only inside it (as single spaces).
+        let text: String = text
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(MAX_SYLLABLE_CHARS)
+            .collect();
+        let syllable = Syllable {
+            join: if text.is_empty() {
+                LyricJoin::None
+            } else {
+                join
+            },
+            text,
+        };
+        let mut lyrics = event.lyrics.clone();
+        if lyrics.len() <= verse {
+            lyrics.resize(verse + 1, Syllable::default());
+        }
+        lyrics[verse] = syllable;
+        while lyrics.last().is_some_and(Syllable::is_empty) {
+            lyrics.pop();
+        }
+        if lyrics == event.lyrics {
+            return Ok(());
+        }
+        let op = Op::ReplaceEvent {
+            at: VoiceLoc {
+                staff,
+                measure,
+                voice,
+            },
+            index,
+            event: Event {
+                lyrics,
+                ..event.clone()
+            },
+        };
+        let caret = Caret {
+            staff,
+            measure,
+            voice,
+            index: index + 1,
+        };
+        self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
+    }
+
     /// Adds a slur over the selected notes of the top selected staff, or
     /// removes it if exactly that slur exists.
     pub fn toggle_slur(&mut self, now_ms: u64) -> Result<(), EditError> {
@@ -1549,6 +1621,131 @@ mod tests {
         );
         doc.set_dynamic(Dynamic::Mf, 8_100).unwrap();
         assert_eq!(doc.score.voice(0, 0, 0).unwrap()[0].dynamic, None);
+    }
+
+    #[test]
+    fn lyrics_by_verse() {
+        let mut doc = Document::new(Score::new("t", 2));
+        let q = Duration::new(DurationBase::Quarter);
+        doc.insert_note(Step::C, q, 0).unwrap();
+        doc.insert_rest(q, 10).unwrap();
+        doc.insert_note(Step::E, q, 20).unwrap();
+        let ids: Vec<EventId> = doc
+            .score
+            .voice(0, 0, 0)
+            .unwrap()
+            .iter()
+            .map(|e| e.id)
+            .collect();
+        let lyrics = |doc: &Document, i: usize| doc.score.voice(0, 0, 0).unwrap()[i].lyrics.clone();
+        let syl = |text: &str, join| Syllable {
+            text: text.to_string(),
+            join,
+        };
+
+        // Second verse first: the first verse stays empty in between.
+        doc.set_lyric(ids[0], 1, "  glo \t ria\n", LyricJoin::Hyphen, 10_000)
+            .unwrap();
+        assert_eq!(
+            lyrics(&doc, 0),
+            vec![Syllable::default(), syl("glo ria", LyricJoin::Hyphen)]
+        );
+        assert_eq!(doc.caret().index, 1);
+        doc.set_lyric(ids[0], 0, "can", LyricJoin::Extender, 20_000)
+            .unwrap();
+        assert_eq!(lyrics(&doc, 0)[0], syl("can", LyricJoin::Extender));
+
+        // Rests, unknown events, verses past the limit and unchanged text
+        // are ignored.
+        let rev = doc.revision();
+        doc.set_lyric(ids[1], 0, "x", LyricJoin::None, 30_000)
+            .unwrap();
+        doc.set_lyric(9_999, 0, "x", LyricJoin::None, 30_000)
+            .unwrap();
+        doc.set_lyric(ids[2], MAX_VERSES, "x", LyricJoin::None, 30_000)
+            .unwrap();
+        doc.set_lyric(ids[0], 0, "can", LyricJoin::Extender, 30_000)
+            .unwrap();
+        assert_eq!(doc.revision(), rev);
+
+        // Long text is cut.
+        doc.set_lyric(ids[2], 0, &"a".repeat(200), LyricJoin::None, 40_000)
+            .unwrap();
+        assert_eq!(lyrics(&doc, 2)[0].text.chars().count(), MAX_SYLLABLE_CHARS);
+
+        // Clearing the last verse removes it; clearing all leaves no lyrics.
+        doc.set_lyric(ids[0], 1, "", LyricJoin::Hyphen, 50_000)
+            .unwrap();
+        assert_eq!(lyrics(&doc, 0), vec![syl("can", LyricJoin::Extender)]);
+        doc.set_lyric(ids[0], 0, " ", LyricJoin::Hyphen, 60_000)
+            .unwrap();
+        assert!(lyrics(&doc, 0).is_empty());
+
+        // Every syllable is one undo step.
+        assert!(doc.undo().unwrap());
+        assert_eq!(lyrics(&doc, 0), vec![syl("can", LyricJoin::Extender)]);
+        assert!(doc.undo().unwrap());
+        assert_eq!(lyrics(&doc, 0).len(), 2);
+    }
+
+    #[test]
+    fn lyrics_travel_with_their_notes() {
+        let mut doc = Document::new(Score::new("t", 2));
+        let q = Duration::new(DurationBase::Quarter);
+        doc.insert_note(Step::C, q, 0).unwrap();
+        doc.insert_note(Step::D, q, 10).unwrap();
+        let ids: Vec<EventId> = doc
+            .score
+            .voice(0, 0, 0)
+            .unwrap()
+            .iter()
+            .map(|e| e.id)
+            .collect();
+        doc.set_lyric(ids[0], 0, "la", LyricJoin::Hyphen, 10_000)
+            .unwrap();
+        doc.set_lyric(ids[1], 0, "na", LyricJoin::None, 20_000)
+            .unwrap();
+
+        // Editing the notes keeps their syllables.
+        doc.set_caret(at(0, 0, 0), false);
+        doc.set_caret(at(0, 0, 2), true);
+        doc.transpose(1, 30_000).unwrap();
+        doc.set_duration(Duration::new(DurationBase::Eighth), 40_000)
+            .unwrap();
+        let texts = |doc: &Document, m: usize| -> Vec<String> {
+            doc.score
+                .voice(0, m, 0)
+                .unwrap()
+                .iter()
+                .map(|e| e.lyrics.first().map(|s| s.text.clone()).unwrap_or_default())
+                .collect()
+        };
+        assert_eq!(texts(&doc, 0), ["la", "na"]);
+
+        // Copy and paste carries them along.
+        let clip = doc.copy().unwrap();
+        doc.set_caret(at(0, 1, 0), false);
+        doc.paste(&clip, 50_000).unwrap();
+        assert_eq!(texts(&doc, 1), ["la", "na"]);
+        assert_eq!(
+            doc.score.voice(0, 1, 0).unwrap()[0].lyrics[0].join,
+            LyricJoin::Hyphen
+        );
+
+        // The journal reproduces lyric edits exactly.
+        let mut source = Document::new(Score::new("t", 2));
+        let mut replica = source.clone();
+        source.insert_note(Step::C, q, 0).unwrap();
+        let id = source.score.voice(0, 0, 0).unwrap()[0].id;
+        source
+            .set_lyric(id, 2, "Sanc", LyricJoin::Hyphen, 10_000)
+            .unwrap();
+        source.undo().unwrap();
+        source.redo().unwrap();
+        for entry in source.take_pending() {
+            replica.replay(&entry).unwrap();
+        }
+        assert_eq!(replica, source);
     }
 
     #[test]

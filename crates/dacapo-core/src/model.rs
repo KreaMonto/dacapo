@@ -226,12 +226,49 @@ pub enum Dynamic {
     Fp,
 }
 
+/// How a lyric syllable connects to what follows it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LyricJoin {
+    /// The word ends here.
+    #[default]
+    None,
+    /// The word continues on a later note: a hyphen is drawn ("can-tar").
+    Hyphen,
+    /// The syllable is held over the following notes (a melisma): an
+    /// extender line is drawn after it.
+    Extender,
+}
+
+/// One syllable of lyrics, sung on an event.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Syllable {
+    pub text: String,
+    #[serde(default)]
+    pub join: LyricJoin,
+}
+
+impl Syllable {
+    /// No text: the event has nothing to sing in this verse.
+    pub fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
+}
+
+/// Most verses (lines of lyrics) an event can carry.
+pub const MAX_VERSES: usize = 8;
+/// Longest syllable, in characters.
+pub const MAX_SYLLABLE_CHARS: usize = 48;
+
 /// One rhythmic event inside a voice.
 ///
 /// Fields added after format version 1 use `#[serde(default)]` so older
 /// `.dacapo` files still load. (`skip_serializing_if` must not be used: the
 /// binary recovery format needs every field to be written.)
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `Deserialize` is written by hand below, so that recovery data written
+/// before a field existed can still be read (see [`reading_pre_lyrics`]).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Event {
     pub id: EventId,
     pub duration: Duration,
@@ -245,6 +282,87 @@ pub struct Event {
     pub articulations: Vec<Articulation>,
     #[serde(default)]
     pub dynamic: Option<Dynamic>,
+    /// Lyrics: one syllable per verse (index 0 is the first verse). An
+    /// empty syllable means nothing is sung in that verse; there are no
+    /// empty syllables at the end. Rests have no lyrics.
+    #[serde(default)]
+    pub lyrics: Vec<Syllable>,
+}
+
+/// The current fields of [`Event`], as read from JSON or binary data.
+#[derive(Deserialize)]
+struct EventFields {
+    id: EventId,
+    duration: Duration,
+    kind: EventKind,
+    #[serde(default)]
+    tie: bool,
+    #[serde(default)]
+    articulations: Vec<Articulation>,
+    #[serde(default)]
+    dynamic: Option<Dynamic>,
+    #[serde(default)]
+    lyrics: Vec<Syllable>,
+}
+
+/// [`Event`] as written to recovery data up to Da Capo 0.2.1.
+#[derive(Deserialize)]
+struct EventPreLyrics {
+    id: EventId,
+    duration: Duration,
+    kind: EventKind,
+    tie: bool,
+    articulations: Vec<Articulation>,
+    dynamic: Option<Dynamic>,
+}
+
+thread_local! {
+    static PRE_LYRICS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `f` with events read in the binary layout used before lyrics
+/// existed (Da Capo 0.2.1 and older).
+///
+/// The binary recovery format is not self-describing, so a new field
+/// cannot simply default to empty as it does in JSON. Recovery data from
+/// the previous version must stay readable: an in-app update restarts the
+/// program and gives unsaved work back through crash recovery.
+pub(crate) fn reading_pre_lyrics<T>(f: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            PRE_LYRICS.with(|c| c.set(self.0));
+        }
+    }
+    let _restore = Restore(PRE_LYRICS.with(|c| c.replace(true)));
+    f()
+}
+
+impl<'de> Deserialize<'de> for Event {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        if PRE_LYRICS.with(|c| c.get()) {
+            let e = EventPreLyrics::deserialize(deserializer)?;
+            return Ok(Event {
+                id: e.id,
+                duration: e.duration,
+                kind: e.kind,
+                tie: e.tie,
+                articulations: e.articulations,
+                dynamic: e.dynamic,
+                lyrics: Vec::new(),
+            });
+        }
+        let e = EventFields::deserialize(deserializer)?;
+        Ok(Event {
+            id: e.id,
+            duration: e.duration,
+            kind: e.kind,
+            tie: e.tie,
+            articulations: e.articulations,
+            dynamic: e.dynamic,
+            lyrics: e.lyrics,
+        })
+    }
 }
 
 /// A phrase mark from one event to a later one in the same staff and voice.
@@ -256,7 +374,7 @@ pub struct Slur {
 }
 
 impl Event {
-    /// A plain event with no tie, articulations or dynamic.
+    /// A plain event with no tie, articulations, dynamic or lyrics.
     pub fn new(id: EventId, duration: Duration, kind: EventKind) -> Self {
         Event {
             id,
@@ -265,6 +383,7 @@ impl Event {
             tie: false,
             articulations: Vec::new(),
             dynamic: None,
+            lyrics: Vec::new(),
         }
     }
 
@@ -274,6 +393,11 @@ impl Event {
 
     pub fn is_rest(&self) -> bool {
         matches!(self.kind, EventKind::Rest)
+    }
+
+    /// Whether any verse has a syllable on this event.
+    pub fn has_lyrics(&self) -> bool {
+        !self.lyrics.is_empty()
     }
 
     /// Pitches of the event (empty for rests).

@@ -40,9 +40,26 @@ pub const DEFAULT_SYNC_INTERVAL: Duration = Duration::from_millis(500);
 // The binary encoding is not self-describing, so any change to the document
 // types must bump these: data from an older build is then reported as
 // unreadable instead of being misread.
-const JOURNAL_MAGIC: &[u8; 4] = b"DCJ\x03";
-const SNAPSHOT_MAGIC: &[u8; 4] = b"DCS\x03";
-const SNAPSHOT_VERSION: u32 = 3;
+//
+// Version 4 added lyrics to events. Version 3 data (Da Capo 0.2.0 and
+// 0.2.1) is still read: updating the program must not lose the unsaved work
+// it promises to give back after the restart. It is never written.
+const JOURNAL_MAGIC: &[u8; 4] = b"DCJ\x04";
+const SNAPSHOT_MAGIC: &[u8; 4] = b"DCS\x04";
+const SNAPSHOT_VERSION: u32 = 4;
+const JOURNAL_MAGIC_V3: &[u8; 4] = b"DCJ\x03";
+const SNAPSHOT_MAGIC_V3: &[u8; 4] = b"DCS\x03";
+const SNAPSHOT_VERSION_V3: u32 = 3;
+
+/// Decodes binary data written by the current version, or by version 3
+/// when `v3` is set.
+fn decode<T: serde::de::DeserializeOwned>(payload: &[u8], v3: bool) -> Result<T, postcard::Error> {
+    if v3 {
+        crate::model::reading_pre_lyrics(|| postcard::from_bytes(payload))
+    } else {
+        postcard::from_bytes(payload)
+    }
+}
 
 const LOCK_FILE: &str = "lock";
 const MANIFEST_FILE: &str = "manifest.json";
@@ -116,7 +133,11 @@ pub fn encode_record(record: &JournalRecord) -> Result<Vec<u8>, postcard::Error>
 /// Parses a journal file. Returns the valid records and whether trailing
 /// bytes had to be discarded (torn or corrupted write).
 pub fn decode_journal(bytes: &[u8]) -> (Vec<JournalRecord>, bool) {
-    let Some(mut rest) = bytes.strip_prefix(JOURNAL_MAGIC.as_slice()) else {
+    let (mut rest, v3) = if let Some(rest) = bytes.strip_prefix(JOURNAL_MAGIC.as_slice()) {
+        (rest, false)
+    } else if let Some(rest) = bytes.strip_prefix(JOURNAL_MAGIC_V3.as_slice()) {
+        (rest, true)
+    } else {
         return (Vec::new(), !bytes.is_empty());
     };
     let mut records = Vec::new();
@@ -124,7 +145,7 @@ pub fn decode_journal(bytes: &[u8]) -> (Vec<JournalRecord>, bool) {
         let Some((payload, used)) = unframe(rest) else {
             return (records, true);
         };
-        match postcard::from_bytes(payload) {
+        match decode(payload, v3) {
             Ok(r) => records.push(r),
             Err(_) => return (records, true),
         }
@@ -145,12 +166,21 @@ fn encode_snapshot(seq: u64, document: &Document) -> Result<Vec<u8>, postcard::E
 }
 
 fn decode_snapshot(bytes: &[u8]) -> Result<Snapshot, RecoveryError> {
-    let rest = bytes
-        .strip_prefix(SNAPSHOT_MAGIC.as_slice())
-        .ok_or(RecoveryError::BadSnapshot)?;
+    let (rest, v3) = if let Some(rest) = bytes.strip_prefix(SNAPSHOT_MAGIC.as_slice()) {
+        (rest, false)
+    } else if let Some(rest) = bytes.strip_prefix(SNAPSHOT_MAGIC_V3.as_slice()) {
+        (rest, true)
+    } else {
+        return Err(RecoveryError::BadSnapshot);
+    };
     let (payload, _) = unframe(rest).ok_or(RecoveryError::BadSnapshot)?;
-    let snap: Snapshot = postcard::from_bytes(payload).map_err(|_| RecoveryError::BadSnapshot)?;
-    if snap.version != SNAPSHOT_VERSION {
+    let snap: Snapshot = decode(payload, v3).map_err(|_| RecoveryError::BadSnapshot)?;
+    let expected = if v3 {
+        SNAPSHOT_VERSION_V3
+    } else {
+        SNAPSHOT_VERSION
+    };
+    if snap.version != expected {
         return Err(RecoveryError::BadSnapshot);
     }
     Ok(snap)

@@ -26,7 +26,9 @@ pub const FILE_EXTENSION: &str = "dacapo";
 /// - 3: playback tempo on the score (older files get the default, 100).
 /// - 4: breve and 128th note values. Only files that use them are written
 ///   as version 4, so everything else still opens in older versions.
-pub const FORMAT_VERSION: u32 = 4;
+/// - 5: lyrics on events. As with version 4, only files that have lyrics
+///   are written as version 5.
+pub const FORMAT_VERSION: u32 = 5;
 const FORMAT_MARKER: &str = "dacapo";
 
 #[derive(Serialize, Deserialize)]
@@ -62,14 +64,17 @@ pub fn to_bytes(score: &Score) -> Result<Vec<u8>, FileError> {
 
 /// The oldest format version that can represent `score`.
 fn required_version(score: &Score) -> u32 {
-    let extended = score.staves.iter().any(|staff| {
-        staff.measures.iter().any(|m| {
-            m.voices
+    let any_event = |test: fn(&crate::model::Event) -> bool| {
+        score.staves.iter().any(|staff| {
+            staff
+                .measures
                 .iter()
-                .any(|v| v.iter().any(|e| e.duration.base.is_extended()))
+                .any(|m| m.voices.iter().any(|v| v.iter().any(test)))
         })
-    });
-    if extended {
+    };
+    if any_event(|e| e.has_lyrics()) {
+        5
+    } else if any_event(|e| e.duration.base.is_extended()) {
         4
     } else {
         3
@@ -218,6 +223,45 @@ mod tests {
         score.staves[0].measures[0].voices[0].push(note(2, DurationBase::HundredTwentyEighth));
         assert_eq!(version(&score), 4);
         assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
+    }
+
+    #[test]
+    fn lyrics_need_format_5_only_when_used() {
+        use crate::model::{
+            Duration, DurationBase, Event, EventKind, LyricJoin, Pitch, Step, Syllable,
+        };
+        let version = |score: &Score| -> u64 {
+            let v: serde_json::Value = serde_json::from_slice(&to_bytes(score).unwrap()).unwrap();
+            v["format_version"].as_u64().unwrap()
+        };
+        let mut score = Score::new("Song", 1);
+        let mut note = Event::new(
+            1,
+            Duration::new(DurationBase::Quarter),
+            EventKind::Chord {
+                pitches: vec![Pitch::new(Step::C, 4)],
+            },
+        );
+        score.staves[0].measures[0].voices[0].push(note.clone());
+        assert_eq!(version(&score), 3);
+
+        note.lyrics = vec![
+            Syllable::default(),
+            Syllable {
+                text: "Glo".into(),
+                join: LyricJoin::Hyphen,
+            },
+        ];
+        score.staves[0].measures[0].voices[0][0] = note;
+        assert_eq!(version(&score), 5);
+        assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
+
+        // Files written before lyrics existed have no such field.
+        let mut v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        let event = &mut v["score"]["staves"][0]["measures"][0]["voices"][0][0];
+        event.as_object_mut().unwrap().remove("lyrics");
+        let old = from_bytes(&serde_json::to_vec(&v).unwrap()).unwrap();
+        assert!(old.staves[0].measures[0].voices[0][0].lyrics.is_empty());
     }
 
     #[test]

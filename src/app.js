@@ -1,7 +1,10 @@
 // Da Capo frontend. Owns no musical state: every edit is sent to Rust,
 // which answers with the full document view to redraw.
 
-import { SP, renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, playheadMarkup, esc, eraserTarget, eventsInBox } from './render.js';
+import {
+  SP, renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, playheadMarkup, esc, eraserTarget, eventsInBox,
+  lyricTarget, LYRIC_PX, LYRIC_FONT, MAX_VERSES,
+} from './render.js';
 import { installTooltips } from './tooltip.js';
 import { installMenuBar } from './menu.js';
 
@@ -48,6 +51,7 @@ const state = {
   theme: loadPref('theme', 'system'), // 'system' | 'light' | 'dark'
   zoom: loadPref('zoom', 1), // 0.25 … 4
   pointer: null, // last mouse position over the score, for the ghost figure
+  lyric: null, // { id, verse, staff }: the syllable being typed (see "lyrics")
   layout: null,
   error: null,
 };
@@ -207,8 +211,8 @@ function render() {
   document.body.dataset.view = state.view;
   // At zoom z the wrap view lays out for width/z so it still fills the window.
   const width = (scoreEl.clientWidth || 1000) / state.zoom;
-  const { pages, layout, hits } = renderScore(doc, width, {
-    multiRest: state.multiRest, view: state.view, paper: state.paper, zoom: state.zoom,
+  const { pages, layout, hits, slots } = renderScore(doc, width, {
+    multiRest: state.multiRest, view: state.view, paper: state.paper, zoom: state.zoom, lyricEdit: lyricEdit(doc),
   });
   if (layout.mode === 'page') {
     scoreEl.innerHTML = pages.map((svg, i) => {
@@ -221,6 +225,8 @@ function render() {
   }
   state.layout = layout;
   state.hits = hits;
+  state.slots = slots;
+  placeLyricInput();
   scoreEl.classList.toggle('entry', entering());
   scoreEl.classList.toggle('erasing', state.mode === 'erase');
   drawGhost();
@@ -380,12 +386,14 @@ function renderStatus() {
     parts.push(`Staff ${c.staff + 1} · Measure ${c.measure + 1}${voice}`);
     const d = state.duration;
     const value = `${d.dots ? 'dotted ' : ''}${VALUE_NAMES[d.base] || d.base.toLowerCase()}`;
-    parts.push({
-      select: `Select tool · next value: ${value}`,
-      note: `<b>Placing ${value} notes</b> — click a line or space · click a note to add to its chord · Esc to stop`,
-      rest: `<b>Placing ${value} rests</b> — click to place · Esc to stop`,
-      erase: '<b>Eraser</b> — click a note, or drag a box · Esc to stop',
-    }[state.mode]);
+    parts.push(state.lyric
+      ? `<b>Lyrics${state.layout?.verses[state.lyric.staff] > 1 ? ` · verse ${state.lyric.verse + 1}` : ''}</b> — Space: next note · - hyphen · _ hold the syllable · ↓ ↑ verse · Esc to finish`
+      : {
+        select: `Select tool · next value: ${value}`,
+        note: `<b>Placing ${value} notes</b> — click a line or space · click a note to add to its chord · Esc to stop`,
+        rest: `<b>Placing ${value} rests</b> — click to place · Esc to stop`,
+        erase: '<b>Eraser</b> — click a note, or drag a box · Esc to stop',
+      }[state.mode]);
     parts.push(doc.dirty ? 'Unsaved changes' : (doc.path ? 'Saved' : 'New document'));
     parts.push(doc.protected
       ? '<span class="ok" data-tip="Crash recovery is on" data-desc="Every change is written to disk within half a second; your work survives a crash or power cut.">● Recovery on</span>'
@@ -469,9 +477,12 @@ document.addEventListener('keydown', (ev) => {
     }[lower === 'Tab' ? 'tab' : lower];
     if (handled) {
       ev.preventDefault();
+      // What is being typed as lyrics goes into the document first.
+      commitLyric();
       handled();
       return;
     }
+    if (lower === 'l') { ev.preventDefault(); runCommand('lyrics'); return; }
   }
   // Menus and dialogs handle their own keys.
   if (t.closest?.('.menubar, dialog')) return;
@@ -573,6 +584,14 @@ $('score').addEventListener('mousedown', (ev) => {
     placeAtPointer();
     return;
   }
+  // A click on a line of lyrics (or where the first one would go) types there.
+  const words = !ev.shiftKey && lyricUnderPointer(ev);
+  if (words) {
+    ev.preventDefault();
+    commitLyric();
+    openLyric(words);
+    return;
+  }
   const caret = caretFromMouse(ev);
   if (!caret) return;
   ev.preventDefault();
@@ -602,6 +621,7 @@ $('score').addEventListener('mousemove', (ev) => {
     const p = !dragging && !noteDrag && pointerInLayout(ev.clientX, ev.clientY);
     const t = p && eraserTarget(state.hits || [], p.x, p.y);
     $('score').classList.toggle('over-note', !!(t && !t.rest));
+    drawLyricHover(!dragging && !noteDrag ? lyricUnderPointer(ev) : null);
     return;
   }
   if (!entering()) return;
@@ -640,6 +660,7 @@ window.addEventListener('mouseup', () => {
 $('score').addEventListener('mouseleave', () => {
   state.pointer = null;
   drawGhost();
+  drawLyricHover(null);
   if (!eraser.start) highlightErasable([]);
 });
 
@@ -787,7 +808,7 @@ window.addEventListener('mouseup', (ev) => {
 page.addEventListener('auxclick', (ev) => { if (ev.button === 1) ev.preventDefault(); });
 
 // The ghost must follow the page when it scrolls under a still mouse.
-page.addEventListener('scroll', () => { if (state.mode !== 'select') drawGhost(); });
+page.addEventListener('scroll', () => { if (state.mode !== 'select') drawGhost(); placeLyricInput(); });
 window.addEventListener('mousemove', (ev) => {
   if (!dragging) return;
   const caret = caretFromMouse(ev);
@@ -874,6 +895,7 @@ const commands = {
   'remove-staff': () => act({ type: 'remove_staff' }),
   tie: () => act({ type: 'toggle_tie' }),
   slur: () => act({ type: 'toggle_slur' }),
+  lyrics: () => (state.lyric ? closeLyric() : startLyricsAtCaret()),
   select: () => setMode('select'),
   erase: () => setMode(state.mode === 'erase' ? 'select' : 'erase'),
   dot: () => { state.duration = { ...state.duration, dots: state.duration.dots ? 0 : 1 }; render(); },
@@ -906,6 +928,7 @@ function runCommand(cmd) {
  */
 function printScore() {
   if (!active()) return;
+  closeLyric();
   const previous = state.view;
   state.view = 'page';
   setMode('select'); // re-renders in page view, without ghost figure
@@ -1044,6 +1067,274 @@ function syncTransport() {
   btn.classList.toggle('on', playback.playing);
 }
 
+// ----- lyrics ------------------------------------------------------------------
+// Lyrics are typed into a small text field that sits where the syllable is
+// drawn. Each syllable belongs to a note; leaving the field (Space, -, _,
+// arrows, Esc, a click elsewhere) writes it to the document as one undo step.
+
+const lyric = {
+  input: Object.assign(document.createElement('input'), {
+    className: 'lyric-input', type: 'text', spellcheck: false, autocomplete: 'off', hidden: true,
+  }),
+  initial: '', // the syllable's text when editing started (or was last written)
+  join: 'none', // and how it joined the next one: 'none' | 'hyphen' | 'extender'
+  ctx: null, // canvas context to measure text
+};
+lyric.input.setAttribute('aria-label', 'Lyric syllable');
+document.body.append(lyric.input);
+
+/** Where an event lives in a document: `{ e, staff, measure, voice, index }`. */
+function findEvent(doc, id) {
+  for (let staff = 0; staff < doc.score.staves.length; staff++) {
+    const measures = doc.score.staves[staff].measures;
+    for (let measure = 0; measure < measures.length; measure++) {
+      for (let voice = 0; voice < measures[measure].voices.length; voice++) {
+        const index = measures[measure].voices[voice].findIndex((e) => e.id === id);
+        if (index >= 0) return { e: measures[measure].voices[voice][index], staff, measure, voice, index };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * The notes of a staff and voice that can start a syllable, in score order:
+ * every note except those tied from the previous one.
+ */
+function singable(doc, staff, voice) {
+  const out = [];
+  let tied = false;
+  doc.score.staves[staff].measures.forEach((cell, measure) => {
+    cell.voices[voice].forEach((e, index) => {
+      const rest = e.kind === 'rest';
+      if (!rest && !tied) out.push({ id: e.id, measure, index });
+      tied = !rest && !!e.tie;
+    });
+  });
+  return out;
+}
+
+/** Lines of lyrics a staff has in the document. */
+function verseCount(doc, staff) {
+  let n = 0;
+  for (const cell of doc.score.staves[staff].measures) {
+    for (const voice of cell.voices) for (const e of voice) n = Math.max(n, (e.lyrics || []).length);
+  }
+  return n;
+}
+
+/** The syllable being edited, for the renderer; drops it if its note is gone. */
+function lyricEdit(doc) {
+  if (!state.lyric) return null;
+  const found = findEvent(doc, state.lyric.id);
+  if (!found || found.e.kind === 'rest') {
+    state.lyric = null;
+    lyric.input.hidden = true;
+    return null;
+  }
+  // Nothing typed yet: follow the document (it may have changed by undo).
+  if (lyric.input.value === lyric.initial) {
+    const syl = found.e.lyrics?.[state.lyric.verse];
+    lyric.initial = syl?.text || '';
+    lyric.join = syl?.join || 'none';
+    lyric.input.value = lyric.initial;
+  }
+  return state.lyric;
+}
+
+/** Puts the text field where its syllable is drawn (after every render and scroll). */
+function placeLyricInput() {
+  const l = state.lyric;
+  const slot = l && (state.slots || []).find((s) => s.id === l.id);
+  if (!slot) return;
+  const lay = state.layout;
+  const scoreEl = $('score');
+  const y = lay.lyricY(slot.system, slot.staff, l.verse);
+  const at = layoutToClient(lay, scoreEl, { x: slot.x, y, page: slot.page });
+  const unit = layoutToClient(lay, scoreEl, { x: slot.x + 100, y, page: slot.page });
+  if (!at || !unit) return;
+  const scale = (unit.x - at.x) / 100;
+  if (!lyric.ctx) {
+    lyric.ctx = document.createElement('canvas').getContext('2d');
+    lyric.ctx.font = `${LYRIC_PX}px ${LYRIC_FONT}`;
+  }
+  const px = LYRIC_PX * scale;
+  const width = Math.max(2.4 * px, lyric.ctx.measureText(lyric.input.value).width * scale + 1.2 * px);
+  // Hidden while its note is scrolled out of the score area.
+  const area = page.getBoundingClientRect();
+  const inside = at.x > area.left && at.x < area.right && at.y > area.top + px && at.y < area.bottom;
+  Object.assign(lyric.input.style, {
+    font: `${px}px ${LYRIC_FONT}`,
+    left: `${at.x - width / 2}px`,
+    top: `${at.y - 1.16 * px}px`, // the text's baseline lands on the verse's baseline
+    width: `${width}px`,
+    height: `${1.5 * px}px`,
+    visibility: inside ? 'visible' : 'hidden',
+  });
+}
+
+/** Starts typing the syllable of note `id` in `verse`. */
+function openLyric({ id, verse }) {
+  const doc = active();
+  const found = doc && findEvent(doc, id);
+  if (!found || found.e.kind === 'rest') return;
+  state.lyric = { id, verse, staff: found.staff };
+  state.mode = 'select';
+  const syl = found.e.lyrics?.[verse];
+  lyric.initial = syl?.text || '';
+  lyric.join = syl?.join || 'none';
+  lyric.input.value = lyric.initial;
+  lyric.input.hidden = false;
+  render();
+  lyric.input.focus({ preventScroll: true });
+  lyric.input.setSelectionRange(lyric.initial.length, lyric.initial.length);
+  // Keep the field in view while moving from note to note.
+  const r = lyric.input.getBoundingClientRect();
+  const p = page.getBoundingClientRect();
+  if (r.top < p.top + 40 || r.bottom > p.bottom - 40) page.scrollBy({ top: r.top - p.top - p.height / 2 });
+  if (r.left < p.left + 40 || r.right > p.right - 40) page.scrollBy({ left: r.left - p.left - p.width / 2 });
+}
+
+/**
+ * Writes the field's text to the document if it changed. `join` says what
+ * follows the syllable; without it the syllable keeps what it had.
+ */
+function commitLyric(join) {
+  const l = state.lyric;
+  if (!l) return;
+  const text = lyric.input.value.trim().replace(/\s+/g, ' ');
+  const j = text ? (join ?? lyric.join) : 'none';
+  if (text === lyric.initial && j === lyric.join) return;
+  lyric.initial = text;
+  lyric.join = j;
+  lyric.input.value = text;
+  act({ type: 'set_lyric', id: l.id, verse: l.verse, text, join: j });
+}
+
+/** Leaves lyric entry, keeping what was typed. */
+function closeLyric() {
+  if (!state.lyric) return;
+  commitLyric();
+  state.lyric = null;
+  lyric.input.hidden = true;
+  drawLyricHover(null);
+  render();
+  page.focus();
+}
+
+/** Moves to the next (+1) or previous (−1) note of the voice, writing the syllable first. */
+function lyricStep(dir, join) {
+  const l = state.lyric;
+  const doc = active();
+  const here = doc && findEvent(doc, l.id);
+  if (!here) return;
+  commitLyric(join);
+  const notes = singable(doc, here.staff, here.voice);
+  const i = notes.findIndex((n) => n.id === l.id);
+  const next = i < 0 ? null : notes[i + dir];
+  if (next) openLyric({ id: next.id, verse: l.verse });
+  else {
+    // No note there. The field stays (leaving it would turn the next
+    // letters typed into notes); say why nothing moved.
+    render();
+    if (dir > 0) serial(() => { state.error = 'That was the last note of this voice. Press Esc to finish the lyrics.'; renderStatus(); });
+  }
+}
+
+/** Moves to the verse below (+1) or above (−1) on the same note. */
+function lyricVerse(dir) {
+  const l = state.lyric;
+  const doc = active();
+  if (!doc) return;
+  // One new line may be started below the verses that have text.
+  const used = Math.max(verseCount(doc, l.staff), lyric.input.value.trim() ? l.verse + 1 : 0);
+  const verse = l.verse + dir;
+  if (verse < 0 || verse > Math.min(used, MAX_VERSES - 1)) return;
+  commitLyric();
+  openLyric({ id: l.id, verse });
+}
+
+/** Ctrl+L: lyrics for the note at the caret (or the next one that can be sung). */
+function startLyricsAtCaret() {
+  const doc = active();
+  if (!doc) return;
+  const c = doc.caret;
+  const notes = singable(doc, c.staff, c.voice);
+  const target = notes.find((n) => n.measure === c.measure && n.index === c.index - 1)
+    || notes.find((n) => n.measure > c.measure || (n.measure === c.measure && n.index >= c.index))
+    || notes[notes.length - 1];
+  if (!target) {
+    showError('Lyrics go under notes: write some notes on this staff first.');
+    return;
+  }
+  openLyric({ id: target.id, verse: 0 });
+}
+
+/** The lyric line under the pointer (select tool only): `{ id, verse, staff }` or null. */
+function lyricUnderPointer(ev) {
+  if (state.mode !== 'select' || !state.layout) return null;
+  const p = pointerInLayout(ev.clientX, ev.clientY);
+  if (!p) return null;
+  const head = eraserTarget(state.hits || [], p.x, p.y);
+  if (head && !head.rest) return null; // a notehead there can be dragged instead
+  return lyricTarget(state.layout, state.slots || [], p.x, p.y);
+}
+
+/** Marks the place a click would start typing lyrics (or removes the mark). */
+function drawLyricHover(target) {
+  const scoreEl = $('score');
+  scoreEl.querySelectorAll('.lyric-hover').forEach((r) => r.remove());
+  if (target && state.lyric && state.lyric.id === target.id && state.lyric.verse === target.verse) target = null;
+  const slot = target && (state.slots || []).find((s) => s.id === target.id);
+  scoreEl.classList.toggle('over-lyric', !!slot);
+  if (!slot) return;
+  const svg = scoreEl.querySelector(`svg[data-page="${slot.page}"]`);
+  if (!svg) return;
+  const y = state.layout.lyricY(slot.system, slot.staff, target.verse);
+  svg.insertAdjacentHTML('beforeend',
+    `<rect class="lyric-hover" x="${slot.x - 1.7 * SP}" y="${y - 1.45 * SP}" width="${3.4 * SP}" height="${2 * SP}" rx="3"><title>Click to write lyrics here</title></rect>`);
+}
+
+lyric.input.addEventListener('input', placeLyricInput);
+lyric.input.addEventListener('blur', () => { if (!lyric.input.hidden) closeLyric(); });
+lyric.input.addEventListener('keydown', (ev) => {
+  if (!state.lyric) return;
+  const el = lyric.input;
+  const untouched = el.value === lyric.initial;
+  const atStart = el.selectionStart === 0 && el.selectionEnd === 0;
+  const atEnd = el.selectionStart === el.value.length && el.selectionEnd === el.value.length;
+  const key = ev.key;
+  let handled = true;
+  if (ev.ctrlKey || ev.metaKey || ev.altKey) {
+    const lower = key.toLowerCase();
+    // With nothing typed, Ctrl+Z / Ctrl+Y undo and redo whole syllables;
+    // otherwise they undo the typing itself, as in any text field.
+    if (ev.altKey) handled = false;
+    else if (lower === 'z' && untouched) act({ type: ev.shiftKey ? 'redo' : 'undo' });
+    else if (lower === 'y' && untouched) act({ type: 'redo' });
+    else if (lower === 'l') closeLyric();
+    else handled = false;
+  } else {
+    switch (key) {
+      case ' ': lyricStep(1, 'none'); break;
+      case '-': lyricStep(1, el.value.trim() ? 'hyphen' : undefined); break;
+      case '_': lyricStep(1, el.value.trim() ? 'extender' : undefined); break;
+      case 'Tab': lyricStep(ev.shiftKey ? -1 : 1); break;
+      case 'ArrowRight': if (atEnd) lyricStep(1); else handled = false; break;
+      case 'ArrowLeft': if (atStart) lyricStep(-1); else handled = false; break;
+      case 'Backspace': if (el.value === '') lyricStep(-1); else handled = false; break;
+      case 'ArrowDown': lyricVerse(1); break;
+      case 'ArrowUp': lyricVerse(-1); break;
+      case 'Enter': case 'Escape': closeLyric(); break;
+      default: handled = false;
+    }
+  }
+  if (handled) {
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+});
+
 // ----- dialogs ---------------------------------------------------------------
 
 /** A yes/no dialog. Resolves true when the user picks the OK button. */
@@ -1086,6 +1377,17 @@ const SHORTCUTS = [
     ['N', 'Mouse entry mode on / off'],
     ['X', 'Eraser on / off (click a note, or drag a box)'],
     ['Alt + 1 – 4', 'Switch voice'],
+  ]],
+  ['Lyrics', [
+    ['Ctrl + L', 'Write lyrics under the note at the caret (again to finish)'],
+    ['Click under a staff', 'Write lyrics under that note'],
+    ['Space', 'End the word and go to the next note'],
+    ['-', 'End the syllable with a hyphen and go to the next note'],
+    ['_', 'Hold the syllable over the next notes (extender line)'],
+    ['← / →', 'Previous / next note (at the edge of the text)'],
+    ['↓ / ↑', 'Next / previous verse'],
+    ['Backspace', 'In an empty syllable: back to the previous note'],
+    ['Esc or Enter', 'Finish'],
   ]],
   ['Moving and selecting', [
     ['← / →', 'Previous / next note'],
@@ -1432,6 +1734,7 @@ const MENUS = [
     { sep: true },
     { label: 'Tie', cmd: 'tie', key: 'T', enabled: hasDoc },
     { label: 'Slur over Selection', cmd: 'slur', key: 'S', enabled: hasSelection },
+    { label: 'Lyrics', cmd: 'lyrics', key: 'Ctrl+L', enabled: hasDoc, checked: () => !!state.lyric },
     { sep: true },
     { label: 'Delete Current Measure', cmd: 'remove-measure', enabled: hasDoc },
     { label: 'Delete Current Staff', cmd: 'remove-staff', enabled: hasDoc },

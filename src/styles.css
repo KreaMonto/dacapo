@@ -342,6 +342,26 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .score .tsig, .score .mark { text-anchor: middle; }
 .score .ev .arc { fill: currentColor; }
 .score .mnum { font-size: 10px; fill: var(--muted); }
+/* Lyrics: font and size are set in render.js (LYRIC_FONT, LYRIC_PX). */
+.score .lyric-line { stroke: var(--ink); stroke-width: 1; }
+.score .lyric-hover { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; opacity: 0.7; pointer-events: none; }
+/* The field lyrics are typed in; app.js places it over the syllable. */
+.lyric-input {
+  position: fixed;
+  z-index: 5;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  background: var(--paper);
+  color: var(--ink);
+  text-align: center;
+  line-height: 1.5;
+}
+.lyric-input[hidden] { display: none; }
 .score .sel { fill: var(--accent-soft); }
 .score .overfull { fill: var(--danger-soft); stroke: var(--danger); stroke-width: 1; stroke-dasharray: 4 3; }
 .score .errlabel { font: 600 10px "Segoe UI", system-ui, sans-serif; fill: var(--danger); }
@@ -565,6 +585,6 @@ body[data-view="continuous"] .meta input { width: 400px; text-align: left; }
   .paper:last-child { break-after: auto; }
   .meta input { border-color: transparent !important; color: #000; }
   .meta input:placeholder-shown { visibility: hidden; }
-  .score .caret, .score .sel, .score .ghost, .score .overfull, .score .errlabel { display: none; }
+  .score .caret, .score .sel, .score .ghost, .score .overfull, .score .errlabel, .score .lyric-hover, .lyric-input { display: none; }
   .score .ev, .score .ev.v1, .score .ev.v2, .score .ev.v3 { color: #000 !important; fill: #000 !important; opacity: 1 !important; }
 }

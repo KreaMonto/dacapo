@@ -2,6 +2,19 @@
 
 All notable changes to Da Capo are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/). While the version is 0.x, minor versions may include breaking changes.
 
+## [0.2.2] - Unreleased
+
+### Added
+- **Lyrics**: words under the notes, one syllable per note, in up to 8 verses per staff.
+  - Click under a staff or press `Ctrl+L` (Insert → Lyrics) and type. `Space` goes to the next note, `-` joins syllables with a hyphen, `_` holds a syllable over several notes (extender line), `↓` / `↑` change verse.
+  - Syllables move, copy and paste with their notes. Each one is its own undo step.
+  - Measures widen to fit the words, and staves move apart to fit the verses.
+  - On a staff with lyrics, dynamics are drawn above the staff.
+
+### Changed
+- Scores with lyrics are saved as file format 5, which Da Capo 0.2.1 and older cannot open. Scores without lyrics are saved as before.
+- Crash-recovery data is now format 4. Data left by 0.2.0 and 0.2.1 is still read, so unsaved work survives the update.
+
 ## [0.2.1] - Unreleased
 
 ### Added
