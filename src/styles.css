@@ -54,11 +54,15 @@ html, body {
   font: 13px/1.4 "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 
+/* Column layout; the workspace takes the remaining height. (A grid with
+   fixed rows broke when the hidden recovery banner left the flow.) */
 body {
-  display: grid;
-  grid-template-rows: auto auto auto 1fr auto;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
+body > * { flex: none; }
+body > .workspace { flex: 1 1 auto; }
 
 .glyph { font-family: "Segoe UI Symbol", "Noto Music", "Apple Symbols", serif; }
 

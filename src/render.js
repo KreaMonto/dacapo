@@ -50,35 +50,71 @@ export function keyAlter(fifths, step) {
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
-/** Computes positions of systems, measures and events. */
-export function layout(view, width) {
+/**
+ * A voice holding a single rest that fills the measure. A plain whole rest
+ * means "whole measure" in any time signature. Mirrors
+ * `dacapo_core::model::is_measure_rest`.
+ */
+export function isMeasureRest(events, cap) {
+  if (events.length !== 1 || events[0].kind !== 'rest') return false;
+  const d = events[0].duration;
+  return durationTicks(d) === cap || (baseKey(d.base) === 'whole' && d.dots === 0);
+}
+
+/**
+ * Computes positions of systems, measures and events.
+ * `opts.multiRest`: merge runs of rest-only measures into one multi-measure rest.
+ */
+export function layout(view, width, opts = {}) {
   const score = view.score;
   const nStaves = score.staves.length;
   const avail = Math.max(300, width - 2 * MARGIN_X);
 
-  const measures = score.measures.map((attrs, m) => {
+  const single = score.measures.map((attrs, m) => {
     let maxEvents = 0;
     let maxFill = 0;
+    let restOnly = true;
     // Per staff: the fullest voice, when it exceeds the time signature.
     const overfull = new Map();
     score.staves.forEach((staff, s) => {
-      for (const voice of staff.measures[m].voices) {
-        const fill = voice.reduce((t, e) => t + durationTicks(e.duration), 0);
+      staff.measures[m].voices.forEach((voice, v) => {
+        const mrest = isMeasureRest(voice, capacity(attrs));
+        const fill = mrest ? capacity(attrs) : voice.reduce((t, e) => t + durationTicks(e.duration), 0);
         maxEvents = Math.max(maxEvents, voice.length);
         maxFill = Math.max(maxFill, fill);
         if (fill > capacity(attrs)) overfull.set(s, Math.max(overfull.get(s) || 0, fill));
-      }
+        if (v === 0 ? !mrest : voice.length > 0) restOnly = false;
+      });
     });
     const cap = Math.max(capacity(attrs), maxFill, 1);
     const prev = m > 0 ? score.measures[m - 1] : null;
     return {
-      m, attrs, cap,
+      m, mEnd: m, attrs, cap, restOnly,
       overfull,
       content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP),
       timeChange: !prev || prev.time.beats !== attrs.time.beats || prev.time.beat_type !== attrs.time.beat_type,
       keyChange: !!prev && prev.key.fifths !== attrs.key.fifths,
     };
   });
+
+  // Multi-measure rests: a run of 2+ rest-only measures with no time or
+  // key change inside becomes a single wide entry.
+  const measures = [];
+  for (let i = 0; i < single.length; i++) {
+    let j = i;
+    if (opts.multiRest && single[i].restOnly) {
+      while (j + 1 < single.length && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange) j++;
+    }
+    if (j > i) {
+      measures.push({ ...single[i], mEnd: single[j].m, multi: j - i + 1, content: 13 * SP });
+    } else {
+      measures.push(single[i]);
+    }
+    i = j;
+  }
+  // Every score measure -> the layout entry that draws it.
+  const byMeasure = [];
+  for (const ms of measures) for (let m = ms.m; m <= ms.mEnd; m++) byMeasure[m] = ms;
 
   const keyWidth = (f) => Math.abs(f) * 0.9 * SP;
   const systems = [];
@@ -121,7 +157,7 @@ export function layout(view, width) {
   });
 
   return {
-    systems, measures, nStaves,
+    systems, measures, byMeasure, nStaves,
     width: Math.max(width, avail + 2 * MARGIN_X),
     height: MARGIN_TOP + systems.length * (systemHeight + SYSTEM_GAP),
     staffTop: (ms, staff) => ms.system.y + staff * STAFF_GAP,
@@ -129,8 +165,26 @@ export function layout(view, width) {
   };
 }
 
+/** Horizontal center of a measure's content: where a measure rest sits. */
+const centerX = (ms) => ms.contentX + ms.contentW / 2 - 0.6 * SP;
+
+/** x of each event's notehead/rest in a voice. */
+function eventXs(lay, ms, events) {
+  if (isMeasureRest(events, capacity(ms.attrs))) return [centerX(ms)];
+  let tick = 0;
+  return events.map((e) => {
+    const x = lay.tickX(ms, tick);
+    tick += durationTicks(e.duration);
+    return x;
+  });
+}
+
 /** x of the caret gap before event `index` (or after the last one). */
 function gapX(lay, ms, events, index) {
+  if (ms.multi) return ms.contentX - 0.6 * SP;
+  if (isMeasureRest(events, capacity(ms.attrs))) {
+    return index === 0 ? ms.contentX - 0.6 * SP : centerX(ms) + 2.2 * SP;
+  }
   let tick = 0;
   for (let i = 0; i < index && i < events.length; i++) tick += durationTicks(events[i].duration);
   if (index < events.length) return lay.tickX(ms, tick) - 0.9 * SP;
@@ -153,19 +207,15 @@ export function hitTest(lay, view, x, y, voice) {
   const s = best.s;
   const staff = Math.max(0, Math.min(lay.nStaves - 1, Math.round((y - s.y - 2 * SP) / STAFF_GAP)));
   const ms = s.measures.find((m) => x < m.x + m.w) || s.measures[s.measures.length - 1];
+  if (ms.multi) return { staff, measure: ms.m, voice, index: 0 };
   const events = view.score.staves[staff].measures[ms.m].voices[voice];
-  let index = 0;
-  let tick = 0;
-  for (const e of events) {
-    if (x > lay.tickX(ms, tick) + 0.2 * SP) index++;
-    tick += durationTicks(e.duration);
-  }
+  const index = eventXs(lay, ms, events).filter((ex) => x > ex + 0.2 * SP).length;
   return { staff, measure: ms.m, voice, index };
 }
 
 /** Renders the whole document. Returns { svg, layout }. */
-export function renderScore(view, width) {
-  const lay = layout(view, width);
+export function renderScore(view, width, opts = {}) {
+  const lay = layout(view, width, opts);
   const score = view.score;
   const out = [];
   const push = (s) => out.push(s);
@@ -174,9 +224,11 @@ export function renderScore(view, width) {
   const sel = view.selection;
   if (sel) {
     for (const ms of lay.measures) {
-      if (ms.m < sel.start.measure || ms.m > sel.end.measure) continue;
-      const x0 = ms.m === sel.start.measure ? lay.tickX(ms, sel.start.tick) - 0.9 * SP : ms.x;
-      const x1 = ms.m === sel.end.measure ? lay.tickX(ms, sel.end.tick) - 0.9 * SP : ms.x + ms.w;
+      if (ms.mEnd < sel.start.measure || ms.m > sel.end.measure) continue;
+      const exact = !ms.multi && !ms.restOnly;
+      const x0 = exact && ms.m === sel.start.measure ? lay.tickX(ms, sel.start.tick) - 0.9 * SP : ms.x;
+      const x1 = exact && ms.m === sel.end.measure ? lay.tickX(ms, sel.end.tick) - 0.9 * SP
+        : ms.mEnd === sel.end.measure && sel.end.tick === 0 ? ms.x : ms.x + ms.w;
       if (x1 <= x0) continue;
       for (let st = sel.staff_lo; st <= sel.staff_hi; st++) {
         const top = lay.staffTop(ms, st);
@@ -203,7 +255,7 @@ export function renderScore(view, width) {
   }
 
   for (const ms of lay.measures) {
-    const lastMeasure = ms.m === score.measures.length - 1;
+    const lastMeasure = ms.mEnd === score.measures.length - 1;
     for (let st = 0; st < lay.nStaves; st++) {
       const staff = score.staves[st];
       const top = lay.staffTop(ms, st);
@@ -251,23 +303,38 @@ export function renderScore(view, width) {
         push(`<line class="bar" x1="${bx}" x2="${bx}" y1="${top}" y2="${top + 4 * SP}"/>`);
       }
 
+      // Multi-measure rest: thick bar on the middle line, count above.
+      if (ms.multi) {
+        const x0 = ms.contentX + 0.4 * SP;
+        const x1 = ms.contentX + ms.contentW - 0.4 * SP;
+        push(`<g class="ev v0 mrest" data-measures="${ms.m + 1}-${ms.mEnd + 1}"><title>Measures ${ms.m + 1}–${ms.mEnd + 1}: ${ms.multi} measures of rest</title>`);
+        push(`<rect x="${x0}" y="${top + 1.6 * SP}" width="${x1 - x0}" height="${0.8 * SP}"/>`);
+        push(`<rect x="${x0}" y="${top + SP}" width="1.4" height="${2 * SP}"/><rect x="${x1 - 1.4}" y="${top + SP}" width="1.4" height="${2 * SP}"/>`);
+        push(`<text class="tsig" x="${(x0 + x1) / 2}" y="${top - 0.6 * SP}">${ms.multi}</text></g>`);
+        continue;
+      }
+
       // Events.
       const voices = staff.measures[ms.m].voices;
       const multi = voices.filter((v) => v.length).length > 1;
       voices.forEach((events, v) => {
-        let tick = 0;
-        for (const e of events) {
-          const x = lay.tickX(ms, tick);
-          tick += durationTicks(e.duration);
-          drawEvent(push, e, x, top, yOf, mid, v, multi, ms.attrs.key.fifths, view.caret.voice === v);
+        const active = view.caret.voice === v;
+        if (isMeasureRest(events, capacity(ms.attrs))) {
+          // Measure rest: whole-rest symbol hanging from the 4th line, centered.
+          const shift = multi ? (v % 2 === 0 ? -2 : 2) * SP : 0;
+          const x = centerX(ms);
+          push(`<g class="ev v${v}${active ? '' : ' dim'}" data-id="${events[0].id}"><rect x="${x - 0.6 * SP}" y="${top + SP + shift}" width="${1.2 * SP}" height="${0.5 * SP}"/></g>`);
+          return;
         }
+        const xs = eventXs(lay, ms, events);
+        events.forEach((e, i) => drawEvent(push, e, xs[i], top, yOf, mid, v, multi, ms.attrs.key.fifths, active));
       });
     }
   }
 
   // Caret.
   const c = view.caret;
-  const cms = lay.measures[c.measure];
+  const cms = lay.byMeasure[c.measure];
   if (cms) {
     const events = score.staves[c.staff].measures[c.measure].voices[c.voice];
     const x = gapX(lay, cms, events, c.index);
@@ -385,21 +452,23 @@ export function pointerTarget(lay, view, x, y, voice) {
   const events = view.score.staves[staff].measures[ms.m].voices[voice];
 
   let index = 0;
-  let tick = 0;
   let onEvent = null;
   let onEventDist = Infinity;
   let eventX = 0;
-  events.forEach((e, i) => {
-    const ex = lay.tickX(ms, tick);
-    if (x > ex + 0.2 * SP) index++;
-    const dist = Math.abs(x - ex);
-    if (dist <= 0.8 * SP && dist < onEventDist) {
-      onEvent = i;
-      onEventDist = dist;
-      eventX = ex;
-    }
-    tick += durationTicks(e.duration);
-  });
+  // A measure rest (or a multi-measure rest) is replaced by what is placed,
+  // so it is never a chord target and the insertion point is its start.
+  const restMeasure = ms.multi || isMeasureRest(events, capacity(ms.attrs));
+  if (!restMeasure) {
+    eventXs(lay, ms, events).forEach((ex, i) => {
+      if (x > ex + 0.2 * SP) index++;
+      const dist = Math.abs(x - ex);
+      if (dist <= 0.8 * SP && dist < onEventDist) {
+        onEvent = i;
+        onEventDist = dist;
+        eventX = ex;
+      }
+    });
+  }
 
   return {
     staff, measure: ms.m, voice, index, onEvent,

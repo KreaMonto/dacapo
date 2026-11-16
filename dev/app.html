@@ -33,7 +33,16 @@
         ],
       },
     };
+    // Measures 3–6 start as whole-measure rests, to show multi-measure rests.
+    for (const st of view.score.staves) {
+      for (let m = 2; m <= 5; m++) st.measures[m].voices[0] = [{ id: nextId++, duration: { base: 'Whole', dots: 0 }, kind: 'rest' }];
+    }
     const undo = [];
+    // Like Document::insert_event: writing into a measure rest replaces it.
+    const replaceMeasureRest = (at) => {
+      const v = voiceOf(at);
+      if (v.length === 1 && v[0].kind === 'rest' && v[0].duration.base === 'Whole') { v.length = 0; at.index = 0; }
+    };
     const alter = (m, step) => {
       const f = view.score.measures[m].key.fifths;
       if (f > 0 && SHARPS.slice(0, f).includes(step)) return 1;
@@ -45,11 +54,13 @@
     const handlers = {
       place_note({ at, step, octave, duration }) {
         snapshot();
+        replaceMeasureRest(at);
         voiceOf(at).splice(at.index, 0, { id: nextId++, duration, kind: { chord: { pitches: [{ step, octave, alter: alter(at.measure, step) }] } } });
         view.caret = { ...at, index: at.index + 1 };
       },
       place_rest({ at, duration }) {
         snapshot();
+        replaceMeasureRest(at);
         voiceOf(at).splice(at.index, 0, { id: nextId++, duration, kind: 'rest' });
         view.caret = { ...at, index: at.index + 1 };
       },
@@ -87,7 +98,8 @@
               const t = v.reduce((a, e) => a + ticks(e.duration), 0);
               const attrs = view.score.measures[mi];
               const cap = attrs.time.beats * (3840 / attrs.time.beat_type);
-              if (t > cap) view.issues.push({ type: 'overfull', staff: s, measure: mi, voice: vi, ticks: t, capacity: cap });
+              const mrest = v.length === 1 && v[0].kind === 'rest' && v[0].duration.base === 'Whole';
+              if (t > cap && !mrest) view.issues.push({ type: 'overfull', staff: s, measure: mi, voice: vi, ticks: t, capacity: cap });
             })));
           }
           if (cmd === 'list_recoverable' || cmd === 'list_documents') return [];
