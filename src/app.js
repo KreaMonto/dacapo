@@ -751,9 +751,9 @@ const commands = {
   shortcuts: () => showDialog('shortcuts'),
   about: () => showDialog('about'),
   credits: () => showDialog('credits'),
-  'open-repo': () => openExternal('https://github.com/KreaMonto/dacapo'),
-  'report-problem': () => openExternal('https://github.com/KreaMonto/dacapo/issues'),
-  changelog: () => openExternal('https://github.com/KreaMonto/dacapo/blob/main/CHANGELOG.md'),
+  'open-repo': () => openExternal('https://github.com/dacapo-editor/dacapo'),
+  'report-problem': () => openExternal('https://github.com/dacapo-editor/dacapo/issues'),
+  changelog: () => openExternal('https://github.com/dacapo-editor/dacapo/blob/main/CHANGELOG.md'),
 };
 
 function runCommand(cmd) {

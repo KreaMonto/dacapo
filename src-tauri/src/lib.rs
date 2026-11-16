@@ -449,7 +449,7 @@ struct AboutInfo {
     credits: Vec<Credit>,
 }
 
-const REPOSITORY: &str = "https://github.com/KreaMonto/dacapo";
+const REPOSITORY: &str = "https://github.com/dacapo-editor/dacapo";
 
 /// Everything the Help → About dialog shows: version, platform, the
 /// SoundFont downloaded by the app, and credits for what Da Capo is built on.
@@ -460,7 +460,7 @@ fn about_info(app: tauri::AppHandle, state: State<AppState>) -> AboutInfo {
         version: env!("CARGO_PKG_VERSION"),
         license: "GPL-3.0-or-later",
         repository: REPOSITORY,
-        issues: "https://github.com/KreaMonto/dacapo/issues",
+        issues: "https://github.com/dacapo-editor/dacapo/issues",
         os: std::env::consts::OS,
         arch: std::env::consts::ARCH,
         tauri: tauri::VERSION,
@@ -625,12 +625,70 @@ fn quit(app: tauri::AppHandle, state: State<AppState>) {
     app.exit(0);
 }
 
+/// Identifier used before the project moved to the dacapo-editor GitHub
+/// organization (versions up to 0.2.0 development builds).
+const OLD_IDENTIFIER: &str = "org.dacapo.editor";
+
+/// Moves the downloaded SoundFont and pending crash-recovery data from the
+/// old identifier's data folder, once, so nothing is lost or re-downloaded.
+/// Only folders missing in the new location are moved; failures are logged
+/// and the old data is left untouched.
+fn migrate_old_data_dir(new_dir: &std::path::Path) {
+    let Some(old_dir) = new_dir.parent().map(|p| p.join(OLD_IDENTIFIER)) else {
+        return;
+    };
+    if !old_dir.is_dir() || old_dir == new_dir {
+        return;
+    }
+    for sub in ["soundfonts", "recovery"] {
+        let (from, to) = (old_dir.join(sub), new_dir.join(sub));
+        if from.is_dir() && !to.exists() {
+            let moved = std::fs::create_dir_all(new_dir).and_then(|_| std::fs::rename(&from, &to));
+            match moved {
+                Ok(()) => eprintln!("[dacapo] moved {} to {}", from.display(), to.display()),
+                Err(e) => eprintln!("[dacapo] could not move {}: {e}", from.display()),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_data_folder_is_migrated_once() {
+        let base = std::env::temp_dir().join(format!("dacapo-migrate-{}", Uuid::new_v4()));
+        let old = base.join(OLD_IDENTIFIER);
+        let new = base.join("io.github.dacapo-editor.dacapo");
+        std::fs::create_dir_all(old.join("soundfonts")).unwrap();
+        std::fs::create_dir_all(old.join("recovery").join("abc")).unwrap();
+        std::fs::write(old.join("soundfonts").join("FluidR3_GM.sf2"), b"RIFF....sfbk").unwrap();
+
+        migrate_old_data_dir(&new);
+        assert!(new.join("soundfonts").join("FluidR3_GM.sf2").is_file());
+        assert!(new.join("recovery").join("abc").is_dir());
+        assert!(!old.join("soundfonts").exists());
+
+        // A second run (or a later old folder) never overwrites new data.
+        std::fs::create_dir_all(old.join("soundfonts")).unwrap();
+        std::fs::write(old.join("soundfonts").join("other.sf2"), b"x").unwrap();
+        migrate_old_data_dir(&new);
+        assert!(!new.join("soundfonts").join("other.sf2").exists());
+
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         // Opens links (website, licenses) and folders with the system's apps.
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            if let Ok(dir) = app.path().app_local_data_dir() {
+                migrate_old_data_dir(&dir);
+            }
             let store = app
                 .path()
                 .app_local_data_dir()

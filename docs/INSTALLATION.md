@@ -15,7 +15,7 @@ This guide explains how to set up an environment to develop and run Da Capo loca
 ## Get the code
 
 ```bash
-git clone <repository-url> dacapo
+git clone https://github.com/dacapo-editor/dacapo.git
 cd dacapo
 ```
 
@@ -68,4 +68,4 @@ Running the desktop app itself inside Docker is not practical on Windows, becaus
 ## Where data is stored
 
 - Documents: wherever you save them (`*.dacapo`), plus a `*.dacapo.bak` copy of the previous version.
-- Crash-recovery data: `%LOCALAPPDATA%\org.dacapo.editor\recovery\` on Windows (the app's local data directory on other systems). It is deleted automatically when documents are closed normally.
+- Crash-recovery data: `%LOCALAPPDATA%\io.github.dacapo-editor.dacapo\recovery\` on Windows (the app's local data directory on other systems). It is deleted automatically when documents are closed normally.
