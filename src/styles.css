@@ -392,6 +392,7 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .status .download progress::-webkit-progress-bar { background: var(--chrome-border); border-radius: 3px; }
 .status .download progress::-webkit-progress-value { background: var(--voice2); border-radius: 3px; transition: width 0.2s; }
 .status > span:has(.zoom) { margin-left: auto; }
+.status .update { color: var(--accent); font-weight: 600; cursor: pointer; text-decoration: underline dotted; }
 .status .zoom { cursor: pointer; font-variant-numeric: tabular-nums; }
 .status .zoom:hover { color: var(--text); }
 

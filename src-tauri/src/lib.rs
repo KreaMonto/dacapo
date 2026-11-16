@@ -5,6 +5,7 @@
 //! crash can never lose work.
 
 mod audio;
+mod updater;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -27,6 +28,7 @@ struct AppState {
     store: Option<RecoveryStore>,
     inner: Mutex<Inner>,
     audio: Arc<audio::Engine>,
+    updates: updater::Updates,
 }
 
 #[derive(Default)]
@@ -625,6 +627,43 @@ fn quit(app: tauri::AppHandle, state: State<AppState>) {
     app.exit(0);
 }
 
+/// Asks GitHub Releases whether a newer version exists.
+#[tauri::command]
+async fn check_for_update(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<updater::UpdateStatus, String> {
+    let updates = state.updates.clone();
+    Ok(updates.check(&app).await)
+}
+
+#[tauri::command]
+fn update_status(state: State<AppState>) -> updater::UpdateStatus {
+    state.updates.status()
+}
+
+/// Starts downloading the update the user accepted.
+#[tauri::command]
+fn download_update(state: State<AppState>) -> Result<(), String> {
+    state.updates.download()
+}
+
+/// Installs the downloaded update and restarts. Unsaved documents are
+/// flushed to the recovery journal first, so they are offered back when the
+/// new version starts, exactly as after a crash.
+#[tauri::command]
+fn install_update(app: tauri::AppHandle, state: State<AppState>) -> Result<(), String> {
+    state.audio.stop();
+    for s in &state.inner.lock().unwrap().sessions {
+        if s.doc().is_dirty() {
+            s.sync().map_err(|e| format!("Could not protect unsaved work: {e}"))?;
+        }
+    }
+    state.updates.install()?;
+    // Windows: the installer has already taken over and closed the app.
+    app.restart()
+}
+
 /// Identifier used before the project moved to the dacapo-editor GitHub
 /// organization (versions up to 0.2.0 development builds).
 const OLD_IDENTIFIER: &str = "org.dacapo.editor";
@@ -685,6 +724,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         // Opens links (website, licenses) and folders with the system's apps.
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             if let Ok(dir) = app.path().app_local_data_dir() {
                 migrate_old_data_dir(&dir);
@@ -709,6 +749,7 @@ pub fn run() {
                 store,
                 inner: Mutex::new(Inner::default()),
                 audio: Arc::new(audio::Engine::start(soundfonts)),
+                updates: updater::Updates::default(),
             });
             Ok(())
         })
@@ -751,6 +792,10 @@ pub fn run() {
             playback_state,
             about_info,
             reveal_soundfont_folder,
+            check_for_update,
+            update_status,
+            download_update,
+            install_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Da Capo")

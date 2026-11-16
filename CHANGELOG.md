@@ -29,6 +29,7 @@ All notable changes to Da Capo are documented here. The format follows [Keep a C
 - **Mouse note entry**: the pointer carries the chosen figure; click on a note to build a chord.
 - **About dialog** with version, credits and the components downloaded by the app.
 - **Installers** for Windows, macOS (Apple silicon and Intel) and Linux, built by GitHub Actions and published on GitHub Releases (see `docs/RELEASING.md`).
+- **Automatic updates**: Da Capo checks for a new version once a day, asks before downloading it, downloads it in the background, and installs it when you restart. Unsaved changes are kept through the restart. Help → Check for Updates… checks on demand; automatic checks can be turned off with Help → Automatic Updates. Updates are verified with the project's signing key.
 
 ### Changed
 - **License** changed from MIT to **GPL-3.0-or-later**.

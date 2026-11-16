@@ -1,5 +1,7 @@
 # Builds the installers for Windows, macOS and Linux and attaches them to a
-# draft GitHub Release. Review the draft and click "Publish release".
+# draft GitHub Release, together with latest.json for the in-app updater.
+# Review the draft and click "Publish release": from then on, installed
+# copies of Da Capo offer the new version.
 #
 # Start it in either of two ways (see docs/RELEASING.md):
 #   - Actions -> Release -> Run workflow (on main). The tag v<version> is
@@ -44,6 +46,16 @@ jobs:
             exit 1
           fi
 
+      - name: Check the updater signing key
+        shell: bash
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$KEY" ]]; then
+            echo "::error::The TAURI_SIGNING_PRIVATE_KEY secret is missing. See docs/RELEASING.md."
+            exit 1
+          fi
+
       - name: Create the draft release (or reuse it)
         id: release
         shell: bash
@@ -83,7 +95,6 @@ jobs:
               -f name="Da Capo $VERSION" \
               -F body=@notes.md \
               -F draft=true \
-              -F prerelease="$([[ "$VERSION" == 0.* ]] && echo true || echo false)" \
               --jq .id)
             echo "Created draft release $id for $tag"
           fi
@@ -147,8 +158,16 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # Signs the update packages; the app verifies them with the public
+          # key in tauri.conf.json.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           # The app has no package.json: run the Tauri CLI straight from npm.
           tauriScript: npx --yes @tauri-apps/cli@2
           releaseId: ${{ needs.prepare.outputs.release_id }}
           args: ${{ matrix.args }}
+          # latest.json, read by the in-app updater. Windows updates use the
+          # .exe installer, the one the download page recommends.
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
