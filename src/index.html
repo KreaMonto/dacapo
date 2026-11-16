@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Da Capo</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="toolbar" role="toolbar" aria-label="Main toolbar">
+    <div class="group">
+      <button data-cmd="new" title="New score (Ctrl+N)">New</button>
+      <button data-cmd="open" title="Open (Ctrl+O)">Open</button>
+      <button data-cmd="save" title="Save (Ctrl+S)">Save</button>
+    </div>
+    <div class="group">
+      <button data-cmd="undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
+      <button data-cmd="redo" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
+    </div>
+    <div class="group durations" aria-label="Note value">
+      <button data-dur="Whole" title="Whole (7)" class="glyph">𝅝</button>
+      <button data-dur="Half" title="Half (6)" class="glyph">𝅗𝅥</button>
+      <button data-dur="Quarter" title="Quarter (5)" class="glyph">♩</button>
+      <button data-dur="Eighth" title="Eighth (4)" class="glyph">♪</button>
+      <button data-dur="Sixteenth" title="16th (3)" class="glyph">𝅘𝅥𝅯</button>
+      <button data-dur="ThirtySecond" title="32nd (2)" class="glyph">𝅘𝅥𝅰</button>
+      <button data-cmd="dot" title="Dot (.)" class="dot-btn">•</button>
+      <button data-cmd="rest" title="Insert rest (R or 0)" class="glyph">𝄽</button>
+    </div>
+    <div class="group voices" aria-label="Voice">
+      <button data-voice="0" title="Voice 1 (Alt+1)">1</button>
+      <button data-voice="1" title="Voice 2 (Alt+2)">2</button>
+      <button data-voice="2" title="Voice 3 (Alt+3)">3</button>
+      <button data-voice="3" title="Voice 4 (Alt+4)">4</button>
+    </div>
+    <div class="group">
+      <label>Clef
+        <select id="clef" title="Clef of the current staff">
+          <option value="treble">Treble</option>
+          <option value="bass">Bass</option>
+          <option value="alto">Alto</option>
+          <option value="tenor">Tenor</option>
+        </select>
+      </label>
+      <label>Key
+        <select id="key" title="Key signature from the current measure"></select>
+      </label>
+      <label>Time
+        <input id="time" size="4" title="Time signature from the current measure (e.g. 3/4), Enter to apply">
+      </label>
+    </div>
+    <div class="group">
+      <button data-cmd="add-measure" title="Insert measure after the caret (Ctrl+Enter)">+ Measure</button>
+      <button data-cmd="remove-measure" title="Delete current measure">− Measure</button>
+      <button data-cmd="add-staff" title="Add a staff">+ Staff</button>
+      <button data-cmd="remove-staff" title="Delete current staff">− Staff</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Open documents"></nav>
+
+  <div id="recovery" class="recovery" hidden></div>
+
+  <main id="page" class="page" tabindex="0" aria-label="Score">
+    <div class="sheet">
+      <div class="meta">
+        <input id="title" class="title" placeholder="Title" aria-label="Title">
+        <input id="composer" class="composer" placeholder="Composer" aria-label="Composer">
+      </div>
+      <div id="score" class="score"></div>
+    </div>
+  </main>
+
+  <footer class="status" id="status" aria-live="polite"></footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
