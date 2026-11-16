@@ -23,7 +23,8 @@ pub const FILE_EXTENSION: &str = "dacapo";
 /// - 1: initial format.
 /// - 2: ties, articulations and dynamics on events; slurs on the score.
 ///   Version 1 files load unchanged (the new fields default to empty).
-pub const FORMAT_VERSION: u32 = 2;
+/// - 3: playback tempo on the score (older files get the default, 100).
+pub const FORMAT_VERSION: u32 = 3;
 const FORMAT_MARKER: &str = "dacapo";
 
 #[derive(Serialize, Deserialize)]
@@ -168,6 +169,7 @@ mod tests {
         let mut v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
         v["format_version"] = 1.into();
         v["score"].as_object_mut().unwrap().remove("slurs");
+        v["score"].as_object_mut().unwrap().remove("tempo");
         let ev = &mut v["score"]["staves"][0]["measures"][0]["voices"][0][0];
         for k in ["tie", "articulations", "dynamic"] {
             ev.as_object_mut().unwrap().remove(k);

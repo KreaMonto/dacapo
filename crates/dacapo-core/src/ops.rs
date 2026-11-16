@@ -79,6 +79,9 @@ pub enum Op {
     RemoveSlur {
         index: usize,
     },
+    SetTempo {
+        bpm: u16,
+    },
 }
 
 /// Why an op could not be applied. The score is left untouched.
@@ -100,6 +103,8 @@ pub enum OpError {
     InvalidTime,
     #[error("slur index {0} out of range")]
     SlurIndex(usize),
+    #[error("tempo {0} is outside 20–400 quarter notes per minute")]
+    InvalidTempo(u16),
 }
 
 fn voice_mut(score: &mut Score, at: VoiceLoc) -> Result<&mut Vec<Event>, OpError> {
@@ -312,6 +317,13 @@ impl Op {
                     slur,
                 })
             }
+            Op::SetTempo { bpm } => {
+                if !crate::model::TEMPO_RANGE.contains(bpm) {
+                    return Err(OpError::InvalidTempo(*bpm));
+                }
+                let old = std::mem::replace(&mut score.tempo, *bpm);
+                Ok(Op::SetTempo { bpm: old })
+            }
         }
     }
 }
@@ -429,6 +441,7 @@ mod tests {
                 },
             },
             Op::RemoveSlur { index: 1 },
+            Op::SetTempo { bpm: 132 },
         ];
         let inverses = apply_all(&mut score, &ops).unwrap();
         assert!(score.validate().is_empty());
