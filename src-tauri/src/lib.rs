@@ -104,6 +104,12 @@ struct EraseTarget {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Action {
+    /// Placing an accidental with the mouse (a chord tone alone when `pitch` is set).
+    SetAccidentalAt {
+        id: u64,
+        pitch: Option<dacapo_core::model::Pitch>,
+        alter: i8,
+    },
     /// Dragging a notehead up or down (a chord tone alone when `pitch` is set).
     MovePitch {
         id: u64,
@@ -288,6 +294,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             | Action::AddPitch { .. }
             | Action::Transpose { .. }
             | Action::MovePitch { .. }
+            | Action::SetAccidentalAt { .. }
             | Action::Accidental { .. }
             | Action::SetAccidental { .. }
     );
@@ -307,6 +314,9 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::DeleteBackward => d.delete_backward(now),
             Action::DeleteForward => d.delete_forward(now),
             Action::MovePitch { id, pitch, steps } => d.move_pitch(id, pitch, steps, now),
+            Action::SetAccidentalAt { id, pitch, alter } => {
+                d.set_accidental_at(id, pitch, alter, now)
+            }
             Action::Erase { targets } => {
                 let targets: Vec<_> = targets.into_iter().map(|t| (t.id, t.pitch)).collect();
                 d.erase(&targets, now)

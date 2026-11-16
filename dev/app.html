@@ -91,6 +91,17 @@
     const voiceOf = (c) => view.score.staves[c.staff].measures[c.measure].voices[c.voice];
     const snapshot = () => undo.push(JSON.stringify([view.score, view.caret]));
     const handlers = {
+      set_accidental_at({ id, pitch, alter }) {
+        snapshot();
+        for (const st of view.score.staves) for (const m of st.measures) for (const v of m.voices) {
+          const i = v.findIndex((e) => e.id === id);
+          if (i < 0 || v[i].kind === 'rest') continue;
+          const ps = v[i].kind.chord.pitches;
+          const only = pitch && ps.length > 1 ? pitch : null;
+          v[i].kind.chord.pitches = ps.map((q) => (only && !(q.step === only.step && q.octave === only.octave) ? q : { ...q, alter }));
+          view.caret = { ...view.caret, index: i + 1 };
+        }
+      },
       move_pitch({ id, pitch, steps }) {
         snapshot();
         const shift = (q) => { const d = q.octave * 7 + STEPS.indexOf(q.step) + steps; return { ...q, step: STEPS[((d % 7) + 7) % 7], octave: Math.floor(d / 7) }; };

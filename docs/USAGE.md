@@ -77,7 +77,9 @@ With the **Select** tool, point at a notehead: the pointer becomes a vertical do
 
 The palette is grouped into collapsible categories. Click a heading to open or close it; Da Capo remembers your choice. Hover any button, or reach it with Tab, to see a tooltip with its name, what it does, and its keyboard shortcut.
 
-Marks (accidentals, ties, articulations, dynamics) apply to **the note just before the caret**, or to **every note in the selection**. Clicking the same mark again removes it.
+**Accidentals, articulations and dynamics** can be placed with the mouse: click the mark in the palette (it stays highlighted and follows the pointer), then click each note it goes on; the note under the pointer lights up first. An accidental clicked on a chord changes only that tone. **Esc**, a right-click or clicking the mark again puts it down. With a selection, clicking a mark applies it to every note in the selection at once. From the keyboard, marks apply to **the note just before the caret**.
+
+**Ties and slurs** work on what you select first: select the notes, then click Tie or Slur. Applying the same mark again removes it.
 
 | Category | Contents |
 |---|---|

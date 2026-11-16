@@ -2,7 +2,7 @@
 
 All notable changes to Da Capo are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/). While the version is 0.x, minor versions may include breaking changes.
 
-## [0.2.2] - Unreleased
+## [0.2.2] - 2026-11-16
 
 ### Added
 - **Lyrics**: words under the notes, one syllable per note, in up to 8 verses per staff.
@@ -10,6 +10,7 @@ All notable changes to Da Capo are documented here. The format follows [Keep a C
   - Syllables move, copy and paste with their notes. Each one is its own undo step.
   - Measures widen to fit the words, and staves move apart to fit the verses.
   - On a staff with lyrics, dynamics are drawn above the staff.
+- **Marks with the mouse**: click an accidental, articulation or dynamic in the palette, then click the notes it goes on, as many as you like (the pointer carries the mark and the target note lights up). An accidental can go on one tone of a chord. `Esc` or a right-click puts the mark down. With a selection, the palette applies to the selection at once, as before. Ties and slurs still work on the selection.
 
 ### Changed
 - Scores with lyrics are saved as file format 5, which Da Capo 0.2.1 and older cannot open. Scores without lyrics are saved as before.
@@ -17,9 +18,10 @@ All notable changes to Da Capo are documented here. The format follows [Keep a C
 - The Select tool and the eraser are icon buttons of the same size, so the eraser is no longer cut off at the edge of the palette (their names are in the tooltips).
 
 ### Fixed
+- Lyrics keep clear of beams: the words sit lower when a beam under the notes needs the room, with more space between the music and the text.
 - Note values and rests in the palette are centred in their buttons; the stems and flags of 32nd, 64th and 128th notes are no longer cut off at the top.
 
-## [0.2.1] - Unreleased
+## [0.2.1] - 2026-11-16
 
 ### Added
 - **Beams**: eighths and shorter notes are beamed by beat, following the time signature (dotted quarters in 6/8, 9/8 and 12/8; half bars of eighths in 4/4). Secondary beams and partial beams for 16ths to 128ths; one stem direction per group.
