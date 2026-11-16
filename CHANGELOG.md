@@ -8,6 +8,8 @@ All notable changes to Da Capo are documented here. The format follows [Keep a C
 - **Beams**: eighths and shorter notes are beamed by beat, following the time signature (dotted quarters in 6/8, 9/8 and 12/8; half bars of eighths in 4/4). Secondary beams and partial beams for 16ths to 128ths; one stem direction per group.
 - **Eraser** next to Select (`X`): aim the crosshair at a note to erase just that note, or one tone of a chord; drag a box to erase everything inside. One undo step.
 - **Breve and 128th notes** (and their rests). View → Breve and 128th Notes shows them, with the 64th, in the palette; keys `8` and `9`.
+- Windows installers can be signed through SignPath. The release workflow signs once the SignPath project is set up.
+- [Code signing and privacy policy](docs/CODE_SIGNING.md).
 
 ### Changed
 - Files that use breves or 128th notes are saved as format version 4, which older versions cannot open. Other files stay at version 3.
