@@ -21,6 +21,7 @@
       <symbol id="i-staff-remove" viewBox="0 0 24 24"><path d="M2 5h12M2 8.5h12M2 12h12"/><path d="M2 16h12M2 19.5h12" opacity=".45"/><path d="M16 16h6"/></symbol>
       <symbol id="i-multirest" viewBox="0 0 24 24"><path d="M4 8v8M20 8v8"/><path d="M4 12h16" stroke-width="4"/><path d="M10 3.5h4" opacity=".7"/></symbol>
       <symbol id="i-select" viewBox="0 0 24 24"><path d="M5 3l14 8-6.5 1.8L10 19z"/></symbol>
+      <symbol id="i-erase" viewBox="0 0 24 24"><path d="M15.5 3.5l5 5-10 10H6l-3-3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 10l5 5" stroke="currentColor" stroke-width="2"/><path d="M11 20.5h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
       <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></symbol>
       <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></symbol>
       <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/></symbol>
@@ -82,7 +83,10 @@
 
   <div class="workspace">
     <aside class="palette" id="palette" aria-label="Palette">
-      <button data-cmd="select" class="tool wide" data-tip="Select tool" data-desc="Click to place the caret, drag or Shift+click to select." data-key="Esc"><svg class="icon"><use href="#i-select"/></svg> Select</button>
+      <div class="tools">
+        <button data-cmd="select" class="tool" data-tip="Select tool" data-desc="Click to place the caret, drag or Shift+click to select." data-key="Esc"><svg class="icon"><use href="#i-select"/></svg> Select</button>
+        <button data-cmd="erase" class="tool" data-tip="Eraser" data-desc="Aim at a note and click to erase just that note (in a chord, just that tone). Drag a box to erase everything inside." data-key="X" aria-label="Eraser"><svg class="icon"><use href="#i-erase"/></svg></button>
+      </div>
 
       <!-- Each category is collapsible; app.js remembers which are open.
            Glyphs are SMuFL code points in Bravura. Marks apply to the note
@@ -94,12 +98,15 @@
           <button data-kind="rest" role="radio" data-tip="Rests" data-desc="The figures below place rests.">Rests</button>
         </div>
         <div class="figures" aria-label="Note value">
+          <button data-dur="Breve" data-note="&#xE1D0;" data-rest="&#xE4E2;" data-name="Breve" data-key="8" class="glyph extended"></button>
           <button data-dur="Whole" data-note="&#xE1D2;" data-rest="&#xE4E3;" data-name="Whole" data-key="7" class="glyph"></button>
           <button data-dur="Half" data-note="&#xE1D3;" data-rest="&#xE4E4;" data-name="Half" data-key="6" class="glyph"></button>
           <button data-dur="Quarter" data-note="&#xE1D5;" data-rest="&#xE4E5;" data-name="Quarter" data-key="5" class="glyph"></button>
           <button data-dur="Eighth" data-note="&#xE1D7;" data-rest="&#xE4E6;" data-name="Eighth" data-key="4" class="glyph"></button>
           <button data-dur="Sixteenth" data-note="&#xE1D9;" data-rest="&#xE4E7;" data-name="16th" data-key="3" class="glyph"></button>
           <button data-dur="ThirtySecond" data-note="&#xE1DB;" data-rest="&#xE4E8;" data-name="32nd" data-key="2" class="glyph"></button>
+          <button data-dur="SixtyFourth" data-note="&#xE1DD;" data-rest="&#xE4E9;" data-name="64th" data-key="1" class="glyph extended"></button>
+          <button data-dur="HundredTwentyEighth" data-note="&#xE1DF;" data-rest="&#xE4EA;" data-name="128th" data-key="9" class="glyph extended"></button>
         </div>
         <button data-cmd="dot" class="wide" data-tip="Dot" data-desc="Makes the figure half as long again." data-key=".">• Dot</button>
       </details>

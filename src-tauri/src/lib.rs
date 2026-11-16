@@ -94,10 +94,20 @@ struct TabInfo {
     dirty: bool,
 }
 
+#[derive(Deserialize)]
+struct EraseTarget {
+    id: u64,
+    pitch: Option<dacapo_core::model::Pitch>,
+}
+
 /// Editing commands sent by the frontend.
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Action {
+    /// The eraser: whole events, or single chord tones when `pitch` is set.
+    Erase {
+        targets: Vec<EraseTarget>,
+    },
     InsertNote {
         step: Step,
         duration: Duration,
@@ -280,6 +290,10 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::AddPitch { at, step, octave } => d.add_pitch(at, step, octave, now),
             Action::DeleteBackward => d.delete_backward(now),
             Action::DeleteForward => d.delete_forward(now),
+            Action::Erase { targets } => {
+                let targets: Vec<_> = targets.into_iter().map(|t| (t.id, t.pitch)).collect();
+                d.erase(&targets, now)
+            }
             Action::Move { to, extend } => {
                 d.move_caret(to, extend);
                 Ok(())

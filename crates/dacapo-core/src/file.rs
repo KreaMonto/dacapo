@@ -24,7 +24,9 @@ pub const FILE_EXTENSION: &str = "dacapo";
 /// - 2: ties, articulations and dynamics on events; slurs on the score.
 ///   Version 1 files load unchanged (the new fields default to empty).
 /// - 3: playback tempo on the score (older files get the default, 100).
-pub const FORMAT_VERSION: u32 = 3;
+/// - 4: breve and 128th note values. Only files that use them are written
+///   as version 4, so everything else still opens in older versions.
+pub const FORMAT_VERSION: u32 = 4;
 const FORMAT_MARKER: &str = "dacapo";
 
 #[derive(Serialize, Deserialize)]
@@ -52,10 +54,26 @@ pub enum FileError {
 pub fn to_bytes(score: &Score) -> Result<Vec<u8>, FileError> {
     let envelope = Envelope {
         format: FORMAT_MARKER.to_string(),
-        format_version: FORMAT_VERSION,
+        format_version: required_version(score),
         score: score.clone(),
     };
     Ok(serde_json::to_vec_pretty(&envelope)?)
+}
+
+/// The oldest format version that can represent `score`.
+fn required_version(score: &Score) -> u32 {
+    let extended = score.staves.iter().any(|staff| {
+        staff.measures.iter().any(|m| {
+            m.voices
+                .iter()
+                .any(|v| v.iter().any(|e| e.duration.base.is_extended()))
+        })
+    });
+    if extended {
+        4
+    } else {
+        3
+    }
 }
 
 /// Parses and validates a `.dacapo` document.
@@ -176,6 +194,30 @@ mod tests {
         }
         let loaded = from_bytes(&serde_json::to_vec(&v).unwrap()).unwrap();
         assert_eq!(loaded, score);
+    }
+
+    #[test]
+    fn breve_and_128th_need_format_4_only_when_used() {
+        use crate::model::{Duration, DurationBase, Event, EventKind, Pitch, Step};
+        let version = |score: &Score| -> u64 {
+            let v: serde_json::Value = serde_json::from_slice(&to_bytes(score).unwrap()).unwrap();
+            v["format_version"].as_u64().unwrap()
+        };
+        let mut score = Score::new("Song", 1);
+        assert_eq!(version(&score), 3);
+        let note = |id, base| {
+            Event::new(
+                id,
+                Duration::new(base),
+                EventKind::Chord {
+                    pitches: vec![Pitch::new(Step::C, 4)],
+                },
+            )
+        };
+        score.staves[0].measures[0].voices[0].push(note(1, DurationBase::Breve));
+        score.staves[0].measures[0].voices[0].push(note(2, DurationBase::HundredTwentyEighth));
+        assert_eq!(version(&score), 4);
+        assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
     }
 
     #[test]

@@ -117,6 +117,9 @@ impl Pitch {
 }
 
 /// Base (undotted) note value.
+///
+/// New values are added at the end: the binary recovery journal (postcard)
+/// stores variants by position, so reordering would break existing data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DurationBase {
     Whole,
@@ -126,12 +129,35 @@ pub enum DurationBase {
     Sixteenth,
     ThirtySecond,
     SixtyFourth,
+    /// 128th note (hemidemisemiquaver).
+    HundredTwentyEighth,
+    /// Double whole note.
+    Breve,
 }
 
 impl DurationBase {
     /// Length in ticks.
     pub fn ticks(self) -> u32 {
-        TICKS_PER_WHOLE >> (self as u32)
+        use DurationBase::*;
+        match self {
+            Breve => TICKS_PER_WHOLE * 2,
+            Whole => TICKS_PER_WHOLE,
+            Half => TICKS_PER_WHOLE / 2,
+            Quarter => TICKS_PER_WHOLE / 4,
+            Eighth => TICKS_PER_WHOLE / 8,
+            Sixteenth => TICKS_PER_WHOLE / 16,
+            ThirtySecond => TICKS_PER_WHOLE / 32,
+            SixtyFourth => TICKS_PER_WHOLE / 64,
+            HundredTwentyEighth => TICKS_PER_WHOLE / 128,
+        }
+    }
+
+    /// Values added in file format 4 (older versions cannot read them).
+    pub fn is_extended(self) -> bool {
+        matches!(
+            self,
+            DurationBase::Breve | DurationBase::HundredTwentyEighth
+        )
     }
 }
 
@@ -564,6 +590,13 @@ mod tests {
             1920 + 960 + 480
         );
         assert_eq!(Duration::new(DurationBase::SixtyFourth).ticks(), 60);
+        assert_eq!(Duration::new(DurationBase::HundredTwentyEighth).ticks(), 30);
+        assert_eq!(
+            Duration::dotted(DurationBase::HundredTwentyEighth, 1).ticks(),
+            45
+        );
+        assert_eq!(Duration::new(DurationBase::Breve).ticks(), 7680);
+        assert_eq!(Duration::dotted(DurationBase::Breve, 1).ticks(), 11520);
     }
 
     #[test]

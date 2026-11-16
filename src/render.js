@@ -31,7 +31,12 @@ export function pageGeometry(paper) {
   return { w: p.w * unit, h: p.h * unit, margin: PAGE_MARGIN_MM * unit };
 }
 
-const BASES = ['whole', 'half', 'quarter', 'eighth', 'sixteenth', 'thirty_second', 'sixty_fourth'];
+// Note values from longest to shortest. The index is used throughout: a
+// value lasts (2 wholes >> index) ticks; 0 = breve, 4 = eighth, 8 = 128th.
+const BASES = ['breve', 'whole', 'half', 'quarter', 'eighth', 'sixteenth', 'thirty_second', 'sixty_fourth', 'hundred_twenty_eighth'];
+const V_WHOLE = 1;
+const V_HALF = 2;
+const V_EIGHTH = 4;
 const STEP_INDEX = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
 const SHARP_ORDER = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
 const CLEF_MIDDLE = { treble: 34, bass: 22, alto: 28, tenor: 26 }; // diatonic index of middle line
@@ -48,10 +53,10 @@ const CLEF = {
   alto: { g: '', line: 2 }, // baseline on the C line
   tenor: { g: '', line: 1 },
 };
-const HEAD = ['', '', '']; // whole, half, black
-const REST = ['', '', '', '', '', '', ''];
-const FLAG_UP = ['', '', '', '']; // 8th … 64th
-const FLAG_DOWN = ['', '', '', ''];
+const HEAD = ['\uE0A0', '\uE0A2', '\uE0A3', '\uE0A4']; // breve, whole, half, black
+const REST = ['\uE4E2', '\uE4E3', '\uE4E4', '\uE4E5', '\uE4E6', '\uE4E7', '\uE4E8', '\uE4E9', '\uE4EA']; // breve … 128th
+const FLAG_UP = ['\uE240', '\uE242', '\uE244', '\uE246', '\uE248']; // 8th … 128th
+const FLAG_DOWN = ['\uE241', '\uE243', '\uE245', '\uE247', '\uE249'];
 const ACC = { '-2': '', '-1': '', '0': '', '1': '', '2': '' };
 const DOT = '';
 // Articulations: [above, below]. Fermata is always above.
@@ -70,11 +75,13 @@ export const DYNAMIC = {
 const timeDigits = (n) => String(n).split('').map((d) => String.fromCharCode(0xe080 + Number(d))).join('');
 
 // Glyph widths in staff spaces (from Bravura's metadata).
-const HEAD_W = [1.688, 1.18, 1.18];
-const REST_W = [1.128, 1.128, 1.08, 0.988, 1.28, 1.48, 1.712];
+const HEAD_W = [2.5, 1.688, 1.18, 1.18];
+const REST_W = [0.5, 1.128, 1.128, 1.08, 0.988, 1.28, 1.48, 1.712, 1.94];
 const ACC_W = { '-2': 1.644, '-1': 0.904, '0': 0.672, '1': 0.996, '2': 0.988 };
 const STEM_W = 0.12 * SP;
 const STEM_LEN = 3.5 * SP;
+const BEAM_T = 0.5 * SP; // beam thickness
+const BEAM_STEP = 0.75 * SP; // from one beam to the next (thickness + gap)
 const CLEF_COL = 3.6 * SP; // room for the widest clef (C clef, 2.8 spaces) plus gap
 
 /** A music glyph: baseline at (x, y). */
@@ -83,8 +90,11 @@ const glyph = (g, x, y, cls = '') => `<text class="m${cls ? ` ${cls}` : ''}" x="
 // Serde gives enum variants as written in Rust: DurationBase is PascalCase.
 const baseKey = (b) => b.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
 
+/** Index of a duration's base value in BASES (0 = breve … 8 = 128th). */
+const valueIdx = (d) => BASES.indexOf(baseKey(d.base));
+
 export function durationTicks(d) {
-  const base = TICKS_WHOLE >> BASES.indexOf(baseKey(d.base));
+  const base = (2 * TICKS_WHOLE) >> valueIdx(d);
   let t = 0;
   for (let i = 0; i <= d.dots; i++) t += base >> i;
   return t;
@@ -231,7 +241,8 @@ export function layout(view, width, opts = {}) {
 
   const contentWidth = Math.max(...systems.map((s) => s.width), 0) + 2 * marginX;
   const totalWidth = geo ? geo.w : mode === 'continuous' ? Math.max(width, contentWidth) : Math.max(width, avail + 2 * marginX);
-  const totalHeight = geo ? (page + 1) * geo.h : y - SYSTEM_GAP + MARGIN_TOP;
+  // Below the last staff: room for low notes' stems and beams.
+  const totalHeight = geo ? (page + 1) * geo.h : y - SYSTEM_GAP + 2 * MARGIN_TOP;
   // The regions drawn as separate SVGs: one per page, or one for the sheet.
   const pages = geo
     ? Array.from({ length: page + 1 }, (_, p) => ({ index: p, x: 0, y: pageTop(p), w: geo.w, h: geo.h }))
@@ -307,6 +318,8 @@ export function renderScore(view, width, opts = {}) {
   let cur = 0;
   const onPage = (p) => { cur = p || 0; };
   const push = (s) => outs[cur].push(s);
+  // Where each event's noteheads (or rest) are, for the eraser.
+  const hits = [];
 
   // Selection highlight (below everything).
   const sel = view.selection;
@@ -422,14 +435,31 @@ export function renderScore(view, width, opts = {}) {
       voices.forEach((events, v) => {
         const cls = `ev v${v}${view.caret.voice === v ? '' : ' dim'}`;
         const xs = eventXs(lay, ms, events);
-        events.forEach((e, i) => {
-          const info = drawEvent(push, e, xs[i], top, yOf, mid, v, multi, ms.attrs.key.fifths, cls);
-          Object.assign(info, { e, ms, top, staff: st, voice: v, cls });
+        // Beam groups share one stem direction, chosen before drawing.
+        const groups = isMeasureRest(events, capacity(ms.attrs)) ? [] : beamGroups(events, ms.attrs.time);
+        const groupOf = new Map();
+        const groupUp = groups.map((g, gi) => {
+          g.forEach((i) => groupOf.set(i, gi));
+          return multi ? v % 2 === 0 : groupStemsUp(g.map((i) => events[i]), mid);
+        });
+        const infos = events.map((e, i) => {
+          const gi = groupOf.get(i);
+          const opts = gi === undefined ? {} : { up: groupUp[gi], beamed: true };
+          const info = drawEvent(push, e, xs[i], top, yOf, mid, v, multi, ms.attrs.key.fifths, cls, opts);
+          return Object.assign(info, { e, ms, top, staff: st, voice: v, cls });
+        });
+        const starts = eventStarts(events);
+        groups.forEach((g, gi) => drawBeams(push, g.map((i) => infos[i]), g.map((i) => starts[i]), groupUp[gi], multi ? null : yOf(mid), cls));
+        infos.forEach((info) => {
           drawAttachments(push, info);
+          hits.push({
+            id: info.e.id, page: ms.system.page, rest: !!info.rest, left: info.left, right: info.left + info.w,
+            heads: info.heads, hi: info.hi, lo: info.lo,
+          });
           const key = `${st}:${v}`;
           if (!seqs.has(key)) seqs.set(key, []);
           seqs.get(key).push(info);
-          byId.set(e.id, info);
+          byId.set(info.e.id, info);
         });
       });
     }
@@ -454,7 +484,7 @@ export function renderScore(view, width, opts = {}) {
   const z = opts.zoom || 1;
   const pages = lay.pages.map((p, i) =>
     `<svg xmlns="http://www.w3.org/2000/svg" data-page="${i}" width="${p.w * z}" height="${p.h * z}" viewBox="${p.x} ${p.y} ${p.w} ${p.h}">${outs[i].join('')}</svg>`);
-  return { pages, svg: pages[0], layout: lay };
+  return { pages, svg: pages[0], layout: lay, hits };
 }
 
 /**
@@ -512,9 +542,11 @@ export function layoutToClient(lay, container, point) {
 /**
  * Draws one event centred at x. `opts.stem === false` omits stem and flags
  * (used by the ghost when it previews adding a note to an existing chord).
+ * `opts.up` forces the stem direction and `opts.beamed` leaves the stem to
+ * drawBeams (the event is part of a beam group).
  */
 function drawEvent(push, e, x, top, yOf, mid, voice, multi, fifths, cls, opts = {}) {
-  const baseIdx = BASES.indexOf(baseKey(e.duration.base));
+  const baseIdx = valueIdx(e.duration);
   const pitches = pitchesOf(e);
   push(`<g class="${cls}"${e.id !== undefined ? ` data-id="${e.id}"` : ''}>`);
 
@@ -523,14 +555,15 @@ function drawEvent(push, e, x, top, yOf, mid, voice, multi, fifths, cls, opts = 
     // the middle line, the others are centred on it.
     const shift = multi ? (voice % 2 === 0 ? -2 : 2) * SP : 0;
     const w = REST_W[baseIdx] * SP;
-    const y = (baseIdx === 0 ? top + SP : top + 2 * SP) + shift;
+    // (The breve rest fills the space above the middle line.)
+    const y = (baseIdx === V_WHOLE ? top + SP : top + 2 * SP) + shift;
     push(glyph(REST[baseIdx], x - w / 2, y));
     drawDots(push, e.duration.dots, x + w / 2 + 0.3 * SP, top + 1.5 * SP + shift);
     push('</g>');
     return { x, left: x - w / 2, w, heads: [], up: true, hi: top + SP + shift, lo: top + 3 * SP + shift, rest: true };
   }
 
-  const headIdx = Math.min(baseIdx, 2);
+  const headIdx = Math.min(baseIdx, 3);
   const w = HEAD_W[headIdx] * SP;
   const left = x - w / 2;
   const ds = pitches.map(diatonic).sort((a, b) => a - b);
@@ -560,23 +593,201 @@ function drawEvent(push, e, x, top, yOf, mid, voice, multi, fifths, cls, opts = 
   // Stem (attached to the notehead's right edge going up, left edge going
   // down) and the flag glyph at its end. Whole notes have no stem, but the
   // direction still decides which side ties and articulations go.
-  const up = multi ? voice % 2 === 0 : (lo + hi) / 2 < mid;
+  const up = opts.up ?? (multi ? voice % 2 === 0 : (lo + hi) / 2 < mid);
+  const sx = up ? left + w - STEM_W / 2 : left + STEM_W / 2;
+  const yStart = up ? yOf(lo) - 0.17 * SP : yOf(hi) + 0.17 * SP;
   let stemEnd = null;
-  if (baseIdx >= 1 && opts.stem !== false) {
-    const extra = Math.max(0, baseIdx - 4) * 0.5 * SP; // room for 32nd/64th flags
-    const sx = up ? left + w - STEM_W / 2 : left + STEM_W / 2;
-    const yStart = up ? yOf(lo) - 0.17 * SP : yOf(hi) + 0.17 * SP;
+  if (baseIdx >= V_HALF && opts.stem !== false && !opts.beamed) {
+    const extra = Math.max(0, baseIdx - 5) * 0.5 * SP; // room for 32nd–128th flags
     stemEnd = up ? yOf(hi) - STEM_LEN - extra : yOf(lo) + STEM_LEN + extra;
     push(`<line class="stem" x1="${sx}" x2="${sx}" y1="${yStart}" y2="${stemEnd}"/>`);
-    if (baseIdx >= 3) push(glyph((up ? FLAG_UP : FLAG_DOWN)[baseIdx - 3], sx - STEM_W / 2, stemEnd));
+    if (baseIdx >= V_EIGHTH) push(glyph((up ? FLAG_UP : FLAG_DOWN)[baseIdx - V_EIGHTH], sx - STEM_W / 2, stemEnd));
   }
   push('</g>');
   return {
     x, left, w, up, stemEnd, mid,
-    heads: pitches.map((p) => ({ key: `${p.step}${p.octave}`, y: yOf(diatonic(p)), d: diatonic(p) })),
+    // For drawBeams: stem x, where the stem leaves the chord, and the
+    // notehead nearest the beam.
+    stemX: sx, stemStart: yStart, beamRef: up ? yOf(hi) : yOf(lo),
+    heads: pitches.map((p) => ({ key: `${p.step}${p.octave}`, step: p.step, octave: p.octave, y: yOf(diatonic(p)), d: diatonic(p) })),
     hi: Math.min(yOf(hi) - 0.5 * SP, stemEnd ?? Infinity), // topmost ink
     lo: Math.max(yOf(lo) + 0.5 * SP, stemEnd ?? -Infinity), // lowest ink
   };
+}
+
+// ----- beams -------------------------------------------------------------------
+
+/** Start tick of each event in a voice. */
+function eventStarts(events) {
+  let t = 0;
+  return events.map((e) => { const s = t; t += durationTicks(e.duration); return s; });
+}
+
+/**
+ * Splits a voice into beam groups: runs of notes of an eighth or shorter
+ * that start in the same beat group. Returns arrays of event indices (two
+ * or more each). Rests and longer notes break beams.
+ *
+ * Beat groups follow the time signature: a dotted quarter in compound
+ * meters (6/8, 9/8, 12/8; 3/8 is one group), a quarter in x/4 and in other
+ * x/8 meters, a half in x/2. In 4/4 four plain eighths in the same half bar
+ * share one beam, as is customary.
+ */
+export function beamGroups(events, time) {
+  const beats = time.beats;
+  const bt = time.beat_type || 4;
+  const unitOf = TICKS_WHOLE / bt;
+  const unit = bt >= 8 && beats % 3 === 0 ? 3 * unitOf
+    : bt >= 8 ? TICKS_WHOLE / 4
+      : unitOf;
+  const starts = eventStarts(events);
+  const beamable = (e) => e.kind !== 'rest' && valueIdx(e.duration) >= V_EIGHTH;
+
+  let groups = [];
+  let cur = [];
+  let curBeat = -1;
+  const flush = () => { if (cur.length > 1) groups.push(cur); cur = []; };
+  events.forEach((e, i) => {
+    if (!beamable(e)) { flush(); return; }
+    const beat = Math.floor(starts[i] / unit);
+    if (cur.length && beat !== curBeat) flush();
+    cur.push(i);
+    curBeat = beat;
+  });
+  flush();
+
+  if (beats === 4 && bt === 4) {
+    const half = TICKS_WHOLE / 2;
+    for (let h = 0; h < 2; h++) {
+      const idx = events.map((_, i) => i).filter((i) => starts[i] >= h * half && starts[i] < (h + 1) * half);
+      const plainEighths = idx.length === 4 && idx.every((i) => beamable(events[i])
+        && valueIdx(events[i].duration) === V_EIGHTH && !events[i].duration.dots);
+      if (plainEighths) {
+        groups = groups.filter((g) => !g.some((i) => idx.includes(i)));
+        groups.push(idx);
+      }
+    }
+    groups.sort((a, b) => a[0] - b[0]);
+  }
+  return groups;
+}
+
+/** Stem direction of a beam group: away from the note farthest from the middle line. */
+function groupStemsUp(events, mid) {
+  const ds = events.flatMap((e) => pitchesOf(e).map(diatonic));
+  const lo = Math.min(...ds);
+  const hi = Math.max(...ds);
+  return mid - lo > hi - mid;
+}
+
+/**
+ * Draws the stems and beams of one group. `infos` come from drawEvent
+ * (drawn with `beamed`), `starts` are their start ticks; `midY` is the y of
+ * the middle line (null with several voices, whose stems stay short).
+ * Updates each info's stem end and ink extent.
+ */
+function drawBeams(push, infos, starts, up, midY, cls) {
+  const levels = infos.map((n) => valueIdx(n.e.duration) - V_EIGHTH); // 0 = 8th, 1 = 16th…
+  const count = Math.max(...levels) + 1;
+  const away = up ? -1 : 1; // from the noteheads towards the beam
+  const first = infos[0];
+  const last = infos[infos.length - 1];
+  const x1 = first.stemX;
+  const span = Math.max(last.stemX - x1, 1);
+
+  // Slant follows the outer notes, at most one space, and the beam is flat
+  // when an inner note reaches further than both ends.
+  const inner = infos.slice(1, -1).map((n) => n.beamRef);
+  const ends = [first.beamRef, last.beamRef];
+  const concave = up ? inner.some((y) => y < Math.min(...ends)) : inner.some((y) => y > Math.max(...ends));
+  const dy = last.beamRef - first.beamRef;
+  const slant = concave ? 0 : Math.max(-SP, Math.min(SP, dy / 2));
+  const slope = slant / span;
+
+  // Place the beam so every stem is long enough for all its beams and
+  // reaches at least the middle line.
+  const minLen = Math.max(STEM_LEN, 2.5 * SP + (count - 1) * BEAM_STEP);
+  const need = infos.flatMap((n) => [n.beamRef + away * minLen, midY ?? n.beamRef + away * minLen])
+    .map((y, k) => y - slope * (infos[k >> 1].stemX - x1));
+  const b = up ? Math.min(...need) : Math.max(...need);
+  const yAt = (x) => b + slope * (x - x1);
+
+  push(`<g class="${cls}">`);
+  for (const n of infos) {
+    const y = yAt(n.stemX);
+    push(`<line class="stem" x1="${n.stemX}" x2="${n.stemX}" y1="${n.stemStart}" y2="${y}"/>`);
+    n.stemEnd = y;
+    if (up) n.hi = Math.min(n.hi, y);
+    else n.lo = Math.max(n.lo, y);
+  }
+  const beam = (xa, xb, level) => {
+    const off = -away * level * BEAM_STEP; // further beams sit closer to the noteheads
+    const ya = yAt(xa) + off;
+    const yb = yAt(xb) + off;
+    const t = -away * BEAM_T;
+    push(`<polygon class="beam" points="${xa},${ya} ${xb},${yb} ${xb},${yb + t} ${xa},${ya + t}"/>`);
+  };
+  const half = STEM_W / 2;
+  beam(x1 - half, last.stemX + half, 0);
+  for (let level = 1; level < count; level++) {
+    let i = 0;
+    while (i < infos.length) {
+      if (levels[i] < level) { i++; continue; }
+      let j = i;
+      while (j + 1 < infos.length && levels[j + 1] >= level) j++;
+      if (j > i) {
+        beam(infos[i].stemX - half, infos[j].stemX + half, level);
+      } else {
+        // A lone shorter note gets a beamlet, pointing into the group: right
+        // at the start, left at the end, otherwise towards its own beat.
+        const n = infos[i];
+        const ticks = durationTicks(n.e.duration);
+        const right = i === 0 || (i < infos.length - 1 && Math.round((starts[i] - starts[0]) / ticks) % 2 === 0);
+        const neighbour = infos[right ? i + 1 : i - 1];
+        const len = Math.min(1.1 * SP, Math.abs(neighbour.stemX - n.stemX) / 2);
+        if (right) beam(n.stemX - half, n.stemX + len, level);
+        else beam(n.stemX - len, n.stemX + half, level);
+      }
+      i = j + 1;
+    }
+  }
+  push('</g>');
+}
+
+// ----- eraser ------------------------------------------------------------------
+
+/**
+ * The event under the eraser's crosshair at (x, y) in layout coordinates:
+ * `{ id, pitch }`, where `pitch` ({ step, octave }) names the chord tone hit
+ * when the event is a chord of several notes, else null. Only noteheads and
+ * rests count, so one note can be picked out of a crowded passage.
+ */
+export function eraserTarget(hits, x, y) {
+  let best = null;
+  const consider = (d, target) => { if (!best || d < best.d) best = { d, ...target }; };
+  for (const h of hits) {
+    if (x < h.left - 0.25 * SP || x > h.right + 0.25 * SP) continue;
+    if (h.rest) {
+      if (y >= h.hi - 0.25 * SP && y <= h.lo + 0.25 * SP) consider(Math.abs(x - (h.left + h.right) / 2), { id: h.id, pitch: null });
+      continue;
+    }
+    for (const head of h.heads) {
+      const dy = Math.abs(y - head.y);
+      if (dy > 0.6 * SP) continue;
+      const pitch = h.heads.length > 1 ? { step: head.step, octave: head.octave, alter: 0 } : null;
+      consider(dy + Math.abs(x - (h.left + h.right) / 2) / 4, { id: h.id, pitch });
+    }
+  }
+  return best && { id: best.id, pitch: best.pitch };
+}
+
+/** Ids of the events with a notehead or rest inside the box (layout coordinates). */
+export function eventsInBox(hits, x0, y0, x1, y1) {
+  const [xa, xb] = [Math.min(x0, x1), Math.max(x0, x1)];
+  const [ya, yb] = [Math.min(y0, y1), Math.max(y0, y1)];
+  return hits.filter((h) => h.right >= xa && h.left <= xb && (h.rest
+    ? h.lo >= ya && h.hi <= yb
+    : h.heads.some((head) => head.y >= ya && head.y <= yb))).map((h) => h.id);
 }
 
 /** Is y on a staff line inside the staff? (Then a mark must move to a space.) */

@@ -29,7 +29,10 @@ This document tracks the development goals and major stages toward a complete op
 - [ ] Staff size and page margins per score (today a fixed 7 mm staff and 15 mm margins).
 - [ ] Copy/paste of slurs inside the copied region (today only the notes and their marks are copied).
 - [ ] Hairpins (crescendo / diminuendo), tempo marks, text.
-- [ ] Beaming (grouping eighths and shorter notes by beat).
+- [x] Beaming: eighths and shorter notes grouped by beat (compound meters by dotted quarter, 4/4 eighths by half bar), secondary beams and beamlets.
+- [ ] Manual beam control: break or join beams on a note.
+- [x] Breve and 128th note values, shown in the palette with View → Breve and 128th Notes.
+- [x] Eraser tool: aim at one note (or one chord tone) to erase it, or drag a box to erase several.
 - [x] Mouse note entry: the pointer carries the chosen figure, snaps to lines and spaces, and clicking on a note builds a chord.
 - [ ] Computer keyboard as a piano (two rows of keys = white and black keys, as in DAWs), as an alternative to letter entry.
 - [ ] MIDI keyboard input (also listed under phase 4).

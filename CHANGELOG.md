@@ -2,6 +2,17 @@
 
 All notable changes to Da Capo are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/). While the version is 0.x, minor versions may include breaking changes.
 
+## [0.2.1] - Unreleased
+
+### Added
+- **Beams**: eighths and shorter notes are beamed by beat, following the time signature (dotted quarters in 6/8, 9/8 and 12/8; half bars of eighths in 4/4). Secondary beams and partial beams for 16ths to 128ths; one stem direction per group.
+- **Eraser** next to Select (`X`): aim the crosshair at a note to erase just that note, or one tone of a chord; drag a box to erase everything inside. One undo step.
+- **Breve and 128th notes** (and their rests). View → Breve and 128th Notes shows them, with the 64th, in the palette; keys `8` and `9`.
+
+### Changed
+- Files that use breves or 128th notes are saved as format version 4, which older versions cannot open. Other files stay at version 3.
+- A little more room below the last staff, so low notes' beams and stems are not cut off.
+
 ## [0.2.0] - 2026-11-16
 
 ### Added
