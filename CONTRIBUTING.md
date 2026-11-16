@@ -50,6 +50,12 @@ These rules protect the editor's reliability:
 - All documentation is written in English. The application itself will be translated into other languages.
 - Update `docs/` whenever a change affects usage or architecture.
 
+## License of contributions
+
+Da Capo is licensed under GPL-3.0-or-later. By submitting a contribution, you agree that it is licensed under the same terms.
+
+When you add a dependency, check that its license is compatible with GPL-3.0. MIT, Apache-2.0, BSD, MPL-2.0 and LGPL are fine. Proprietary licenses and "non-commercial" licenses are not. This also applies to assets such as fonts and SoundFonts.
+
 ## Code of conduct
 
 Be respectful and collaborative. A formal `CODE_OF_CONDUCT.md` may be added later.
