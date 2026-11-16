@@ -379,6 +379,18 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .status .warn { color: var(--danger); }
 .status .errors { color: var(--danger); font-weight: 600; cursor: pointer; text-decoration: underline dotted; }
 .status .ok { color: var(--voice2); }
+.status .download { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-variant-numeric: tabular-nums; }
+.status .download progress {
+  width: 120px;
+  height: 6px;
+  appearance: none;
+  border: none;
+  border-radius: 3px;
+  background: var(--chrome-border);
+  overflow: hidden;
+}
+.status .download progress::-webkit-progress-bar { background: var(--chrome-border); border-radius: 3px; }
+.status .download progress::-webkit-progress-value { background: var(--voice2); border-radius: 3px; transition: width 0.2s; }
 .status > span:has(.zoom) { margin-left: auto; }
 .status .zoom { cursor: pointer; font-variant-numeric: tabular-nums; }
 .status .zoom:hover { color: var(--text); }

@@ -102,7 +102,7 @@
         if (s) [view.score, view.caret] = JSON.parse(s);
       },
     };
-    // Fake sound engine: "downloads" in ~1.5 s, then plays silently on a
+    // Fake sound engine: "downloads" in ~6 s, then plays silently on a
     // clock so the playhead and transport can be tried.
     view.score.tempo = 100;
     const sound = { state: 'missing', t0: 0, playing: false, fromTick: 0, startedAt: 0 };
@@ -110,7 +110,7 @@
     const audio = {
       audio_status() {
         if (sound.state === 'downloading') {
-          const k = Math.min(1, (Date.now() - sound.t0) / 1500);
+          const k = Math.min(1, (Date.now() - sound.t0) / 6000);
           if (k >= 1) sound.state = 'ready';
           else return { state: 'downloading', received: Math.round(148398306 * k), total: 148398306 };
         }

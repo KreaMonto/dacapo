@@ -385,7 +385,11 @@ function renderStatus() {
     }
     if (doc.warning) parts.push(`<span class="warn">${esc(doc.warning)}</span>`);
     const s = playback.sound;
-    if (s?.state === 'downloading') parts.push(`<span class="ok">Downloading sounds… ${MB(s.received)} / ${MB(s.total)} MB</span>`);
+    if (s?.state === 'downloading') {
+      const pct = s.total ? Math.min(100, Math.floor((s.received / s.total) * 100)) : 0;
+      parts.push(`<span class="download" role="status" data-tip="Downloading the FluidR3 GM sounds" data-desc="One-time download. Playback starts by itself when it finishes.">`
+        + `Downloading sounds <progress max="100" value="${pct}" aria-label="Download progress"></progress> <b>${pct}%</b> · ${MB(s.received)} / ${MB(s.total)} MB</span>`);
+    }
     if (s?.state === 'loading') parts.push('<span class="ok">Loading sounds…</span>');
     parts.push(`<span class="zoom" data-zoom data-tip="Zoom ${Math.round(state.zoom * 100)}%" data-desc="Alt + mouse wheel, or Ctrl + = / Ctrl + −. Click to go back to 100%." data-key="Ctrl+0">${Math.round(state.zoom * 100)}%</span>`);
   }
