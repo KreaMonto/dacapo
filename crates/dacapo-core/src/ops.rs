@@ -8,7 +8,9 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::model::{Clef, Event, MeasureAttrs, Metadata, Score, Staff, StaffMeasure, MAX_VOICES};
+use crate::model::{
+    Clef, Event, MeasureAttrs, Metadata, Score, Slur, Staff, StaffMeasure, MAX_VOICES,
+};
 
 /// Address of one voice inside one measure of one staff.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -68,6 +70,15 @@ pub enum Op {
     SetMetadata {
         metadata: Metadata,
     },
+    /// Inserts a slur at `index` in `Score::slurs`. Its events need not
+    /// exist yet (undoing a deletion restores slurs before their events).
+    AddSlur {
+        index: usize,
+        slur: Slur,
+    },
+    RemoveSlur {
+        index: usize,
+    },
 }
 
 /// Why an op could not be applied. The score is left untouched.
@@ -87,6 +98,8 @@ pub enum OpError {
     Shape(&'static str),
     #[error("invalid time signature")]
     InvalidTime,
+    #[error("slur index {0} out of range")]
+    SlurIndex(usize),
 }
 
 fn voice_mut(score: &mut Score, at: VoiceLoc) -> Result<&mut Vec<Event>, OpError> {
@@ -281,6 +294,24 @@ impl Op {
                 let old = std::mem::replace(&mut score.metadata, metadata.clone());
                 Ok(Op::SetMetadata { metadata: old })
             }
+            Op::AddSlur { index, slur } => {
+                if *index > score.slurs.len() {
+                    return Err(OpError::SlurIndex(*index));
+                }
+                score.slurs.insert(*index, *slur);
+                score.reserve_id(slur.id);
+                Ok(Op::RemoveSlur { index: *index })
+            }
+            Op::RemoveSlur { index } => {
+                if *index >= score.slurs.len() {
+                    return Err(OpError::SlurIndex(*index));
+                }
+                let slur = score.slurs.remove(*index);
+                Ok(Op::AddSlur {
+                    index: *index,
+                    slur,
+                })
+            }
         }
     }
 }
@@ -312,13 +343,13 @@ mod tests {
     use crate::model::*;
 
     fn note(id: u64, step: Step) -> Event {
-        Event {
+        Event::new(
             id,
-            duration: Duration::new(DurationBase::Quarter),
-            kind: EventKind::Chord {
+            Duration::new(DurationBase::Quarter),
+            EventKind::Chord {
                 pitches: vec![Pitch::new(step, 4)],
             },
-        }
+        )
     }
 
     const V0: VoiceLoc = VoiceLoc {
@@ -381,6 +412,23 @@ mod tests {
             },
             Op::RemoveMeasure { index: 2 },
             Op::RemoveStaff { index: 0 },
+            Op::AddSlur {
+                index: 0,
+                slur: Slur {
+                    id: 900,
+                    start: 1,
+                    end: 2,
+                },
+            },
+            Op::AddSlur {
+                index: 0,
+                slur: Slur {
+                    id: 901,
+                    start: 3,
+                    end: 4,
+                },
+            },
+            Op::RemoveSlur { index: 1 },
         ];
         let inverses = apply_all(&mut score, &ops).unwrap();
         assert!(score.validate().is_empty());

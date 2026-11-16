@@ -7,40 +7,57 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- Icon sprite: 24×24 stroke icons, used with <svg class="icon"><use href="#i-…"/></svg>. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-new" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11v6M9 14h6"/></symbol>
+      <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+      <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M8 3v5h7V3"/><path d="M7 21v-7h10v7"/></symbol>
+      <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></symbol>
+      <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></symbol>
+      <symbol id="i-measure-add" viewBox="0 0 24 24"><path d="M3 7h11M3 12h11M3 17h11"/><path d="M3 5v14M14 5v14"/><path d="M19 9v6M16 12h6"/></symbol>
+      <symbol id="i-measure-remove" viewBox="0 0 24 24"><path d="M3 7h11M3 12h11M3 17h11"/><path d="M3 5v14M14 5v14"/><path d="M16 12h6"/></symbol>
+      <symbol id="i-staff-add" viewBox="0 0 24 24"><path d="M2 5h12M2 8.5h12M2 12h12"/><path d="M2 16h12M2 19.5h12" opacity=".45"/><path d="M19 13v6M16 16h6"/></symbol>
+      <symbol id="i-staff-remove" viewBox="0 0 24 24"><path d="M2 5h12M2 8.5h12M2 12h12"/><path d="M2 16h12M2 19.5h12" opacity=".45"/><path d="M16 16h6"/></symbol>
+      <symbol id="i-multirest" viewBox="0 0 24 24"><path d="M4 8v8M20 8v8"/><path d="M4 12h16" stroke-width="4"/><path d="M10 3.5h4" opacity=".7"/></symbol>
+      <symbol id="i-select" viewBox="0 0 24 24"><path d="M5 3l14 8-6.5 1.8L10 19z"/></symbol>
+    </defs>
+  </svg>
+
   <header class="toolbar" role="toolbar" aria-label="Main toolbar">
     <div class="group">
-      <button data-cmd="new" title="New score (Ctrl+N)">New</button>
-      <button data-cmd="open" title="Open (Ctrl+O)">Open</button>
-      <button data-cmd="save" title="Save (Ctrl+S)">Save</button>
+      <button data-cmd="new" class="ibtn" aria-label="New score" data-tip="New score" data-desc="Open an empty score in a new tab." data-key="Ctrl+N"><svg class="icon"><use href="#i-new"/></svg></button>
+      <button data-cmd="open" class="ibtn" aria-label="Open" data-tip="Open…" data-desc="Open a .dacapo file." data-key="Ctrl+O"><svg class="icon"><use href="#i-open"/></svg></button>
+      <button data-cmd="save" class="ibtn" aria-label="Save" data-tip="Save" data-desc="Save the score. Ctrl+Shift+S saves a copy under another name." data-key="Ctrl+S"><svg class="icon"><use href="#i-save"/></svg></button>
     </div>
     <div class="group">
-      <button data-cmd="undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
-      <button data-cmd="redo" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
+      <button data-cmd="undo" class="ibtn" aria-label="Undo" data-tip="Undo" data-desc="A burst of typing is undone in one step, as in a word processor." data-key="Ctrl+Z"><svg class="icon"><use href="#i-undo"/></svg></button>
+      <button data-cmd="redo" class="ibtn" aria-label="Redo" data-tip="Redo" data-key="Ctrl+Y"><svg class="icon"><use href="#i-redo"/></svg></button>
     </div>
     <div class="group">
-      <label>Clef
-        <select id="clef" title="Clef of the current staff">
+      <label data-tip="Clef" data-desc="Clef of the staff where the caret is.">Clef
+        <select id="clef">
           <option value="treble">Treble</option>
           <option value="bass">Bass</option>
           <option value="alto">Alto</option>
           <option value="tenor">Tenor</option>
         </select>
       </label>
-      <label>Key
-        <select id="key" title="Key signature from the current measure"></select>
+      <label data-tip="Key signature" data-desc="Applies from the caret's measure until the next key change.">Key
+        <select id="key"></select>
       </label>
-      <label>Time
-        <input id="time" size="4" title="Time signature from the current measure (e.g. 3/4), Enter to apply">
+      <label data-tip="Time signature" data-desc="Type e.g. 3/4 and press Enter. Applies from the caret's measure until the next change.">Time
+        <input id="time" size="4">
       </label>
     </div>
     <div class="group">
-      <button data-cmd="add-measure" title="Insert measure after the caret (Ctrl+Enter)">+ Measure</button>
-      <button data-cmd="remove-measure" title="Delete current measure">− Measure</button>
-      <button data-cmd="add-staff" title="Add a staff">+ Staff</button>
-      <button data-cmd="remove-staff" title="Delete current staff">− Staff</button>
+      <button data-cmd="add-measure" class="ibtn" aria-label="Insert measure" data-tip="Insert measure" data-desc="Adds an empty measure after the current one." data-key="Ctrl+Enter"><svg class="icon"><use href="#i-measure-add"/></svg></button>
+      <button data-cmd="remove-measure" class="ibtn" aria-label="Delete measure" data-tip="Delete measure" data-desc="Removes the measure where the caret is, on every staff."><svg class="icon"><use href="#i-measure-remove"/></svg></button>
+      <button data-cmd="add-staff" class="ibtn" aria-label="Add staff" data-tip="Add staff" data-desc="Adds a staff at the bottom of the system."><svg class="icon"><use href="#i-staff-add"/></svg></button>
+      <button data-cmd="remove-staff" class="ibtn" aria-label="Delete staff" data-tip="Delete staff" data-desc="Removes the staff where the caret is."><svg class="icon"><use href="#i-staff-remove"/></svg></button>
     </div>
     <div class="group">
-      <button data-cmd="multirest" aria-pressed="true" title="Show consecutive empty measures as one multi-measure rest">𝄩 Multirests</button>
+      <button data-cmd="multirest" class="ibtn" aria-pressed="true" aria-label="Multi-measure rests" data-tip="Multi-measure rests" data-desc="Show consecutive empty measures as a single rest with a count, as in printed parts."><svg class="icon"><use href="#i-multirest"/></svg></button>
     </div>
   </header>
 
@@ -50,33 +67,81 @@
 
   <div class="workspace">
     <aside class="palette" id="palette" aria-label="Palette">
-      <button data-cmd="select" class="tool wide" title="Select tool: click to place the caret, drag to select (Esc)">↖ Select</button>
+      <button data-cmd="select" class="tool wide" data-tip="Select tool" data-desc="Click to place the caret, drag or Shift+click to select." data-key="Esc"><svg class="icon"><use href="#i-select"/></svg> Select</button>
 
-      <h3>Figures</h3>
-      <div class="switch" role="radiogroup" aria-label="Notes or rests">
-        <button data-kind="note" role="radio" title="Place notes">Notes</button>
-        <button data-kind="rest" role="radio" title="Place rests">Rests</button>
-      </div>
-      <div class="figures" aria-label="Note value">
-        <!-- SMuFL code points (Bravura): individual notes U+E1D2…, rests U+E4E3… -->
-        <button data-dur="Whole" data-note="&#xE1D2;" data-rest="&#xE4E3;" data-name="Whole" data-key="7" class="glyph"></button>
-        <button data-dur="Half" data-note="&#xE1D3;" data-rest="&#xE4E4;" data-name="Half" data-key="6" class="glyph"></button>
-        <button data-dur="Quarter" data-note="&#xE1D5;" data-rest="&#xE4E5;" data-name="Quarter" data-key="5" class="glyph"></button>
-        <button data-dur="Eighth" data-note="&#xE1D7;" data-rest="&#xE4E6;" data-name="Eighth" data-key="4" class="glyph"></button>
-        <button data-dur="Sixteenth" data-note="&#xE1D9;" data-rest="&#xE4E7;" data-name="16th" data-key="3" class="glyph"></button>
-        <button data-dur="ThirtySecond" data-note="&#xE1DB;" data-rest="&#xE4E8;" data-name="32nd" data-key="2" class="glyph"></button>
-      </div>
-      <button data-cmd="dot" class="wide" title="Dotted value (.)">• Dot</button>
+      <!-- Each category is collapsible; app.js remembers which are open.
+           Glyphs are SMuFL code points in Bravura. Marks apply to the note
+           before the caret, or to every note in the selection. -->
+      <details data-section="figures" open>
+        <summary>Figures</summary>
+        <div class="switch" role="radiogroup" aria-label="Notes or rests">
+          <button data-kind="note" role="radio" data-tip="Notes" data-desc="The figures below place notes.">Notes</button>
+          <button data-kind="rest" role="radio" data-tip="Rests" data-desc="The figures below place rests.">Rests</button>
+        </div>
+        <div class="figures" aria-label="Note value">
+          <button data-dur="Whole" data-note="&#xE1D2;" data-rest="&#xE4E3;" data-name="Whole" data-key="7" class="glyph"></button>
+          <button data-dur="Half" data-note="&#xE1D3;" data-rest="&#xE4E4;" data-name="Half" data-key="6" class="glyph"></button>
+          <button data-dur="Quarter" data-note="&#xE1D5;" data-rest="&#xE4E5;" data-name="Quarter" data-key="5" class="glyph"></button>
+          <button data-dur="Eighth" data-note="&#xE1D7;" data-rest="&#xE4E6;" data-name="Eighth" data-key="4" class="glyph"></button>
+          <button data-dur="Sixteenth" data-note="&#xE1D9;" data-rest="&#xE4E7;" data-name="16th" data-key="3" class="glyph"></button>
+          <button data-dur="ThirtySecond" data-note="&#xE1DB;" data-rest="&#xE4E8;" data-name="32nd" data-key="2" class="glyph"></button>
+        </div>
+        <button data-cmd="dot" class="wide" data-tip="Dot" data-desc="Makes the figure half as long again." data-key=".">• Dot</button>
+      </details>
 
-      <h3>Accidentals</h3>
-      <div class="row">
-        <button data-alter="1" class="glyph" title="Sharp: applies to the previous note or the selection">&#xE262;</button>
-        <button data-alter="-1" class="glyph" title="Flat: applies to the previous note or the selection">&#xE260;</button>
-        <button data-alter="0" class="glyph" title="Natural: applies to the previous note or the selection">&#xE261;</button>
-      </div>
+      <details data-section="accidentals" open>
+        <summary>Accidentals</summary>
+        <div class="row">
+          <button data-alter="1" class="glyph" aria-label="Sharp" data-tip="Sharp" data-desc="Raises the previous note (or the selection) a semitone." data-key="+">&#xE262;</button>
+          <button data-alter="-1" class="glyph" aria-label="Flat" data-tip="Flat" data-desc="Lowers the previous note (or the selection) a semitone." data-key="-">&#xE260;</button>
+          <button data-alter="0" class="glyph" aria-label="Natural" data-tip="Natural" data-desc="Cancels sharps and flats on the previous note (or the selection).">&#xE261;</button>
+        </div>
+      </details>
 
-      <h3>Voice</h3>
-      <div class="voices" id="voices" aria-label="Voice"></div>
+      <details data-section="lines" open>
+        <summary>Ties &amp; slurs</summary>
+        <div class="row">
+          <button data-cmd="tie" class="icon-btn" aria-label="Tie" data-tip="Tie" data-desc="Joins the previous note to the next one of the same pitch: it sounds as one longer note." data-key="T">
+            <svg viewBox="0 0 40 24" aria-hidden="true"><ellipse cx="9" cy="9" rx="5" ry="3.6" transform="rotate(-20 9 9)"/><ellipse cx="31" cy="9" rx="5" ry="3.6" transform="rotate(-20 31 9)"/><path d="M10 14 Q20 22 30 14 Q20 19 10 14Z"/></svg>
+          </button>
+          <button data-cmd="slur" class="icon-btn" aria-label="Slur" data-tip="Slur" data-desc="Phrase mark over the selected notes: play them smoothly connected. Select the notes first." data-key="S">
+            <svg viewBox="0 0 40 24" aria-hidden="true"><path d="M5 18 Q20 0 35 18 Q20 5 5 18Z"/></svg>
+          </button>
+        </div>
+      </details>
+
+      <details data-section="articulations" open>
+        <summary>Articulations</summary>
+        <div class="grid3">
+          <button data-artic="staccato" class="glyph mark-btn" aria-label="Staccato" data-tip="Staccato" data-desc="Short and detached.">&#xE4A2;</button>
+          <button data-artic="staccatissimo" class="glyph mark-btn" aria-label="Staccatissimo" data-tip="Staccatissimo" data-desc="Very short.">&#xE4A6;</button>
+          <button data-artic="tenuto" class="glyph mark-btn" aria-label="Tenuto" data-tip="Tenuto" data-desc="Held for its full value, slightly stressed.">&#xE4A4;</button>
+          <button data-artic="accent" class="glyph mark-btn" aria-label="Accent" data-tip="Accent" data-desc="Played with emphasis.">&#xE4A0;</button>
+          <button data-artic="marcato" class="glyph mark-btn" aria-label="Marcato" data-tip="Marcato" data-desc="Strongly accented.">&#xE4AC;</button>
+          <button data-artic="fermata" class="glyph mark-btn" aria-label="Fermata" data-tip="Fermata" data-desc="Hold longer than written. Also works on rests.">&#xE4C0;</button>
+        </div>
+      </details>
+
+      <details data-section="dynamics">
+        <summary>Dynamics</summary>
+        <div class="grid3 dynamics">
+          <button data-dyn="ppp" class="glyph" aria-label="ppp" data-tip="Pianississimo" data-desc="As soft as possible.">&#xE52A;</button>
+          <button data-dyn="pp" class="glyph" aria-label="pp" data-tip="Pianissimo" data-desc="Very soft.">&#xE52B;</button>
+          <button data-dyn="p" class="glyph" aria-label="p" data-tip="Piano" data-desc="Soft.">&#xE520;</button>
+          <button data-dyn="mp" class="glyph" aria-label="mp" data-tip="Mezzo-piano" data-desc="Moderately soft.">&#xE52C;</button>
+          <button data-dyn="mf" class="glyph" aria-label="mf" data-tip="Mezzo-forte" data-desc="Moderately loud.">&#xE52D;</button>
+          <button data-dyn="f" class="glyph" aria-label="f" data-tip="Forte" data-desc="Loud.">&#xE522;</button>
+          <button data-dyn="ff" class="glyph" aria-label="ff" data-tip="Fortissimo" data-desc="Very loud.">&#xE52F;</button>
+          <button data-dyn="fff" class="glyph" aria-label="fff" data-tip="Fortississimo" data-desc="As loud as possible.">&#xE530;</button>
+          <button data-dyn="sfz" class="glyph" aria-label="sfz" data-tip="Sforzato" data-desc="Sudden strong accent.">&#xE539;</button>
+          <button data-dyn="fp" class="glyph" aria-label="fp" data-tip="Forte-piano" data-desc="Loud, then immediately soft.">&#xE534;</button>
+        </div>
+      </details>
+
+      <details data-section="voice" open>
+        <summary>Voice</summary>
+        <div class="voices" id="voices" aria-label="Voice"></div>
+      </details>
     </aside>
 
     <main id="page" class="page" tabindex="0" aria-label="Score">
@@ -91,6 +156,8 @@
   </div>
 
   <footer class="status" id="status" aria-live="polite"></footer>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
 
   <script type="module" src="app.js"></script>
 </body>

@@ -21,15 +21,21 @@ This works like the note palette in Encore. The **palette** on the left holds th
 3. Click to place it. Notes you place one after another undo together with a single Ctrl+Z.
 4. Click **on an existing note** (the label shows `+`) to add the pitch to its chord. Clicking on a rest turns it into a note.
 
-More details:
+## The palette
 
-The palette, from top to bottom:
+The palette is grouped into collapsible categories. Click a heading to open or close it; Da Capo remembers your choice. Hover any button, or reach it with Tab, to see a tooltip with its name, what it does, and its keyboard shortcut.
 
-- **↖ Select** returns to normal editing: click to place the caret, drag to select. **Esc** and a right-click do the same, and `N` toggles entry mode.
-- **Notes | Rests** switches the figures between notes and their matching rests.
-- **• Dot** makes the figure dotted.
-- **♯ ♭ ♮** set the accidental of the previous note or of the selection. The key signature's sharps and flats are applied automatically when you place a note.
-- **Voice** shows *Single voice* until you need more. **+ Voice** adds an independent line on the same staff, for example divisi strings or two melodies in one hand. Its buttons then let you switch between voices (also `Alt+1`…`4`). A voice that contains no music disappears again once you leave it.
+Marks (accidentals, ties, articulations, dynamics) apply to **the note just before the caret**, or to **every note in the selection**. Clicking the same mark again removes it.
+
+| Category | Contents |
+|---|---|
+| **↖ Select** | Back to normal editing: click to place the caret, drag to select. **Esc**, a right-click or `N` leave entry mode. |
+| **Figures** | **Notes \| Rests** switches the figures between notes and their matching rests. **• Dot** makes the figure dotted. |
+| **Accidentals** | ♯ ♭ ♮. The key signature's sharps and flats are applied automatically when you place a note. |
+| **Ties & slurs** | **Tie** (`T`) joins a note to the next one of the same pitch. **Slur** (`S`) draws a phrase mark over the selected notes, and needs a selection. Deleting a slurred note removes its slur; undo restores both. |
+| **Articulations** | Staccato, staccatissimo, tenuto, accent, marcato, fermata. They are placed on the notehead side; the fermata goes above and also works on rests. |
+| **Dynamics** | ppp … fff, sfz, fp. Printed below the staff. Choosing the dynamic a note already has removes it. |
+| **Voice** | Shows *Single voice* until you need more. **+ Voice** adds an independent line on the same staff, for example divisi strings or two melodies in one hand. Its buttons switch between voices (also `Alt+1`…`4`). A voice that contains no music disappears again once you leave it. |
 
 ## Rests that fill a measure
 

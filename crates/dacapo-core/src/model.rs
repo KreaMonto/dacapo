@@ -172,15 +172,76 @@ pub enum EventKind {
     },
 }
 
+/// Articulation marks attached to a note or chord.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Articulation {
+    Staccato,
+    Staccatissimo,
+    Accent,
+    Tenuto,
+    Marcato,
+    Fermata,
+}
+
+/// Dynamic marking printed under an event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Dynamic {
+    Ppp,
+    Pp,
+    P,
+    Mp,
+    Mf,
+    F,
+    Ff,
+    Fff,
+    Sfz,
+    Fp,
+}
+
 /// One rhythmic event inside a voice.
+///
+/// Fields added after format version 1 use `#[serde(default)]` so older
+/// `.dacapo` files still load. (`skip_serializing_if` must not be used: the
+/// binary recovery format needs every field to be written.)
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
     pub id: EventId,
     pub duration: Duration,
     pub kind: EventKind,
+    /// Tied to the next event of the same voice (its matching pitches
+    /// continue sounding instead of being struck again).
+    #[serde(default)]
+    pub tie: bool,
+    /// Kept sorted and without duplicates.
+    #[serde(default)]
+    pub articulations: Vec<Articulation>,
+    #[serde(default)]
+    pub dynamic: Option<Dynamic>,
+}
+
+/// A phrase mark from one event to a later one in the same staff and voice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Slur {
+    pub id: u64,
+    pub start: EventId,
+    pub end: EventId,
 }
 
 impl Event {
+    /// A plain event with no tie, articulations or dynamic.
+    pub fn new(id: EventId, duration: Duration, kind: EventKind) -> Self {
+        Event {
+            id,
+            duration,
+            kind,
+            tie: false,
+            articulations: Vec::new(),
+            dynamic: None,
+        }
+    }
+
     pub fn ticks(&self) -> u32 {
         self.duration.ticks()
     }
@@ -336,9 +397,37 @@ pub struct Score {
     pub staves: Vec<Staff>,
     /// Next free identifier for events and staves.
     pub next_id: u64,
+    /// Phrase marks between events.
+    #[serde(default)]
+    pub slurs: Vec<Slur>,
 }
 
 impl Score {
+    /// Ids of every event in the score.
+    pub fn event_ids(&self) -> std::collections::HashSet<EventId> {
+        self.staves
+            .iter()
+            .flat_map(|s| s.measures.iter())
+            .flat_map(|m| m.voices.iter())
+            .flatten()
+            .map(|e| e.id)
+            .collect()
+    }
+
+    /// Where an event lives: (staff, measure, voice, index).
+    pub fn locate(&self, id: EventId) -> Option<(usize, usize, usize, usize)> {
+        for (s, staff) in self.staves.iter().enumerate() {
+            for (m, cell) in staff.measures.iter().enumerate() {
+                for (v, events) in cell.voices.iter().enumerate() {
+                    if let Some(i) = events.iter().position(|e| e.id == id) {
+                        return Some((s, m, v, i));
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Empty score: one treble staff with `measures` empty measures in 4/4.
     pub fn new(title: impl Into<String>, measures: usize) -> Self {
         let measures = measures.max(1);
@@ -350,6 +439,7 @@ impl Score {
             measures: vec![MeasureAttrs::default(); measures],
             staves: Vec::new(),
             next_id: 1,
+            slurs: Vec::new(),
         };
         let staff = score.blank_staff("Staff 1", Clef::Treble);
         score.staves.push(staff);

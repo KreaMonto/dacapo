@@ -19,7 +19,11 @@ use crate::model::{Issue, Score};
 /// File extension of Da Capo documents (without the dot).
 pub const FILE_EXTENSION: &str = "dacapo";
 /// Version written by this build.
-pub const FORMAT_VERSION: u32 = 1;
+/// History:
+/// - 1: initial format.
+/// - 2: ties, articulations and dynamics on events; slurs on the score.
+///   Version 1 files load unchanged (the new fields default to empty).
+pub const FORMAT_VERSION: u32 = 2;
 const FORMAT_MARKER: &str = "dacapo";
 
 #[derive(Serialize, Deserialize)]
@@ -146,6 +150,30 @@ mod tests {
         save_score(&path, &score).unwrap();
         assert!(sibling(&path, ".bak").exists());
         assert!(!sibling(&path, ".tmp").exists());
+    }
+
+    #[test]
+    fn loads_version_1_files() {
+        use crate::model::{Duration, DurationBase, Event, EventKind, Pitch, Step};
+        let mut score = Score::new("Old", 1);
+        let e = Event::new(
+            7,
+            Duration::new(DurationBase::Quarter),
+            EventKind::Chord {
+                pitches: vec![Pitch::new(Step::C, 4)],
+            },
+        );
+        score.staves[0].measures[0].voices[0].push(e);
+        // Write it as a version 1 file would look: no slurs, no event extras.
+        let mut v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        v["format_version"] = 1.into();
+        v["score"].as_object_mut().unwrap().remove("slurs");
+        let ev = &mut v["score"]["staves"][0]["measures"][0]["voices"][0][0];
+        for k in ["tie", "articulations", "dynamic"] {
+            ev.as_object_mut().unwrap().remove(k);
+        }
+        let loaded = from_bytes(&serde_json::to_vec(&v).unwrap()).unwrap();
+        assert_eq!(loaded, score);
     }
 
     #[test]

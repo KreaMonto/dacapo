@@ -2,6 +2,7 @@
 // which answers with the full document view to redraw.
 
 import { renderScore, hitTest, pointerTarget, ghostMarkup, esc } from './render.js';
+import { installTooltips } from './tooltip.js';
 
 const tauri = window.__TAURI__;
 const invoke = tauri.core.invoke;
@@ -247,8 +248,8 @@ function placeAtPointer() {
 function renderTabs() {
   $('tabs').innerHTML = state.order.map((id) => {
     const d = state.docs.get(id);
-    return `<div class="tab${id === state.active ? ' active' : ''}" role="tab" data-id="${id}" title="${esc(d.path || d.name)}">
-      <span>${esc(d.name)}</span>${d.dirty ? '<span class="dirty" title="Unsaved changes">●</span>' : ''}
+    return `<div class="tab${id === state.active ? ' active' : ''}" role="tab" data-id="${id}" data-tip="${esc(d.name)}" data-desc="${esc(d.path || 'Not saved yet')}${d.dirty ? ' · unsaved changes' : ''}">
+      <span>${esc(d.name)}</span>${d.dirty ? '<span class="dirty" aria-label="Unsaved changes">●</span>' : ''}
       <button class="x" data-close="${id}" aria-label="Close ${esc(d.name)}">×</button></div>`;
   }).join('');
 }
@@ -261,7 +262,9 @@ function syncControls(doc) {
   document.querySelector('[data-cmd=redo]').disabled = !doc.can_redo;
   document.querySelectorAll('[data-dur]').forEach((b) => {
     b.textContent = b.dataset[state.kind];
-    b.title = `${b.dataset.name} ${state.kind} — choose, then click on a staff to place it (${b.dataset.key})`;
+    b.dataset.tip = `${b.dataset.name} ${state.kind}`;
+    b.dataset.desc = 'Choose it, then click on a staff to place it. With a selection, changes its note values.';
+    b.setAttribute('aria-label', b.dataset.tip);
     b.classList.toggle('on', b.dataset.dur === state.duration.base);
   });
   document.querySelectorAll('[data-kind]').forEach((b) => {
@@ -300,8 +303,8 @@ function renderVoices(doc) {
   let html = n === 1
     ? '<span class="label">Single voice</span>'
     : Array.from({ length: n }, (_, v) =>
-      `<button data-voice="${v}" class="${v === current ? 'on' : ''}" title="Voice ${v + 1} (Alt+${v + 1})">${v + 1}</button>`).join('');
-  if (n < 4) html += `<button data-voice="${n}" class="add" title="Add voice ${n + 1}: a second independent line on the same staff (Alt+${n + 1})">+ Voice</button>`;
+      `<button data-voice="${v}" class="${v === current ? 'on' : ''}" data-tip="Voice ${v + 1}" data-desc="Write in this voice. Each voice has its own color." data-key="Alt+${v + 1}">${v + 1}</button>`).join('');
+  if (n < 4) html += `<button data-voice="${n}" class="add" data-tip="Add voice ${n + 1}" data-desc="A second independent line on the same staff, e.g. divisi strings or two melodies in one hand." data-key="Alt+${n + 1}">+ Voice</button>`;
   $('voices').innerHTML = html;
 }
 
@@ -330,11 +333,11 @@ function renderStatus() {
     }[state.mode]);
     parts.push(doc.dirty ? 'Unsaved changes' : (doc.path ? 'Saved' : 'New document'));
     parts.push(doc.protected
-      ? '<span class="ok" title="Every change is journaled; work survives a crash or power cut">● Recovery on</span>'
+      ? '<span class="ok" data-tip="Crash recovery is on" data-desc="Every change is written to disk within half a second; your work survives a crash or power cut.">● Recovery on</span>'
       : '<span class="warn">● Recovery unavailable</span>');
     const errors = measureErrors(doc);
     if (errors.length) {
-      parts.push(`<span class="errors" data-jump title="Go to the next measure with errors">⚠ ${errors.length} measure${errors.length > 1 ? 's' : ''} with errors</span>`);
+      parts.push(`<span class="errors" data-jump data-tip="Measures with errors" data-desc="Click to jump to the next one.">⚠ ${errors.length} measure${errors.length > 1 ? 's' : ''} with errors</span>`);
     }
     if (doc.warning) parts.push(`<span class="warn">${esc(doc.warning)}</span>`);
   }
@@ -425,6 +428,8 @@ document.addEventListener('keydown', (ev) => {
   switch (key) {
     case 'Escape': ev.preventDefault(); return setMode('select');
     case 'n': case 'N': ev.preventDefault(); return setMode(state.mode === 'select' ? 'note' : 'select');
+    case 't': case 'T': return run({ type: 'toggle_tie' });
+    case 's': case 'S': return run({ type: 'toggle_slur' });
     case 'ArrowLeft': return run({ type: 'move', to: 'left', extend: ev.shiftKey });
     case 'ArrowRight': return run({ type: 'move', to: 'right', extend: ev.shiftKey });
     case 'ArrowUp': return run({ type: 'move', to: 'up', extend: ev.shiftKey });
@@ -531,8 +536,12 @@ const onControlClick = (ev) => {
   else if (b.dataset.voice) setVoice(Number(b.dataset.voice));
   else if (b.dataset.kind) setKind(b.dataset.kind);
   else if (b.dataset.alter) act({ type: 'set_accidental', alter: Number(b.dataset.alter) });
+  else if (b.dataset.artic) act({ type: 'toggle_articulation', articulation: b.dataset.artic });
+  else if (b.dataset.dyn) act({ type: 'set_dynamic', dynamic: b.dataset.dyn });
   else ({
     select: () => setMode('select'),
+    tie: () => act({ type: 'toggle_tie' }),
+    slur: () => act({ type: 'toggle_slur' }),
     new: () => serial(newDocument),
     open: () => serial(openDocument),
     save: () => serial(() => saveDocument()),
@@ -549,6 +558,15 @@ const onControlClick = (ev) => {
 };
 document.querySelector('.toolbar').addEventListener('click', onControlClick);
 $('palette').addEventListener('click', onControlClick);
+
+installTooltips();
+
+// Palette sections: remember which ones the user keeps open.
+for (const d of document.querySelectorAll('.palette details')) {
+  const name = `palette.${d.dataset.section}`;
+  d.open = loadPref(name, d.open);
+  d.addEventListener('toggle', () => savePref(name, d.open));
+}
 
 $('key').innerHTML = KEY_NAMES.map((n, i) => `<option value="${i - 7}">${n} major</option>`).join('');
 $('key').addEventListener('change', (ev) => { act({ type: 'set_key', fifths: Number(ev.target.value) }); page.focus(); });
