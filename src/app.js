@@ -542,6 +542,40 @@ $('score').addEventListener('contextmenu', (ev) => {
   ev.preventDefault();
   setMode('select');
 });
+// ----- scrolling and panning ---------------------------------------------------
+
+// Continuous view is one long line: the wheel scrolls sideways there
+// (Shift+wheel scrolls up/down instead, the reverse of the usual rule).
+page.addEventListener('wheel', (ev) => {
+  if (state.view !== 'continuous' || ev.ctrlKey) return;
+  if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return; // trackpads already scroll sideways
+  ev.preventDefault();
+  const amount = ev.deltaMode === 1 ? ev.deltaY * 40 : ev.deltaY; // lines → px
+  if (ev.shiftKey) page.scrollTop += amount;
+  else page.scrollLeft += amount;
+}, { passive: false });
+
+// Middle button + drag pans the score in any direction, in every view.
+let pan = null;
+page.addEventListener('mousedown', (ev) => {
+  if (ev.button !== 1) return;
+  ev.preventDefault(); // stops the browser's own autoscroll mode
+  pan = { x: ev.clientX, y: ev.clientY, left: page.scrollLeft, top: page.scrollTop };
+  page.classList.add('panning');
+});
+window.addEventListener('mousemove', (ev) => {
+  if (!pan) return;
+  page.scrollLeft = pan.left - (ev.clientX - pan.x);
+  page.scrollTop = pan.top - (ev.clientY - pan.y);
+});
+window.addEventListener('mouseup', (ev) => {
+  if (!pan || ev.button !== 1) return;
+  pan = null;
+  page.classList.remove('panning');
+});
+// Some systems open links or paste on middle-click release; not here.
+page.addEventListener('auxclick', (ev) => { if (ev.button === 1) ev.preventDefault(); });
+
 // The ghost must follow the page when it scrolls under a still mouse.
 page.addEventListener('scroll', () => { if (state.mode !== 'select') drawGhost(); });
 window.addEventListener('mousemove', (ev) => {
@@ -681,6 +715,8 @@ const SHORTCUTS = [
     ['Ctrl + ← / →', 'Previous / next measure'],
     ['Ctrl + Home / End', 'Start / end of the score'],
     ['Shift + any move', 'Extend the selection'],
+    ['Middle button + drag', 'Pan the score'],
+    ['Wheel (continuous view)', 'Scroll sideways; Shift + wheel: up / down'],
     ['Ctrl + A', 'Select all'],
     ['Esc', 'Back to the select tool'],
   ]],

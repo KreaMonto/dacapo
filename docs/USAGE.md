@@ -28,6 +28,11 @@ Choose how the score is laid out in **View**:
 
 All views edit the same way. Clicking, selecting and the pointer figure work identically.
 
+**Moving around:**
+- **Middle mouse button + drag** pans the score in any direction, in every view.
+- In **Continuous** view the **mouse wheel scrolls sideways**. **Shift + wheel** scrolls up and down, for scores with many staves.
+- Trackpads scroll in both directions as usual.
+
 **Print** (Ctrl+P) prints the page view in black on white, one sheet per page. Editing aids such as the caret, the selection and the error marks are left out. From another view, Da Capo switches to page view for the print and back afterwards.
 
 **Theme:** **System** (default) follows your computer's light or dark setting. **Light** or **Dark** fix it for Da Capo only.

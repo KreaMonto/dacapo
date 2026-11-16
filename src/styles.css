@@ -177,7 +177,9 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 /* Workspace: palette + page */
 .workspace {
   display: grid;
-  grid-template-columns: auto 1fr;
+  /* minmax(0, …): a plain 1fr column grows to fit wide content (continuous
+     view) instead of letting the page scroll sideways. */
+  grid-template-columns: auto minmax(0, 1fr);
   min-height: 0;
 }
 .palette {
@@ -291,7 +293,9 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .recovery strong { font-weight: 600; }
 
 /* Page */
-.page { overflow: auto; padding: 24px; outline: none; }
+.page { overflow: auto; padding: 24px; outline: none; min-width: 0; }
+/* Middle-button drag (see app.js): grabbing hand while panning. */
+.page.panning, .page.panning * { cursor: grabbing !important; user-select: none; }
 .sheet {
   max-width: 1400px;
   margin: 0 auto;
