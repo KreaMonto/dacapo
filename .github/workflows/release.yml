@@ -1,0 +1,154 @@
+# Builds the installers for Windows, macOS and Linux and attaches them to a
+# draft GitHub Release. Review the draft and click "Publish release".
+#
+# Start it in either of two ways (see docs/RELEASING.md):
+#   - Actions -> Release -> Run workflow (on main). The tag v<version> is
+#     created when you publish the draft.
+#   - Push a tag v<version>, for example v0.2.0. It must match the version in
+#     the workspace Cargo.toml.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Check version and create draft release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version from Cargo.toml
+        id: version
+        shell: bash
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "dacapo") | .version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "App version: $version"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the version in Cargo.toml (v$version)."
+            exit 1
+          fi
+
+      - name: Create the draft release (or reuse it)
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$tag\") | .id" | head -n1)
+          if [[ -n "$id" ]]; then
+            echo "Reusing release $id for $tag"
+          else
+            cat > notes.md <<EOF
+          ## Download
+
+          | System | File |
+          |---|---|
+          | Windows 10 and 11 | \`Da.Capo_${VERSION}_x64-setup.exe\` (or the \`.msi\`) |
+          | macOS, Apple silicon (M1 and later) | \`Da.Capo_${VERSION}_aarch64.dmg\` |
+          | macOS, Intel | \`Da.Capo_${VERSION}_x64.dmg\` |
+          | Linux | \`.AppImage\` (any distribution), \`.deb\` (Debian, Ubuntu) or \`.rpm\` (Fedora, openSUSE) |
+
+          These builds are not signed yet, so your system may warn you the first time:
+
+          - **Windows**: if SmartScreen says "Windows protected your PC", click **More info → Run anyway**.
+          - **macOS**: if macOS says the app cannot be opened, go to **System Settings → Privacy & Security** and click **Open Anyway**.
+          - **Linux AppImage**: make it executable (\`chmod +x\`) and run it.
+
+          ## What's new
+
+          See the [changelog](https://github.com/$GITHUB_REPOSITORY/blob/$tag/CHANGELOG.md).
+          EOF
+            id=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$tag" \
+              -f target_commitish="$GITHUB_SHA" \
+              -f name="Da Capo $VERSION" \
+              -F body=@notes.md \
+              -F draft=true \
+              -F prerelease="$([[ "$VERSION" == 0.* ]] && echo true || echo false)" \
+              --jq .id)
+            echo "Created draft release $id for $tag"
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Core tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p dacapo-core --locked
+
+  build:
+    name: Build (${{ matrix.name }})
+    needs: [prepare, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            args: ''
+            rust_targets: ''
+          - name: macOS Apple silicon
+            os: macos-latest
+            args: --target aarch64-apple-darwin
+            rust_targets: aarch64-apple-darwin
+          - name: macOS Intel
+            os: macos-latest
+            args: --target x86_64-apple-darwin
+            rust_targets: x86_64-apple-darwin
+          - name: Linux
+            os: ubuntu-22.04
+            args: ''
+            rust_targets: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libasound2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.rust_targets }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          # The app has no package.json: run the Tauri CLI straight from npm.
+          tauriScript: npx --yes @tauri-apps/cli@2
+          releaseId: ${{ needs.prepare.outputs.release_id }}
+          args: ${{ matrix.args }}

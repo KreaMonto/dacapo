@@ -44,6 +44,7 @@ docs/                 technical documentation
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): technical design, including the saving and recovery system.
 - [docs/ROADMAP.md](docs/ROADMAP.md): development plan.
 - [docs/STYLE_GUIDE.md](docs/STYLE_GUIDE.md): code and contribution conventions.
+- [docs/RELEASING.md](docs/RELEASING.md): how installers are built and published.
 
 ## Quick start
 

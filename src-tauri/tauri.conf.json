@@ -39,6 +39,9 @@
         "description": "Da Capo score",
         "role": "Editor"
       }
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "-"
+    }
   }
 }
