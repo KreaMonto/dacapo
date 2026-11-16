@@ -89,7 +89,7 @@ A crash at any moment leaves either the complete old file or the complete new on
 
 Goal: **if the computer loses power, at most about half a second of work is lost.** This applies to untitled documents too.
 
-Each open document has a folder under the app's local data directory (on Windows, `%LOCALAPPDATA%\org.dacapo.editor\recovery\<session-uuid>\`):
+Each open document has a folder under the app's local data directory (on Windows, `%LOCALAPPDATA%\io.github.dacapo-editor.dacapo\recovery\<session-uuid>\`):
 
 | File | Content |
 |---|---|

@@ -95,7 +95,7 @@ Marks (accidentals, ties, articulations, dynamics) apply to **the note just befo
 
 A green line follows the music, and the view scrolls to keep it in sight. Notes also **sound while you write them**: placing a note, adding to a chord, or changing a pitch or accidental plays it.
 
-**Sounds.** Playback uses **FluidR3 GM**, a free set of recorded instruments by Frank Wen (MIT license). The first time you press Play, Da Capo asks before downloading it (148 MB, once). Progress shows in the status bar, and playback starts by itself when it is ready. The file is kept in the app's data folder (`%LOCALAPPDATA%\org.dacapo.editor\soundfonts\` on Windows).
+**Sounds.** Playback uses **FluidR3 GM**, a free set of recorded instruments by Frank Wen (MIT license). The first time you press Play, Da Capo asks before downloading it (148 MB, once). Progress shows in the status bar, and playback starts by itself when it is ready. The file is kept in the app's data folder (`%LOCALAPPDATA%\io.github.dacapo-editor.dacapo\soundfonts\` on Windows).
 
 How the score is played:
 - **Ties** sustain the note, including across barlines.

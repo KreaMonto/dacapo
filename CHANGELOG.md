@@ -33,6 +33,8 @@ All notable changes to Da Capo are documented here. The format follows [Keep a C
 - **License** changed from MIT to **GPL-3.0-or-later**.
 - **File format** is now version 3, which adds ties, articulations, dynamics, slurs and tempo. Older files still open.
 - **Recovery data** from 0.1.0 cannot be read by 0.2.0. Save your work before updating.
+- **New home:** the project moved to the [dacapo-editor](https://github.com/dacapo-editor) GitHub organization.
+- **App identifier** is now `io.github.dacapo-editor.dacapo`. The downloaded SoundFont and pending recovery data move automatically from the old data folder on first start. View preferences (zoom, view, theme) start from their defaults once.
 
 ### Fixed
 - Horizontal scrolling in continuous view.
