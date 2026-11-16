@@ -25,7 +25,7 @@ This document tracks the development goals and major stages toward a complete op
 - [x] Menu bar (File, Edit, View, Insert, Help) with keyboard navigation; shortcuts dialog (F1).
 - [x] Page view (A4/Letter, as printed), wrap view, continuous (one line) view; printing from page view.
 - [x] Theme choice: system, light or dark.
-- [ ] Zoom in the score view.
+- [x] Zoom (Alt+wheel around the pointer, Ctrl+=/−/0, fit page width); Ctrl+wheel horizontal scroll; middle-button panning.
 - [ ] Staff size and page margins per score (today a fixed 7 mm staff and 15 mm margins).
 - [ ] Copy/paste of slurs inside the copied region (today only the notes and their marks are copied).
 - [ ] Hairpins (crescendo / diminuendo), tempo marks, text.

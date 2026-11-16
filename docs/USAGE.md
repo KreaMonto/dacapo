@@ -28,10 +28,19 @@ Choose how the score is laid out in **View**:
 
 All views edit the same way. Clicking, selecting and the pointer figure work identically.
 
-**Moving around:**
-- **Middle mouse button + drag** pans the score in any direction, in every view.
-- In **Continuous** view the **mouse wheel scrolls sideways**. **Shift + wheel** scrolls up and down, for scores with many staves.
-- Trackpads scroll in both directions as usual.
+**Moving around and zoom:**
+
+| Mouse / keys | Action |
+|---|---|
+| Wheel | Scroll up and down |
+| **Ctrl** + wheel | Scroll sideways |
+| **Alt** + wheel | Zoom in and out, keeping the point under the pointer in place |
+| **Middle button** + drag | Pan the score in any direction |
+| Ctrl + = / Ctrl + − / Ctrl + 0 | Zoom in / out / back to 100% |
+
+- At **100%**, one staff space is 10 pixels in every view. In page view, a whole A4 page at 100% is about 1200 px wide.
+- **View → Fit Page Width** sizes the page to the window. Page view starts that way the first time.
+- The zoom is shown at the right of the status bar. Click it to go back to 100%.
 
 **Print** (Ctrl+P) prints the page view in black on white, one sheet per page. Editing aids such as the caret, the selection and the error marks are left out. From another view, Da Capo switches to page view for the print and back afterwards.
 

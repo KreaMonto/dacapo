@@ -1,7 +1,7 @@
 // Da Capo frontend. Owns no musical state: every edit is sent to Rust,
 // which answers with the full document view to redraw.
 
-import { renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, esc } from './render.js';
+import { renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, esc } from './render.js';
 import { installTooltips } from './tooltip.js';
 import { installMenuBar } from './menu.js';
 
@@ -42,6 +42,7 @@ const state = {
   view: loadPref('view', 'page'), // 'page' | 'wrap' | 'continuous'
   paper: loadPref('paper', 'a4'), // 'a4' | 'letter'
   theme: loadPref('theme', 'system'), // 'system' | 'light' | 'dark'
+  zoom: loadPref('zoom', 1), // 0.25 … 4
   pointer: null, // last mouse position over the score, for the ghost figure
   layout: null,
   error: null,
@@ -200,12 +201,15 @@ function render() {
   scoreEl.before(meta);
   meta.removeAttribute('style');
   document.body.dataset.view = state.view;
-  const width = scoreEl.clientWidth || 1000;
-  const { pages, layout } = renderScore(doc, width, { multiRest: state.multiRest, view: state.view, paper: state.paper });
+  // At zoom z the wrap view lays out for width/z so it still fills the window.
+  const width = (scoreEl.clientWidth || 1000) / state.zoom;
+  const { pages, layout } = renderScore(doc, width, {
+    multiRest: state.multiRest, view: state.view, paper: state.paper, zoom: state.zoom,
+  });
   if (layout.mode === 'page') {
     scoreEl.innerHTML = pages.map((svg, i) => {
       const p = layout.pages[i];
-      return `<div class="paper" style="aspect-ratio:${p.w}/${p.h};max-width:${p.w}px">${svg}</div>`;
+      return `<div class="paper" style="width:${p.w * state.zoom}px">${svg}</div>`;
     }).join('');
     placeTitleOnPage(meta, scoreEl.querySelector('.paper'), layout);
   } else {
@@ -377,6 +381,7 @@ function renderStatus() {
       parts.push(`<span class="errors" data-jump data-tip="Measures with errors" data-desc="Click to jump to the next one.">⚠ ${errors.length} measure${errors.length > 1 ? 's' : ''} with errors</span>`);
     }
     if (doc.warning) parts.push(`<span class="warn">${esc(doc.warning)}</span>`);
+    parts.push(`<span class="zoom" data-zoom data-tip="Zoom ${Math.round(state.zoom * 100)}%" data-desc="Alt + mouse wheel, or Ctrl + = / Ctrl + −. Click to go back to 100%." data-key="Ctrl+0">${Math.round(state.zoom * 100)}%</span>`);
   }
   if (state.error) parts.push(`<span class="warn">${esc(state.error)}</span>`);
   $('status').innerHTML = parts.map((p) => `<span>${p}</span>`).join('');
@@ -429,6 +434,11 @@ document.addEventListener('keydown', (ev) => {
       w: () => serial(() => closeDocument(state.active)),
       p: () => printScore(),
       tab: () => cycleTab(ev.shiftKey ? -1 : 1),
+      // Zoom: Ctrl+= / Ctrl++ in, Ctrl+- out, Ctrl+0 actual size.
+      '=': () => stepZoom(1),
+      '+': () => stepZoom(1),
+      '-': () => stepZoom(-1),
+      0: () => setZoom(1),
     }[lower === 'Tab' ? 'tab' : lower];
     if (handled) {
       ev.preventDefault();
@@ -542,17 +552,74 @@ $('score').addEventListener('contextmenu', (ev) => {
   ev.preventDefault();
   setMode('select');
 });
-// ----- scrolling and panning ---------------------------------------------------
+// ----- scrolling, zoom and panning ---------------------------------------------
 
-// Continuous view is one long line: the wheel scrolls sideways there
-// (Shift+wheel scrolls up/down instead, the reverse of the usual rule).
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 4;
+const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4];
+
+/**
+ * Sets the zoom, keeping the point under the mouse (or the centre of the
+ * view) where it is on screen.
+ */
+function setZoom(z, clientX, clientY) {
+  z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100));
+  if (z === state.zoom) return;
+  const r = page.getBoundingClientRect();
+  const cx = clientX ?? r.left + r.width / 2;
+  const cy = clientY ?? r.top + r.height / 2;
+  const anchor = pointerInLayout(cx, cy);
+  setPref('zoom', z);
+  render();
+  const now = anchor && layoutToClient(state.layout, $('score'), anchor);
+  if (now) {
+    page.scrollLeft += now.x - cx;
+    page.scrollTop += now.y - cy;
+  }
+}
+
+/** Zoom so a whole page (or the wrap view's sheet) fits the window width. */
+function fitWidth() {
+  const avail = page.clientWidth - 48; // .page padding
+  const w = state.view === 'page' && state.layout?.geo ? state.layout.geo.w : null;
+  setZoom(w ? avail / w : 1);
+}
+
+/** Next zoom step up (+1) or down (−1) from the current zoom. */
+function stepZoom(dir) {
+  const next = dir > 0
+    ? ZOOM_STEPS.find((s) => s > state.zoom + 0.001)
+    : [...ZOOM_STEPS].reverse().find((s) => s < state.zoom - 0.001);
+  if (next) setZoom(next);
+}
+
+// Wheel: up/down by default; Ctrl+wheel sideways; Alt+wheel zooms around
+// the pointer. Shift+wheel keeps the browser's own sideways scroll.
+let zoomFrame = 0;
+let pendingZoom = null;
 page.addEventListener('wheel', (ev) => {
-  if (state.view !== 'continuous' || ev.ctrlKey) return;
-  if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return; // trackpads already scroll sideways
-  ev.preventDefault();
-  const amount = ev.deltaMode === 1 ? ev.deltaY * 40 : ev.deltaY; // lines → px
-  if (ev.shiftKey) page.scrollTop += amount;
-  else page.scrollLeft += amount;
+  const px = ev.deltaMode === 1 ? 40 : ev.deltaMode === 2 ? page.clientHeight : 1; // lines/pages → px
+  if (ev.altKey) {
+    ev.preventDefault();
+    // Smooth for trackpads, ~12% per notch for wheels; one render per frame.
+    const factor = Math.exp(-ev.deltaY * px * 0.0012);
+    pendingZoom = { z: (pendingZoom?.z ?? state.zoom) * factor, x: ev.clientX, y: ev.clientY };
+    if (!zoomFrame) {
+      zoomFrame = requestAnimationFrame(() => {
+        zoomFrame = 0;
+        const p = pendingZoom;
+        pendingZoom = null;
+        setZoom(p.z, p.x, p.y);
+      });
+    }
+    return;
+  }
+  if (ev.ctrlKey) {
+    // Also blocks the webview's own page zoom on Ctrl+wheel.
+    ev.preventDefault();
+    const delta = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
+    page.scrollLeft += delta * px;
+  }
 }, { passive: false });
 
 // Middle button + drag pans the score in any direction, in every view.
@@ -597,6 +664,7 @@ function setKind(kind) {
 
 // Status bar: jump to the next measure with errors after the caret.
 $('status').addEventListener('click', (ev) => {
+  if (ev.target.closest('[data-zoom]')) { setZoom(1); page.focus(); return; }
   if (!ev.target.closest('[data-jump]')) return;
   const doc = active();
   const errors = measureErrors(doc);
@@ -642,6 +710,10 @@ const commands = {
   'paper:a4': () => { setPref('paper', 'a4'); render(); },
   'paper:letter': () => { setPref('paper', 'letter'); render(); },
   multirest: () => { setPref('multiRest', !state.multiRest); render(); },
+  'zoom-in': () => stepZoom(1),
+  'zoom-out': () => stepZoom(-1),
+  'zoom-reset': () => setZoom(1),
+  'zoom-fit': () => fitWidth(),
   'theme:system': () => { setPref('theme', 'system'); applyTheme(); },
   'theme:light': () => { setPref('theme', 'light'); applyTheme(); },
   'theme:dark': () => { setPref('theme', 'dark'); applyTheme(); },
@@ -715,8 +787,11 @@ const SHORTCUTS = [
     ['Ctrl + ← / →', 'Previous / next measure'],
     ['Ctrl + Home / End', 'Start / end of the score'],
     ['Shift + any move', 'Extend the selection'],
+    ['Wheel', 'Scroll up / down'],
+    ['Ctrl + wheel', 'Scroll sideways'],
+    ['Alt + wheel', 'Zoom in / out around the pointer'],
     ['Middle button + drag', 'Pan the score'],
-    ['Wheel (continuous view)', 'Scroll sideways; Shift + wheel: up / down'],
+    ['Ctrl + = / − / 0', 'Zoom in / out / 100%'],
     ['Ctrl + A', 'Select all'],
     ['Esc', 'Back to the select tool'],
   ]],
@@ -806,6 +881,11 @@ const MENUS = [
     { label: 'Paper: A4', cmd: 'paper:a4', radio: true, checked: () => state.paper === 'a4' },
     { label: 'Paper: Letter', cmd: 'paper:letter', radio: true, checked: () => state.paper === 'letter' },
     { sep: true },
+    { label: 'Zoom In', cmd: 'zoom-in', key: 'Ctrl+=', enabled: () => state.zoom < ZOOM_MAX },
+    { label: 'Zoom Out', cmd: 'zoom-out', key: 'Ctrl+−', enabled: () => state.zoom > ZOOM_MIN },
+    { label: 'Actual Size (100%)', cmd: 'zoom-reset', key: 'Ctrl+0', enabled: () => state.zoom !== 1 },
+    { label: 'Fit Page Width', cmd: 'zoom-fit', enabled: () => state.view === 'page' },
+    { sep: true },
     { label: 'Multi-measure Rests', cmd: 'multirest', checked: () => state.multiRest },
     { sep: true },
     { label: 'Theme: System', cmd: 'theme:system', radio: true, checked: () => state.theme === 'system' },
@@ -883,5 +963,7 @@ serial(async () => {
   if (state.order.length) state.active = state.order[0];
   else await newDocument();
   render();
+  // First run of page view: start with the page fitted to the window.
+  if (state.view === 'page' && loadPref('zoom', null) === null) fitWidth();
   page.focus();
 });

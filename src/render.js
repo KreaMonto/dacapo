@@ -449,8 +449,11 @@ export function renderScore(view, width, opts = {}) {
     push(`<line class="caret v${c.voice}" x1="${x}" x2="${x}" y1="${top - 1.5 * SP}" y2="${top + 5.5 * SP}"/>`);
   }
 
+  // `opts.zoom` only changes the on-screen size: the viewBox keeps layout
+  // coordinates, so hit-testing (clientToLayout) is unaffected.
+  const z = opts.zoom || 1;
   const pages = lay.pages.map((p, i) =>
-    `<svg xmlns="http://www.w3.org/2000/svg" data-page="${i}" width="${p.w}" height="${p.h}" viewBox="${p.x} ${p.y} ${p.w} ${p.h}">${outs[i].join('')}</svg>`);
+    `<svg xmlns="http://www.w3.org/2000/svg" data-page="${i}" width="${p.w * z}" height="${p.h * z}" viewBox="${p.x} ${p.y} ${p.w} ${p.h}">${outs[i].join('')}</svg>`);
   return { pages, svg: pages[0], layout: lay };
 }
 
@@ -470,6 +473,16 @@ export function clientToLayout(lay, container, clientX, clientY) {
   const p = lay.pages[Number(best.svg.dataset.page)];
   const k = p.w / best.r.width;
   return { x: p.x + (clientX - best.r.left) * k, y: p.y + (clientY - best.r.top) * k, page: p.index };
+}
+
+/** Inverse of clientToLayout: where a layout point currently is on screen. */
+export function layoutToClient(lay, container, point) {
+  const svg = container.querySelector(`svg[data-page="${point.page || 0}"]`);
+  if (!svg) return null;
+  const p = lay.pages[point.page || 0];
+  const r = svg.getBoundingClientRect();
+  const k = r.width / p.w;
+  return { x: r.left + (point.x - p.x) * k, y: r.top + (point.y - p.y) * k };
 }
 
 /**

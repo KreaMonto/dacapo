@@ -132,6 +132,9 @@ export function installMenuBar(bar, menus, run, onClose) {
     }
     altAlone = false;
   }, true);
+  // Alt+wheel (zoom) or Alt+click is not "Alt alone": don't open the menu.
+  document.addEventListener('wheel', (ev) => { if (ev.altKey) altAlone = false; }, { capture: true, passive: true });
+  document.addEventListener('mousedown', (ev) => { if (ev.altKey) altAlone = false; }, true);
   document.addEventListener('keyup', (ev) => {
     if (ev.key !== 'Alt' || !altAlone) return;
     altAlone = false;
