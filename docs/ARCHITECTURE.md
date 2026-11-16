@@ -133,6 +133,16 @@ Closing the window with unsaved documents is intercepted: the frontend asks the 
 3. Places events proportionally to time, so all staves line up vertically.
 4. Draws clefs, key and time signatures, noteheads, stems, flags, ledger lines, accidentals, dots, rests, the selection and the caret.
 
+**Views.** The layout has three modes:
+
+- **Wrap** fills the window width.
+- **Continuous** uses an infinite width, so everything stays on one system.
+- **Page** uses a paper size (A4/Letter) expressed in staff spaces, assuming a 7 mm staff, so a page keeps its real proportions. It flows systems onto pages: a system that would cross the bottom margin starts the next page.
+
+Everything is laid out in one shared coordinate space. Each page is emitted as its own SVG whose `viewBox` shows its slice of that space, so the same layout serves hit-testing on any page (`clientToLayout`) and printing (one SVG per sheet, scaled by CSS).
+
+**Chrome.** The menu bar (`src/menu.js`) and tooltips (`src/tooltip.js`) are small dependency-free modules. Every menu, toolbar and palette action goes through one `commands` map in `app.js`.
+
 **Music font.** All symbols come from **Bravura**, the reference font of the [SMuFL](https://www.smufl.org/) standard by Steinberg. It is bundled in `src/fonts/` under the SIL Open Font License, so the app works offline.
 
 SMuFL fonts follow fixed conventions:

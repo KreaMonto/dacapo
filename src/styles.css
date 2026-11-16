@@ -30,6 +30,33 @@
   color-scheme: light;
 }
 
+/* Dark palette: used when the system is dark (unless the user picked Light
+   in View → Theme), or always when the user picked Dark. The two blocks
+   must stay identical. */
+:root[data-theme="dark"] {
+  --bg: #1c1c1e;
+  --chrome: #26262a;
+  --chrome-border: #3a3a40;
+  --text: #e8e6e1;
+  --muted: #9b978f;
+  --paper: #2c2c30;
+  --ink: #ecebe7;
+  --staff: #a9a59d;
+  --accent: #7ea2ff;
+  --accent-soft: rgba(126, 162, 255, 0.2);
+  --voice2: #5fd08f;
+  --voice3: #f0a55a;
+  --voice4: #d58cf0;
+  --danger: #ff6b62;
+  --danger-soft: rgba(255, 107, 98, 0.12);
+  --button: #303035;
+  --button-hover: #3a3a40;
+  --button-active: #34405e;
+  --tip-bg: #f0eee9;
+  --tip-text: #1d1c1a;
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #1c1c1e;
@@ -342,3 +369,132 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .status .warn { color: var(--danger); }
 .status .errors { color: var(--danger); font-weight: 600; cursor: pointer; text-decoration: underline dotted; }
 .status .ok { color: var(--voice2); }
+
+/* ----- Menu bar ------------------------------------------------------------ */
+.menubar {
+  display: flex;
+  gap: 2px;
+  padding: 2px 6px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--chrome-border);
+  position: relative;
+  z-index: 50;
+}
+.menu { position: relative; }
+.menu-top {
+  border: none;
+  background: transparent;
+  min-height: 24px;
+  padding: 2px 9px;
+  border-radius: 5px;
+}
+.menu-top:hover, .menu-top.open, .menu-top:focus-visible { background: var(--button-hover); outline: none; }
+.menu-pop {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  min-width: 250px;
+  padding: 4px;
+  background: var(--chrome);
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+}
+.menu-pop[hidden] { display: none; }
+.menu-item {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  min-height: 26px;
+  padding: 2px 10px 2px 6px;
+  border-radius: 5px;
+}
+.menu-item:hover:not(:disabled), .menu-item:focus { background: var(--accent); color: #fff; outline: none; }
+.menu-item:disabled { opacity: 0.4; }
+.menu-check { text-align: center; font-size: 11px; }
+.menu-key { color: var(--muted); font-size: 12px; padding-left: 16px; }
+.menu-item:hover:not(:disabled) .menu-key, .menu-item:focus .menu-key { color: inherit; opacity: 0.8; }
+.menu-sep { height: 1px; margin: 4px 6px; background: var(--chrome-border); }
+
+/* ----- Views ----------------------------------------------------------------- */
+/* Page view: each page is a sheet of paper; the music scales with it. */
+body[data-view="page"] .sheet {
+  max-width: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+body[data-view="page"] .score { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+.paper {
+  position: relative;
+  width: 100%;
+  background: var(--paper);
+  border-radius: 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), 0 8px 28px rgba(0, 0, 0, 0.1);
+}
+.paper svg { display: block; width: 100%; height: auto; }
+.paper .meta { margin: 0; }
+.score .pnum { font: 12px Georgia, "Times New Roman", serif; fill: var(--muted); text-anchor: end; }
+/* Continuous view: one endless line; the sheet grows to the right. */
+body[data-view="continuous"] .sheet { max-width: none; width: max-content; min-width: 100%; }
+body[data-view="continuous"] .meta { align-items: flex-start; }
+body[data-view="continuous"] .meta input { width: 400px; text-align: left; }
+
+/* ----- Dialogs --------------------------------------------------------------- */
+.dialog {
+  max-width: min(820px, 92vw);
+  padding: 20px 24px 16px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 12px;
+  background: var(--chrome);
+  color: var(--text);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+}
+.dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.dialog h2 { margin: 0 0 12px; font-size: 18px; }
+.dialog h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
+.dialog p { margin: 0 0 8px; max-width: 460px; }
+.shortcut-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 16px 28px; }
+.shortcut-cols table { border-collapse: collapse; width: 100%; }
+.shortcut-cols td { padding: 3px 0; vertical-align: top; }
+.shortcut-cols td:first-child { width: 42%; padding-right: 10px; }
+.dialog kbd {
+  font: 600 11px "Segoe UI", system-ui, sans-serif;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--chrome-border);
+  background: var(--button);
+  white-space: nowrap;
+}
+.dialog-actions { display: flex; justify-content: flex-end; margin-top: 14px; }
+
+/* ----- Printing -------------------------------------------------------------- */
+/* Only the pages, black on white, one per sheet (the @page size is set by
+   printScore()). Editing aids (caret, selection, error marks) are hidden. */
+@media print {
+  :root {
+    --paper: #fff !important;
+    --ink: #000 !important;
+    --staff: #000 !important;
+    --muted: #444 !important;
+  }
+  html, body { height: auto; overflow: visible; background: #fff; }
+  .menubar, .toolbar, .tabs, .recovery, .palette, .status, .tooltip, dialog { display: none !important; }
+  .workspace { display: block; }
+  .page { overflow: visible; padding: 0; }
+  body[data-view="page"] .score { gap: 0; }
+  .paper { box-shadow: none; border-radius: 0; max-width: none !important; width: 100%; break-after: page; }
+  .paper:last-child { break-after: auto; }
+  .meta input { border-color: transparent !important; color: #000; }
+  .meta input:placeholder-shown { visibility: hidden; }
+  .score .caret, .score .sel, .score .ghost, .score .overfull, .score .errlabel { display: none; }
+  .score .ev, .score .ev.v1, .score .ev.v2, .score .ev.v3 { color: #000 !important; fill: #000 !important; opacity: 1 !important; }
+}

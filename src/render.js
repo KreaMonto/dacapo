@@ -15,6 +15,22 @@ const MARGIN_X = 28;
 const MARGIN_TOP = 5 * SP;
 const TICKS_WHOLE = 3840;
 
+// ----- paper (page view) -----------------------------------------------------
+// Pages are laid out in staff spaces assuming the common 7 mm staff
+// (1 space = 1.75 mm), so a page keeps its real proportions on screen and in
+// print, where it is scaled to the paper.
+export const PAPER = { a4: { w: 210, h: 297 }, letter: { w: 215.9, h: 279.4 } };
+const MM_PER_SP = 1.75;
+const PAGE_MARGIN_MM = 15;
+export const TITLE_BLOCK = 8 * SP; // room for title and composer on page 1
+
+/** Page size and margin in layout units for a paper name. */
+export function pageGeometry(paper) {
+  const p = PAPER[paper] || PAPER.a4;
+  const unit = SP / MM_PER_SP;
+  return { w: p.w * unit, h: p.h * unit, margin: PAGE_MARGIN_MM * unit };
+}
+
 const BASES = ['whole', 'half', 'quarter', 'eighth', 'sixteenth', 'thirty_second', 'sixty_fourth'];
 const STEP_INDEX = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
 const SHARP_ORDER = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
@@ -100,12 +116,19 @@ export function isMeasureRest(events, cap) {
 
 /**
  * Computes positions of systems, measures and events.
- * `opts.multiRest`: merge runs of rest-only measures into one multi-measure rest.
+ * - `opts.multiRest`: merge runs of rest-only measures into one multi-measure rest.
+ * - `opts.view`: 'wrap' (fill `width`, default), 'continuous' (one endless
+ *   line) or 'page' (systems flow onto pages of `opts.paper`, as printed).
  */
 export function layout(view, width, opts = {}) {
   const score = view.score;
   const nStaves = score.staves.length;
-  const avail = Math.max(300, width - 2 * MARGIN_X);
+  const mode = opts.view || 'wrap';
+  const geo = mode === 'page' ? pageGeometry(opts.paper) : null;
+  const marginX = geo ? geo.margin : MARGIN_X;
+  const avail = geo ? geo.w - 2 * geo.margin
+    : mode === 'continuous' ? Infinity
+      : Math.max(300, width - 2 * MARGIN_X);
 
   const single = score.measures.map((attrs, m) => {
     let maxEvents = 0;
@@ -175,13 +198,25 @@ export function layout(view, width, opts = {}) {
   }
 
   const systemHeight = (nStaves - 1) * STAFF_GAP + 4 * SP;
+  // Vertical placement. Page view flows systems onto pages (a system that
+  // would cross the bottom margin starts the next page); the other views
+  // stack them on one endless sheet.
+  const pageTop = (p) => (geo ? p * geo.h : 0);
+  let page = 0;
+  let y = geo ? geo.margin + TITLE_BLOCK + MARGIN_TOP : MARGIN_TOP;
   systems.forEach((s, i) => {
+    if (geo && i > 0 && y + systemHeight + 2 * SP > pageTop(page) + geo.h - geo.margin) {
+      page++;
+      y = pageTop(page) + geo.margin + MARGIN_TOP;
+    }
     s.index = i;
-    s.y = MARGIN_TOP + i * (systemHeight + SYSTEM_GAP);
+    s.page = page;
+    s.y = y;
+    y += systemHeight + SYSTEM_GAP;
     // Justify every system but the last (unless it is already nearly full).
     const last = i === systems.length - 1;
-    const stretch = !last || s.width > avail * 0.75 ? (avail - s.width) / s.measures.length : 0;
-    let x = MARGIN_X;
+    const stretch = Number.isFinite(avail) && (!last || s.width > avail * 0.75) ? (avail - s.width) / s.measures.length : 0;
+    let x = marginX;
     for (const ms of s.measures) {
       ms.w += Math.max(0, stretch);
       ms.x = x;
@@ -190,13 +225,22 @@ export function layout(view, width, opts = {}) {
       ms.contentW = ms.w - ms.prefix - 2.6 * SP;
       x += ms.w;
     }
-    s.width = x - MARGIN_X;
+    s.x0 = marginX;
+    s.width = x - marginX;
   });
 
+  const contentWidth = Math.max(...systems.map((s) => s.width), 0) + 2 * marginX;
+  const totalWidth = geo ? geo.w : mode === 'continuous' ? Math.max(width, contentWidth) : Math.max(width, avail + 2 * marginX);
+  const totalHeight = geo ? (page + 1) * geo.h : y - SYSTEM_GAP + MARGIN_TOP;
+  // The regions drawn as separate SVGs: one per page, or one for the sheet.
+  const pages = geo
+    ? Array.from({ length: page + 1 }, (_, p) => ({ index: p, x: 0, y: pageTop(p), w: geo.w, h: geo.h }))
+    : [{ index: 0, x: 0, y: 0, w: totalWidth, h: totalHeight }];
+
   return {
-    systems, measures, byMeasure, nStaves,
-    width: Math.max(width, avail + 2 * MARGIN_X),
-    height: MARGIN_TOP + systems.length * (systemHeight + SYSTEM_GAP),
+    systems, measures, byMeasure, nStaves, pages, mode, geo, marginX,
+    width: totalWidth,
+    height: totalHeight,
     staffTop: (ms, staff) => ms.system.y + staff * STAFF_GAP,
     tickX: (ms, tick) => ms.contentX + (tick / ms.cap) * ms.contentW,
   };
@@ -250,18 +294,26 @@ export function hitTest(lay, view, x, y, voice) {
   return { staff, measure: ms.m, voice, index };
 }
 
-/** Renders the whole document. Returns { svg, layout }. */
+/**
+ * Renders the whole document. Returns `{ pages: [svg…], svg, layout }`: one
+ * SVG per page in page view (each showing its slice of the shared layout
+ * coordinates through its viewBox), otherwise a single SVG (`svg`).
+ */
 export function renderScore(view, width, opts = {}) {
   const lay = layout(view, width, opts);
   const score = view.score;
-  const out = [];
-  const push = (s) => out.push(s);
+  // Markup per page; `onPage` selects where the next pushes go.
+  const outs = lay.pages.map(() => []);
+  let cur = 0;
+  const onPage = (p) => { cur = p || 0; };
+  const push = (s) => outs[cur].push(s);
 
   // Selection highlight (below everything).
   const sel = view.selection;
   if (sel) {
     for (const ms of lay.measures) {
       if (ms.mEnd < sel.start.measure || ms.m > sel.end.measure) continue;
+      onPage(ms.system.page);
       const exact = !ms.multi && !ms.restOnly;
       const x0 = exact && ms.m === sel.start.measure ? lay.tickX(ms, sel.start.tick) - 1.0 * SP : ms.x;
       const x1 = exact && ms.m === sel.end.measure ? lay.tickX(ms, sel.end.tick) - 1.0 * SP
@@ -275,19 +327,27 @@ export function renderScore(view, width, opts = {}) {
   }
 
   for (const s of lay.systems) {
+    onPage(s.page);
     const first = s.measures[0];
-    const xEnd = MARGIN_X + s.width;
+    const xEnd = s.x0 + s.width;
     // Measure number.
-    push(`<text class="mnum" x="${MARGIN_X}" y="${s.y - 1.6 * SP}">${first.m + 1}</text>`);
+    push(`<text class="mnum" x="${s.x0}" y="${s.y - 1.6 * SP}">${first.m + 1}</text>`);
     // System bracket.
     if (lay.nStaves > 1) {
-      push(`<line class="bar" x1="${MARGIN_X}" x2="${MARGIN_X}" y1="${s.y}" y2="${s.y + (lay.nStaves - 1) * STAFF_GAP + 4 * SP}"/>`);
+      push(`<line class="bar" x1="${s.x0}" x2="${s.x0}" y1="${s.y}" y2="${s.y + (lay.nStaves - 1) * STAFF_GAP + 4 * SP}"/>`);
     }
     for (let st = 0; st < lay.nStaves; st++) {
       const top = s.y + st * STAFF_GAP;
       for (let l = 0; l < 5; l++) {
-        push(`<line class="staff" x1="${MARGIN_X}" x2="${xEnd}" y1="${top + l * SP}" y2="${top + l * SP}"/>`);
+        push(`<line class="staff" x1="${s.x0}" x2="${xEnd}" y1="${top + l * SP}" y2="${top + l * SP}"/>`);
       }
+    }
+  }
+  // Page numbers from page 2 on, as in printed music.
+  if (lay.geo) {
+    for (const p of lay.pages.slice(1)) {
+      onPage(p.index);
+      push(`<text class="pnum" x="${p.w - lay.geo.margin}" y="${p.y + lay.geo.margin * 0.6}">${p.index + 1}</text>`);
     }
   }
 
@@ -296,6 +356,7 @@ export function renderScore(view, width, opts = {}) {
   const byId = new Map();
 
   for (const ms of lay.measures) {
+    onPage(ms.system.page);
     const lastMeasure = ms.mEnd === score.measures.length - 1;
     for (let st = 0; st < lay.nStaves; st++) {
       const staff = score.staves[st];
@@ -374,21 +435,41 @@ export function renderScore(view, width, opts = {}) {
     }
   }
 
-  drawTies(push, seqs);
-  drawSlurs(push, score.slurs || [], byId, seqs);
+  drawTies(push, seqs, onPage);
+  drawSlurs(push, score.slurs || [], byId, seqs, onPage);
 
   // Caret.
   const c = view.caret;
   const cms = lay.byMeasure[c.measure];
   if (cms) {
+    onPage(cms.system.page);
     const events = score.staves[c.staff].measures[c.measure].voices[c.voice];
     const x = gapX(lay, cms, events, c.index);
     const top = lay.staffTop(cms, c.staff);
     push(`<line class="caret v${c.voice}" x1="${x}" x2="${x}" y1="${top - 1.5 * SP}" y2="${top + 5.5 * SP}"/>`);
   }
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${lay.width}" height="${lay.height}" viewBox="0 0 ${lay.width} ${lay.height}">${out.join('')}</svg>`;
-  return { svg, layout: lay };
+  const pages = lay.pages.map((p, i) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" data-page="${i}" width="${p.w}" height="${p.h}" viewBox="${p.x} ${p.y} ${p.w} ${p.h}">${outs[i].join('')}</svg>`);
+  return { pages, svg: pages[0], layout: lay };
+}
+
+/**
+ * Converts a mouse position to layout coordinates, using whichever page SVG
+ * is under (or nearest to) the pointer. SVGs may be scaled by CSS.
+ */
+export function clientToLayout(lay, container, clientX, clientY) {
+  const svgs = [...container.querySelectorAll('svg[data-page]')];
+  if (!svgs.length) return null;
+  let best = null;
+  for (const svg of svgs) {
+    const r = svg.getBoundingClientRect();
+    const dy = clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0;
+    if (!best || dy < best.dy) best = { svg, r, dy };
+  }
+  const p = lay.pages[Number(best.svg.dataset.page)];
+  const k = p.w / best.r.width;
+  return { x: p.x + (clientX - best.r.left) * k, y: p.y + (clientY - best.r.top) * k, page: p.index };
 }
 
 /**
@@ -512,10 +593,12 @@ function arc(x1, y1, x2, y2, dir, h, thick) {
   return `<path class="arc" d="M${x1} ${y1} Q${cx} ${outer} ${x2} ${y2} Q${cx} ${inner} ${x1} ${y1}Z"/>`;
 }
 
-const systemEnd = (ms) => MARGIN_X + ms.system.width;
+const systemEnd = (ms) => ms.system.x0 + ms.system.width;
 
 /** Ties: from each tied note to the same pitch in the next event of its voice. */
-function drawTies(push, seqs) {
+function drawTies(push, seqs, onPage) {
+  // Each half goes to its own page's SVG (a system break can be a page break).
+  const group = (n, markup) => { onPage(n.ms.system.page); push(`<g class="${n.cls}">${markup}</g>`); };
   for (const seq of seqs.values()) {
     seq.forEach((a, i) => {
       if (!a.e.tie || a.rest) return;
@@ -528,26 +611,24 @@ function drawTies(push, seqs) {
         const y = head.y + dir * 0.55 * SP;
         const x1 = a.left + a.w + 0.15 * SP;
         const target = b && !b.rest ? b.heads.find((h) => h.key === head.key) : null;
-        push(`<g class="${a.cls}">`);
         if (!target) {
-          push(arc(x1, y, x1 + 2 * SP, y, dir, 0.45 * SP, 0.14 * SP)); // tie into nothing
+          group(a, arc(x1, y, x1 + 2 * SP, y, dir, 0.45 * SP, 0.14 * SP)); // tie into nothing
         } else if (b.ms.system === a.ms.system) {
           const x2 = b.left - 0.15 * SP;
-          push(arc(x1, y, x2, y, dir, Math.min(1.1 * SP, Math.max(0.45 * SP, (x2 - x1) * 0.1)), 0.16 * SP));
+          group(a, arc(x1, y, x2, y, dir, Math.min(1.1 * SP, Math.max(0.45 * SP, (x2 - x1) * 0.1)), 0.16 * SP));
         } else {
           // Crosses a line break: one half on each system.
           const y2 = target.y + dir * 0.55 * SP;
-          push(arc(x1, y, systemEnd(a.ms) - 0.3 * SP, y, dir, 0.6 * SP, 0.16 * SP));
-          push(arc(b.ms.contentX - 1.4 * SP, y2, b.left - 0.15 * SP, y2, dir, 0.6 * SP, 0.16 * SP));
+          group(a, arc(x1, y, systemEnd(a.ms) - 0.3 * SP, y, dir, 0.6 * SP, 0.16 * SP));
+          group(b, arc(b.ms.contentX - 1.4 * SP, y2, b.left - 0.15 * SP, y2, dir, 0.6 * SP, 0.16 * SP));
         }
-        push('</g>');
       });
     });
   }
 }
 
 /** Slurs: over (or under) the notes between their start and end events. */
-function drawSlurs(push, slurs, byId, seqs) {
+function drawSlurs(push, slurs, byId, seqs, onPage) {
   for (const s of slurs) {
     const a = byId.get(s.start);
     const b = byId.get(s.end);
@@ -557,7 +638,7 @@ function drawSlurs(push, slurs, byId, seqs) {
     // Below when every stem points up (notehead side), otherwise above.
     const dir = inner.every((n) => n.up) ? 1 : -1;
     const end = (n) => (dir > 0 ? n.lo + 0.5 * SP : n.hi - 0.5 * SP);
-    const draw = (part, x1, y1, x2, y2) => {
+    const draw = (owner, part, x1, y1, x2, y2) => {
       // Lift the curve so it clears every note it spans.
       const extreme = part.length
         ? (dir > 0 ? Math.max(...part.map((n) => n.lo)) : Math.min(...part.map((n) => n.hi)))
@@ -565,18 +646,17 @@ function drawSlurs(push, slurs, byId, seqs) {
       const base = (y1 + y2) / 2;
       const need = dir > 0 ? extreme + 0.6 * SP - base : base - (extreme - 0.6 * SP);
       const h = Math.min(3 * SP, Math.max(0.8 * SP, (x2 - x1) * 0.08, need));
-      push(arc(x1, y1, x2, y2, dir, h, 0.2 * SP));
+      onPage(owner.ms.system.page);
+      push(`<g class="${a.cls}">${arc(x1, y1, x2, y2, dir, h, 0.2 * SP)}</g>`);
     };
-    push(`<g class="${a.cls}">`);
     if (a.ms.system === b.ms.system) {
-      draw(inner.slice(1, -1), a.x, end(a), b.x, end(b));
+      draw(a, inner.slice(1, -1), a.x, end(a), b.x, end(b));
     } else {
       const first = inner.filter((n) => n.ms.system === a.ms.system);
       const second = inner.filter((n) => n.ms.system === b.ms.system);
-      draw(first.slice(1), a.x, end(a), systemEnd(a.ms) - 0.3 * SP, end(a));
-      draw(second.slice(0, -1), b.ms.contentX - 1.4 * SP, end(b), b.x, end(b));
+      draw(a, first.slice(1), a.x, end(a), systemEnd(a.ms) - 0.3 * SP, end(a));
+      draw(b, second.slice(0, -1), b.ms.contentX - 1.4 * SP, end(b), b.x, end(b));
     }
-    push('</g>');
   }
 }
 
@@ -638,7 +718,7 @@ export function pointerTarget(lay, view, x, y, voice) {
 
   const step = STEPS[((d % 7) + 7) % 7];
   return {
-    staff, measure: ms.m, voice, index, onEvent,
+    staff, measure: ms.m, voice, index, onEvent, page: s.page || 0,
     step,
     octave: Math.floor(d / 7),
     alter: keyAlter(ms.attrs.key.fifths, step),

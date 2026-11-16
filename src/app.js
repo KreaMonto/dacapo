@@ -1,8 +1,9 @@
 // Da Capo frontend. Owns no musical state: every edit is sent to Rust,
 // which answers with the full document view to redraw.
 
-import { renderScore, hitTest, pointerTarget, ghostMarkup, esc } from './render.js';
+import { renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, esc } from './render.js';
 import { installTooltips } from './tooltip.js';
+import { installMenuBar } from './menu.js';
 
 const tauri = window.__TAURI__;
 const invoke = tauri.core.invoke;
@@ -38,6 +39,9 @@ const state = {
   kind: 'note',
   // View preference (per user, not saved in the document).
   multiRest: loadPref('multiRest', true),
+  view: loadPref('view', 'page'), // 'page' | 'wrap' | 'continuous'
+  paper: loadPref('paper', 'a4'), // 'a4' | 'letter'
+  theme: loadPref('theme', 'system'), // 'system' | 'light' | 'dark'
   pointer: null, // last mouse position over the score, for the ghost figure
   layout: null,
   error: null,
@@ -190,15 +194,50 @@ function render() {
   const doc = active();
   if (!doc) return;
   const scoreEl = $('score');
+  const meta = $('meta');
+  // The title/composer block is re-attached on every render: inside page 1
+  // in page view, above the music otherwise.
+  scoreEl.before(meta);
+  meta.removeAttribute('style');
+  document.body.dataset.view = state.view;
   const width = scoreEl.clientWidth || 1000;
-  const { svg, layout } = renderScore(doc, width, { multiRest: state.multiRest });
-  scoreEl.innerHTML = svg;
+  const { pages, layout } = renderScore(doc, width, { multiRest: state.multiRest, view: state.view, paper: state.paper });
+  if (layout.mode === 'page') {
+    scoreEl.innerHTML = pages.map((svg, i) => {
+      const p = layout.pages[i];
+      return `<div class="paper" style="aspect-ratio:${p.w}/${p.h};max-width:${p.w}px">${svg}</div>`;
+    }).join('');
+    placeTitleOnPage(meta, scoreEl.querySelector('.paper'), layout);
+  } else {
+    scoreEl.innerHTML = pages[0];
+  }
   state.layout = layout;
   scoreEl.classList.toggle('entry', state.mode !== 'select');
   drawGhost();
   syncControls(doc);
   renderStatus();
   scrollCaretIntoView();
+}
+
+/** Puts the editable title block inside the top margin of page 1, scaled with the page. */
+function placeTitleOnPage(meta, paper, layout) {
+  const { geo } = layout;
+  const scale = paper.clientWidth / geo.w;
+  paper.append(meta);
+  Object.assign(meta.style, {
+    position: 'absolute',
+    left: `${geo.margin * scale}px`,
+    top: `${geo.margin * scale}px`,
+    width: `${geo.w - 2 * geo.margin}px`,
+    transform: `scale(${scale})`,
+    transformOrigin: 'top left',
+  });
+}
+
+/** Mouse position in layout coordinates (through whichever page is under it). */
+function pointerInLayout(clientX, clientY) {
+  if (!state.layout) return null;
+  return clientToLayout(state.layout, $('score'), clientX, clientY);
 }
 
 // ----- mouse entry mode ------------------------------------------------------
@@ -211,21 +250,19 @@ function setMode(mode) {
 function currentTarget() {
   const doc = active();
   if (!doc || !state.layout || !state.pointer || state.mode === 'select') return null;
-  const svg = $('score').querySelector('svg');
-  if (!svg) return null;
-  const r = svg.getBoundingClientRect();
-  return pointerTarget(state.layout, doc, state.pointer.x - r.left, state.pointer.y - r.top, doc.caret.voice);
+  const p = pointerInLayout(state.pointer.x, state.pointer.y);
+  return p && pointerTarget(state.layout, doc, p.x, p.y, doc.caret.voice);
 }
 
 /** Draws the figure the pointer is carrying (or removes it). */
 function drawGhost() {
   const scoreEl = $('score');
-  const svg = scoreEl.querySelector('svg');
-  if (!svg) return;
-  svg.querySelector('.ghost')?.remove();
+  scoreEl.querySelectorAll('.ghost').forEach((g) => g.remove());
   const target = currentTarget();
   scoreEl.classList.toggle('over', !!target);
   if (!target) return;
+  const svg = scoreEl.querySelector(`svg[data-page="${target.page}"]`);
+  if (!svg) return;
   const voice = active().caret.voice;
   svg.insertAdjacentHTML('beforeend', ghostMarkup(target, state.duration, state.mode === 'rest')
     .replace('class="ghost"', `class="ghost v${voice}"`));
@@ -353,6 +390,10 @@ function scrollCaretIntoView() {
   if (r.top < p.top + 40 || r.bottom > p.bottom - 40) {
     page.scrollBy({ top: r.top - p.top - p.height / 3 });
   }
+  // Continuous view scrolls sideways too.
+  if (r.left < p.left + 40 || r.right > p.right - 40) {
+    page.scrollBy({ left: r.left - p.left - p.width / 3 });
+  }
 }
 
 // ----- input -----------------------------------------------------------------
@@ -379,12 +420,14 @@ document.addEventListener('keydown', (ev) => {
   const lower = key.length === 1 ? key.toLowerCase() : key;
 
   // Shortcuts that work everywhere.
+  if (key === 'F1') { ev.preventDefault(); showDialog('shortcuts'); return; }
   if (ctrl && !ev.altKey) {
     const handled = {
       s: () => serial(() => saveDocument(ev.shiftKey)),
       o: () => serial(openDocument),
       n: () => serial(newDocument),
       w: () => serial(() => closeDocument(state.active)),
+      p: () => printScore(),
       tab: () => cycleTab(ev.shiftKey ? -1 : 1),
     }[lower === 'Tab' ? 'tab' : lower];
     if (handled) {
@@ -393,6 +436,8 @@ document.addEventListener('keydown', (ev) => {
       return;
     }
   }
+  // Menus and dialogs handle their own keys.
+  if (t.closest?.('.menubar, dialog')) return;
   if (inField) {
     if (key === 'Escape') { t.blur(); page.focus(); }
     return;
@@ -461,9 +506,8 @@ let lastHit = '';
 function caretFromMouse(ev) {
   const doc = active();
   if (!doc || !state.layout) return null;
-  const svg = $('score').querySelector('svg');
-  const r = svg.getBoundingClientRect();
-  return hitTest(state.layout, doc, ev.clientX - r.left, ev.clientY - r.top, doc.caret.voice);
+  const p = pointerInLayout(ev.clientX, ev.clientY);
+  return p && hitTest(state.layout, doc, p.x, p.y, doc.caret.voice);
 }
 $('score').addEventListener('mousedown', (ev) => {
   if (ev.button !== 0) return;
@@ -528,6 +572,153 @@ $('status').addEventListener('click', (ev) => {
   page.focus();
 });
 
+// ----- commands (shared by menus, toolbar and palette) -----------------------
+
+function setPref(key, value) {
+  state[key] = value;
+  savePref(key, value);
+}
+
+function applyTheme() {
+  // 'system' removes the attribute so CSS follows prefers-color-scheme.
+  if (state.theme === 'system') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = state.theme;
+}
+
+const commands = {
+  // File
+  new: () => serial(newDocument),
+  open: () => serial(openDocument),
+  save: () => serial(() => saveDocument()),
+  saveas: () => serial(() => saveDocument(true)),
+  close: () => serial(() => closeDocument(state.active)),
+  print: () => printScore(),
+  // Edit
+  undo: () => act({ type: 'undo' }),
+  redo: () => act({ type: 'redo' }),
+  cut: () => act({ type: 'cut' }),
+  copy: () => act({ type: 'copy' }),
+  paste: () => act({ type: 'paste' }),
+  delete: () => act({ type: 'delete_forward' }),
+  selectall: () => act({ type: 'select_all' }),
+  // View
+  'view:page': () => { setPref('view', 'page'); render(); },
+  'view:wrap': () => { setPref('view', 'wrap'); render(); },
+  'view:continuous': () => { setPref('view', 'continuous'); render(); },
+  'paper:a4': () => { setPref('paper', 'a4'); render(); },
+  'paper:letter': () => { setPref('paper', 'letter'); render(); },
+  multirest: () => { setPref('multiRest', !state.multiRest); render(); },
+  'theme:system': () => { setPref('theme', 'system'); applyTheme(); },
+  'theme:light': () => { setPref('theme', 'light'); applyTheme(); },
+  'theme:dark': () => { setPref('theme', 'dark'); applyTheme(); },
+  // Insert / notation
+  'add-measure': () => act({ type: 'insert_measure' }),
+  'remove-measure': () => act({ type: 'remove_measure' }),
+  'add-staff': () => act({ type: 'add_staff', clef: 'treble' }),
+  'remove-staff': () => act({ type: 'remove_staff' }),
+  tie: () => act({ type: 'toggle_tie' }),
+  slur: () => act({ type: 'toggle_slur' }),
+  select: () => setMode('select'),
+  dot: () => { state.duration = { ...state.duration, dots: state.duration.dots ? 0 : 1 }; render(); },
+  // Help
+  shortcuts: () => showDialog('shortcuts'),
+  about: () => showDialog('about'),
+};
+
+function runCommand(cmd) {
+  commands[cmd]?.();
+}
+
+// ----- printing --------------------------------------------------------------
+
+/**
+ * Prints the score as it looks in page view: one sheet per page, in black on
+ * white whatever the theme. Other views switch to page view for the print
+ * and back afterwards.
+ */
+function printScore() {
+  if (!active()) return;
+  const previous = state.view;
+  state.view = 'page';
+  setMode('select'); // re-renders in page view, without ghost figure
+  // The @page size must match the chosen paper.
+  let pageStyle = document.getElementById('print-page-size');
+  if (!pageStyle) {
+    pageStyle = document.createElement('style');
+    pageStyle.id = 'print-page-size';
+    document.head.append(pageStyle);
+  }
+  pageStyle.textContent = `@page { size: ${state.paper === 'letter' ? 'letter' : 'A4'}; margin: 0; }`;
+  const restore = () => {
+    window.removeEventListener('afterprint', restore);
+    state.view = previous;
+    render();
+  };
+  window.addEventListener('afterprint', restore);
+  window.print();
+}
+
+// ----- dialogs ---------------------------------------------------------------
+
+const SHORTCUTS = [
+  ['Entering music', [
+    ['A – G', 'Insert a note (octave follows the previous note)'],
+    ['Shift + A – G', 'Add a note to the previous chord'],
+    ['R or 0', 'Insert a rest'],
+    ['1 – 7', 'Note value: 64th … whole'],
+    ['.', 'Dot'],
+    ['+ / −', 'Raise / lower the accidental'],
+    ['Alt + ↑ / ↓', 'Move the note a step (Ctrl+Alt: an octave)'],
+    ['T', 'Tie to the next note'],
+    ['S', 'Slur over the selection'],
+    ['N', 'Mouse entry mode on / off'],
+    ['Alt + 1 – 4', 'Switch voice'],
+  ]],
+  ['Moving and selecting', [
+    ['← / →', 'Previous / next note'],
+    ['↑ / ↓', 'Staff above / below'],
+    ['Home / End', 'Start / end of the measure'],
+    ['Ctrl + ← / →', 'Previous / next measure'],
+    ['Ctrl + Home / End', 'Start / end of the score'],
+    ['Shift + any move', 'Extend the selection'],
+    ['Ctrl + A', 'Select all'],
+    ['Esc', 'Back to the select tool'],
+  ]],
+  ['Editing', [
+    ['Backspace / Del', 'Delete before / after the caret, or the selection'],
+    ['Ctrl + X / C / V', 'Cut / copy / paste'],
+    ['Ctrl + Z / Y', 'Undo / redo'],
+    ['Ctrl + Enter', 'Insert a measure'],
+  ]],
+  ['Files and windows', [
+    ['Ctrl + N / O', 'New / open'],
+    ['Ctrl + S', 'Save (Ctrl+Shift+S: save as)'],
+    ['Ctrl + P', 'Print'],
+    ['Ctrl + W', 'Close tab'],
+    ['Ctrl + Tab', 'Next tab'],
+    ['Alt', 'Menu bar'],
+    ['F1', 'This list'],
+  ]],
+];
+
+function showDialog(which) {
+  const dlg = $('dialog');
+  if (which === 'shortcuts') {
+    dlg.innerHTML = `<h2>Keyboard shortcuts</h2><div class="shortcut-cols">${SHORTCUTS.map(([group, rows]) =>
+      `<section><h3>${group}</h3><table>${rows.map(([k, d]) => `<tr><td><kbd>${esc(k)}</kbd></td><td>${esc(d)}</td></tr>`).join('')}</table></section>`).join('')}</div>`;
+  } else {
+    dlg.innerHTML = `<h2>Da Capo</h2>
+      <p>An open source music notation editor.</p>
+      <p>Version 0.1.0 · Free software under the GNU General Public License v3.0 or later.</p>
+      <p>Music engraved with the Bravura font by Steinberg Media Technologies, under the SIL Open Font License 1.1.</p>`;
+  }
+  dlg.insertAdjacentHTML('beforeend', '<form method="dialog" class="dialog-actions"><button autofocus>Close</button></form>');
+  dlg.showModal();
+}
+$('dialog').addEventListener('close', () => page.focus());
+// Clicking the backdrop closes the dialog.
+$('dialog').addEventListener('click', (ev) => { if (ev.target === ev.currentTarget) ev.currentTarget.close(); });
+
 // Toolbar and palette.
 const onControlClick = (ev) => {
   const b = ev.target.closest('button');
@@ -538,26 +729,70 @@ const onControlClick = (ev) => {
   else if (b.dataset.alter) act({ type: 'set_accidental', alter: Number(b.dataset.alter) });
   else if (b.dataset.artic) act({ type: 'toggle_articulation', articulation: b.dataset.artic });
   else if (b.dataset.dyn) act({ type: 'set_dynamic', dynamic: b.dataset.dyn });
-  else ({
-    select: () => setMode('select'),
-    tie: () => act({ type: 'toggle_tie' }),
-    slur: () => act({ type: 'toggle_slur' }),
-    new: () => serial(newDocument),
-    open: () => serial(openDocument),
-    save: () => serial(() => saveDocument()),
-    undo: () => act({ type: 'undo' }),
-    redo: () => act({ type: 'redo' }),
-    dot: () => { state.duration = { ...state.duration, dots: state.duration.dots ? 0 : 1 }; render(); },
-    multirest: () => { state.multiRest = !state.multiRest; savePref('multiRest', state.multiRest); render(); },
-    'add-measure': () => act({ type: 'insert_measure' }),
-    'remove-measure': () => act({ type: 'remove_measure' }),
-    'add-staff': () => act({ type: 'add_staff', clef: 'treble' }),
-    'remove-staff': () => act({ type: 'remove_staff' }),
-  })[b.dataset.cmd]?.();
+  else runCommand(b.dataset.cmd);
   page.focus();
 };
 document.querySelector('.toolbar').addEventListener('click', onControlClick);
 $('palette').addEventListener('click', onControlClick);
+
+// ----- menu bar --------------------------------------------------------------
+
+const hasDoc = () => !!active();
+const hasSelection = () => !!active()?.selection;
+const MENUS = [
+  { label: 'File', items: [
+    { label: 'New', cmd: 'new', key: 'Ctrl+N' },
+    { label: 'Open…', cmd: 'open', key: 'Ctrl+O' },
+    { sep: true },
+    { label: 'Save', cmd: 'save', key: 'Ctrl+S', enabled: hasDoc },
+    { label: 'Save As…', cmd: 'saveas', key: 'Ctrl+Shift+S', enabled: hasDoc },
+    { sep: true },
+    { label: 'Print…', cmd: 'print', key: 'Ctrl+P', enabled: hasDoc },
+    { sep: true },
+    { label: 'Close Tab', cmd: 'close', key: 'Ctrl+W', enabled: hasDoc },
+  ] },
+  { label: 'Edit', items: [
+    { label: 'Undo', cmd: 'undo', key: 'Ctrl+Z', enabled: () => !!active()?.can_undo },
+    { label: 'Redo', cmd: 'redo', key: 'Ctrl+Y', enabled: () => !!active()?.can_redo },
+    { sep: true },
+    { label: 'Cut', cmd: 'cut', key: 'Ctrl+X', enabled: hasSelection },
+    { label: 'Copy', cmd: 'copy', key: 'Ctrl+C', enabled: hasSelection },
+    { label: 'Paste', cmd: 'paste', key: 'Ctrl+V', enabled: hasDoc },
+    { label: 'Delete', cmd: 'delete', key: 'Del', enabled: hasDoc },
+    { sep: true },
+    { label: 'Select All', cmd: 'selectall', key: 'Ctrl+A', enabled: hasDoc },
+  ] },
+  { label: 'View', items: [
+    { label: 'Page (as printed)', cmd: 'view:page', radio: true, checked: () => state.view === 'page' },
+    { label: 'Wrap to Window', cmd: 'view:wrap', radio: true, checked: () => state.view === 'wrap' },
+    { label: 'Continuous (one line)', cmd: 'view:continuous', radio: true, checked: () => state.view === 'continuous' },
+    { sep: true },
+    { label: 'Paper: A4', cmd: 'paper:a4', radio: true, checked: () => state.paper === 'a4' },
+    { label: 'Paper: Letter', cmd: 'paper:letter', radio: true, checked: () => state.paper === 'letter' },
+    { sep: true },
+    { label: 'Multi-measure Rests', cmd: 'multirest', checked: () => state.multiRest },
+    { sep: true },
+    { label: 'Theme: System', cmd: 'theme:system', radio: true, checked: () => state.theme === 'system' },
+    { label: 'Theme: Light', cmd: 'theme:light', radio: true, checked: () => state.theme === 'light' },
+    { label: 'Theme: Dark', cmd: 'theme:dark', radio: true, checked: () => state.theme === 'dark' },
+  ] },
+  { label: 'Insert', items: [
+    { label: 'Measure After Current', cmd: 'add-measure', key: 'Ctrl+Enter', enabled: hasDoc },
+    { label: 'Staff', cmd: 'add-staff', enabled: hasDoc },
+    { sep: true },
+    { label: 'Tie', cmd: 'tie', key: 'T', enabled: hasDoc },
+    { label: 'Slur over Selection', cmd: 'slur', key: 'S', enabled: hasSelection },
+    { sep: true },
+    { label: 'Delete Current Measure', cmd: 'remove-measure', enabled: hasDoc },
+    { label: 'Delete Current Staff', cmd: 'remove-staff', enabled: hasDoc },
+  ] },
+  { label: 'Help', items: [
+    { label: 'Keyboard Shortcuts', cmd: 'shortcuts', key: 'F1' },
+    { label: 'About Da Capo', cmd: 'about' },
+  ] },
+];
+installMenuBar($('menubar'), MENUS, runCommand, () => page.focus());
+applyTheme();
 
 installTooltips();
 

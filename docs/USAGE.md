@@ -12,6 +12,26 @@ Da Capo is designed to feel like a word processor whose "text" is music. A blink
 
 The tab of a document with unsaved changes shows a dot (●). Closing it asks whether to save.
 
+## Menus
+
+The menu bar has **File**, **Edit**, **View**, **Insert** and **Help**. Press **Alt** to move into it, or **Alt + first letter** (Alt+F, Alt+E, Alt+V…) to open a menu. Then use the arrows, Enter, and Esc. **Help → Keyboard Shortcuts** (F1) lists every shortcut.
+
+## Views
+
+Choose how the score is laid out in **View**:
+
+| View | What you see |
+|---|---|
+| **Page (as printed)** | Default. Real sheets of paper (A4 or Letter, chosen in View) with margins. The title sits on page 1 and page numbers appear from page 2 on. What you see is what prints. |
+| **Wrap to Window** | The music fills the window width and wraps to new lines, with no page breaks. Handy on small screens. |
+| **Continuous (one line)** | Encore-style: the whole piece on one endless line that grows to the right. The view scrolls sideways to follow the caret. |
+
+All views edit the same way. Clicking, selecting and the pointer figure work identically.
+
+**Print** (Ctrl+P) prints the page view in black on white, one sheet per page. Editing aids such as the caret, the selection and the error marks are left out. From another view, Da Capo switches to page view for the print and back afterwards.
+
+**Theme:** **System** (default) follows your computer's light or dark setting. **Light** or **Dark** fix it for Da Capo only.
+
 ## Entering music with the mouse
 
 This works like the note palette in Encore. The **palette** on the left holds the tools for entering music.

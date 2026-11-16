@@ -22,6 +22,11 @@ This document tracks the development goals and major stages toward a complete op
 - [x] Ties and slurs (slurs follow their notes; deleting a note removes its slur in the same undo step).
 - [x] Articulations (staccato, staccatissimo, tenuto, accent, marcato, fermata) and dynamics (ppp–fff, sfz, fp).
 - [x] Palette in collapsible categories; toolbar icons; tooltips with description and shortcut.
+- [x] Menu bar (File, Edit, View, Insert, Help) with keyboard navigation; shortcuts dialog (F1).
+- [x] Page view (A4/Letter, as printed), wrap view, continuous (one line) view; printing from page view.
+- [x] Theme choice: system, light or dark.
+- [ ] Zoom in the score view.
+- [ ] Staff size and page margins per score (today a fixed 7 mm staff and 15 mm margins).
 - [ ] Copy/paste of slurs inside the copied region (today only the notes and their marks are copied).
 - [ ] Hairpins (crescendo / diminuendo), tempo marks, text.
 - [ ] Beaming (grouping eighths and shorter notes by beat).
