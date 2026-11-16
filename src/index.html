@@ -77,10 +77,6 @@
     </div>
   </header>
 
-  <nav class="tabs" id="tabs" role="tablist" aria-label="Open documents"></nav>
-
-  <div id="recovery" class="recovery" hidden></div>
-
   <div class="workspace">
     <aside class="palette" id="palette" aria-label="Palette">
       <div class="tools">
@@ -166,6 +162,13 @@
       </details>
     </aside>
 
+    <!-- The document area: tabs and the recovery banner sit above the page,
+         to the right of the palette, which runs from the toolbar down. -->
+    <div class="document">
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Open documents"></nav>
+
+    <div id="recovery" class="recovery" hidden></div>
+
     <main id="page" class="page" tabindex="0" aria-label="Score">
       <div class="sheet">
         <div class="meta" id="meta">
@@ -175,6 +178,7 @@
         <div id="score" class="score"></div>
       </div>
     </main>
+    </div>
   </div>
 
   <footer class="status" id="status" aria-live="polite"></footer>
