@@ -48,6 +48,93 @@ export function keyAlter(fifths, step) {
   return 0;
 }
 
+// ----- glyph placement -------------------------------------------------------
+// Fonts disagree on how big a symbol is and where it sits relative to the
+// baseline, so fixed offsets look wrong with some fonts (the bass clef ended
+// up squeezed into the top corner). Instead, the real ink extent of each
+// glyph is measured once with a canvas, and the glyph is scaled and placed
+// so its ink lands exactly between two target y positions.
+
+// Canvas font specs; `{px}` is replaced by the measuring size. They must
+// match the CSS used to draw the same glyphs (.glyph and .tsig).
+const GLYPH_FONT = '{px} "Segoe UI Symbol", "Noto Music", "Apple Symbols", serif';
+const TSIG_FONT = '700 {px} Georgia, "Times New Roman", serif';
+const inkCache = new Map();
+
+/** Ink extent above/below the baseline, as fractions of the font size. */
+function inkMetrics(text, font) {
+  const key = `${font}|${text}`;
+  if (inkCache.has(key)) return inkCache.get(key);
+  // Fallback when no canvas is available. All values are fractions of the
+  // font size: ink above/below the baseline, ink start after the pen
+  // position (`left`) and ink width.
+  let m = { above: 0.75, below: 0.25, left: 0, width: 0.6 };
+  try {
+    const size = 160;
+    const canvas = document.createElement('canvas');
+    canvas.width = size * 3;
+    canvas.height = size * 3;
+    const g = canvas.getContext('2d', { willReadFrequently: true });
+    g.font = font.replace('{px}', `${size}px`);
+    g.fillStyle = '#000';
+    const base = size * 2;
+    const pen = size * 0.5;
+    g.fillText(text, pen, base);
+    const { data, width, height } = g.getImageData(0, 0, canvas.width, canvas.height);
+    let top = -1;
+    let bottom = -1;
+    let left = width;
+    let right = -1;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (data[(y * width + x) * 4 + 3] > 60) {
+          if (top < 0) top = y;
+          bottom = y;
+          if (x < left) left = x;
+          if (x > right) right = x;
+        }
+      }
+    }
+    if (top >= 0) {
+      m = {
+        above: (base - top) / size,
+        below: (bottom + 1 - base) / size,
+        left: (left - pen) / size,
+        width: (right + 1 - left) / size,
+      };
+    }
+  } catch {
+    /* keep fallback */
+  }
+  inkCache.set(key, m);
+  return m;
+}
+
+/**
+ * Font size and baseline y so that the ink spans [inkTop, inkBottom], plus
+ * the pen offset `dx` that makes the ink start exactly at the given x, and
+ * the ink `width`.
+ */
+function fitGlyph(text, font, inkTop, inkBottom) {
+  const m = inkMetrics(text, font);
+  const fs = (inkBottom - inkTop) / (m.above + m.below);
+  return { fs, y: inkTop + m.above * fs, dx: -m.left * fs, width: m.width * fs };
+}
+
+/** Ink width of a clef drawn on a staff (independent of the staff's y). */
+const clefWidth = (clef) => fitGlyph(CLEF_GLYPH[clef], GLYPH_FONT, 0, (CLEF_INK[clef][1] - CLEF_INK[clef][0]) * SP).width;
+/** Room reserved for the clef column: the widest clef in the system. */
+const clefColumn = (score) => Math.max(...score.staves.map((s) => clefWidth(s.clef))) + 1.0 * SP;
+
+// Where each clef's ink should start and end, in staff spaces from the top
+// line (standard engraving proportions, as in the SMuFL reference font).
+const CLEF_INK = {
+  treble: [-1.45, 5.6], // curl around the G line, tail below the staff
+  bass: [-0.05, 3.5], // head from the top line, dots around the F line
+  alto: [0, 4], // centered on the middle (C) line
+  tenor: [-1, 3], // centered on the 4th (C) line
+};
+
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 /**
@@ -117,10 +204,11 @@ export function layout(view, width, opts = {}) {
   for (const ms of measures) for (let m = ms.m; m <= ms.mEnd; m++) byMeasure[m] = ms;
 
   const keyWidth = (f) => Math.abs(f) * 0.9 * SP;
+  const clefCol = clefColumn(score);
   const systems = [];
   let sys = null;
   for (const ms of measures) {
-    const startPrefix = 3.8 * SP + keyWidth(ms.attrs.key.fifths) + (ms.timeChange ? 2.8 * SP : 0) + SP;
+    const startPrefix = 0.6 * SP + clefCol + keyWidth(ms.attrs.key.fifths) + (ms.timeChange ? 2.8 * SP : 0) + SP;
     const midPrefix = (ms.keyChange ? keyWidth(ms.attrs.key.fifths) + SP : 0) + (ms.timeChange ? 2.8 * SP : 0);
     const fitsMid = sys && sys.width + midPrefix + ms.content <= avail;
     if (!fitsMid) {
@@ -157,7 +245,7 @@ export function layout(view, width, opts = {}) {
   });
 
   return {
-    systems, measures, byMeasure, nStaves,
+    systems, measures, byMeasure, nStaves, clefCol,
     width: Math.max(width, avail + 2 * MARGIN_X),
     height: MARGIN_TOP + systems.length * (systemHeight + SYSTEM_GAP),
     staffTop: (ms, staff) => ms.system.y + staff * STAFF_GAP,
@@ -273,11 +361,10 @@ export function renderScore(view, width, opts = {}) {
       // Prefix: clef, key, time.
       let px = ms.x + 0.6 * SP;
       if (ms.systemStart) {
-        const clefY = { treble: top + 3 * SP, bass: top + SP, alto: top + 2 * SP, tenor: top + SP }[staff.clef];
-        const size = staff.clef === 'treble' ? 4.4 * SP : 3.4 * SP;
-        const dy = staff.clef === 'treble' ? 1.05 * SP : staff.clef === 'bass' ? 1.15 * SP : 1.25 * SP;
-        push(`<text class="glyph" x="${px}" y="${clefY + dy}" font-size="${size}">${CLEF_GLYPH[staff.clef]}</text>`);
-        px += 3.6 * SP;
+        const [a, b] = CLEF_INK[staff.clef];
+        const { fs, y, dx } = fitGlyph(CLEF_GLYPH[staff.clef], GLYPH_FONT, top + a * SP, top + b * SP);
+        push(`<text class="glyph clef" x="${px + dx}" y="${y}" style="font-size:${fs}px">${CLEF_GLYPH[staff.clef]}</text>`);
+        px += lay.clefCol;
       }
       if (ms.systemStart || ms.keyChange) {
         const f = ms.attrs.key.fifths;
@@ -290,8 +377,11 @@ export function renderScore(view, width, opts = {}) {
         if (positions.length) px += 0.4 * SP;
       }
       if (ms.timeChange) {
-        push(`<text class="tsig" x="${px + 1.1 * SP}" y="${top + 1.75 * SP}">${ms.attrs.time.beats}</text>`);
-        push(`<text class="tsig" x="${px + 1.1 * SP}" y="${top + 3.75 * SP}">${ms.attrs.time.beat_type}</text>`);
+        // Each number fills exactly half the staff (two spaces), as printed.
+        const upper = fitGlyph(String(ms.attrs.time.beats), TSIG_FONT, top, top + 2 * SP);
+        const lower = fitGlyph(String(ms.attrs.time.beat_type), TSIG_FONT, top + 2 * SP, top + 4 * SP);
+        push(`<text class="tsig" x="${px + 1.1 * SP}" y="${upper.y}" style="font-size:${upper.fs}px">${ms.attrs.time.beats}</text>`);
+        push(`<text class="tsig" x="${px + 1.1 * SP}" y="${lower.y}" style="font-size:${lower.fs}px">${ms.attrs.time.beat_type}</text>`);
       }
 
       // Barline.
