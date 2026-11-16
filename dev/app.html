@@ -73,6 +73,23 @@
         view.caret = { ...at, index: at.index + 1 };
       },
       set_caret({ caret }) { view.caret = caret; },
+      // Marks act on the event before the caret (the fake has no selections).
+      toggle_tie() { const e = voiceOf(view.caret)[view.caret.index - 1]; if (e && e.kind !== 'rest') { snapshot(); e.tie = !e.tie; } },
+      toggle_articulation({ articulation: a }) {
+        const e = voiceOf(view.caret)[view.caret.index - 1];
+        if (!e) return;
+        snapshot();
+        const arts = e.articulations || [];
+        e.articulations = arts.includes(a) ? arts.filter((x) => x !== a) : [...arts, a];
+      },
+      set_dynamic({ dynamic }) { const e = voiceOf(view.caret)[view.caret.index - 1]; if (e) { snapshot(); e.dynamic = e.dynamic === dynamic ? null : dynamic; } },
+      toggle_slur() {
+        const v = voiceOf(view.caret);
+        const i = view.caret.index;
+        if (i < 2) return;
+        snapshot();
+        (view.score.slurs ||= []).push({ id: nextId++, start: v[i - 2].id, end: v[i - 1].id });
+      },
       set_accidental({ alter: a }) {
         const e = voiceOf(view.caret)[view.caret.index - 1];
         if (!e || e.kind === 'rest') return;

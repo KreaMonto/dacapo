@@ -19,7 +19,11 @@ This document tracks the development goals and major stages toward a complete op
 ## Phase 2: Interactive editing
 
 - [ ] Automatic measure reflow: notes that overflow a measure continue in the next one, tied across the barline.
-- [ ] Ties and slurs.
+- [x] Ties and slurs (slurs follow their notes; deleting a note removes its slur in the same undo step).
+- [x] Articulations (staccato, staccatissimo, tenuto, accent, marcato, fermata) and dynamics (ppp–fff, sfz, fp).
+- [x] Palette in collapsible categories; toolbar icons; tooltips with description and shortcut.
+- [ ] Copy/paste of slurs inside the copied region (today only the notes and their marks are copied).
+- [ ] Hairpins (crescendo / diminuendo), tempo marks, text.
 - [ ] Beaming (grouping eighths and shorter notes by beat).
 - [x] Mouse note entry: the pointer carries the chosen figure, snaps to lines and spaces, and clicking on a note builds a chord.
 - [ ] Computer keyboard as a piano (two rows of keys = white and black keys, as in DAWs), as an alternative to letter entry.

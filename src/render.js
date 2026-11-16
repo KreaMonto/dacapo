@@ -38,6 +38,19 @@ const FLAG_UP = ['', '', '', '']; // 8th … 64th
 const FLAG_DOWN = ['', '', '', ''];
 const ACC = { '-2': '', '-1': '', '0': '', '1': '', '2': '' };
 const DOT = '';
+// Articulations: [above, below]. Fermata is always above.
+const ARTIC = {
+  staccato: ['', ''],
+  staccatissimo: ['', ''],
+  tenuto: ['', ''],
+  accent: ['', ''],
+  marcato: ['', ''],
+};
+const FERMATA = '';
+export const DYNAMIC = {
+  ppp: '', pp: '', p: '', mp: '', mf: '',
+  f: '', ff: '', fff: '', sfz: '', fp: '',
+};
 const timeDigits = (n) => String(n).split('').map((d) => String.fromCharCode(0xe080 + Number(d))).join('');
 
 // Glyph widths in staff spaces (from Bravura's metadata).
@@ -278,6 +291,10 @@ export function renderScore(view, width, opts = {}) {
     }
   }
 
+  // Drawn events, for ties and slurs: per staff+voice in score order, and by id.
+  const seqs = new Map();
+  const byId = new Map();
+
   for (const ms of lay.measures) {
     const lastMeasure = ms.mEnd === score.measures.length - 1;
     for (let st = 0; st < lay.nStaves; st++) {
@@ -344,10 +361,21 @@ export function renderScore(view, width, opts = {}) {
       voices.forEach((events, v) => {
         const cls = `ev v${v}${view.caret.voice === v ? '' : ' dim'}`;
         const xs = eventXs(lay, ms, events);
-        events.forEach((e, i) => drawEvent(push, e, xs[i], top, yOf, mid, v, multi, ms.attrs.key.fifths, cls));
+        events.forEach((e, i) => {
+          const info = drawEvent(push, e, xs[i], top, yOf, mid, v, multi, ms.attrs.key.fifths, cls);
+          Object.assign(info, { e, ms, top, staff: st, voice: v, cls });
+          drawAttachments(push, info);
+          const key = `${st}:${v}`;
+          if (!seqs.has(key)) seqs.set(key, []);
+          seqs.get(key).push(info);
+          byId.set(e.id, info);
+        });
       });
     }
   }
+
+  drawTies(push, seqs);
+  drawSlurs(push, score.slurs || [], byId, seqs);
 
   // Caret.
   const c = view.caret;
@@ -381,7 +409,7 @@ function drawEvent(push, e, x, top, yOf, mid, voice, multi, fifths, cls, opts = 
     push(glyph(REST[baseIdx], x - w / 2, y));
     drawDots(push, e.duration.dots, x + w / 2 + 0.3 * SP, top + 1.5 * SP + shift);
     push('</g>');
-    return;
+    return { x, left: x - w / 2, w, heads: [], up: true, hi: top + SP + shift, lo: top + 3 * SP + shift, rest: true };
   }
 
   const headIdx = Math.min(baseIdx, 2);
@@ -412,17 +440,144 @@ function drawEvent(push, e, x, top, yOf, mid, voice, multi, fifths, cls, opts = 
   }
 
   // Stem (attached to the notehead's right edge going up, left edge going
-  // down) and the flag glyph at its end.
+  // down) and the flag glyph at its end. Whole notes have no stem, but the
+  // direction still decides which side ties and articulations go.
+  const up = multi ? voice % 2 === 0 : (lo + hi) / 2 < mid;
+  let stemEnd = null;
   if (baseIdx >= 1 && opts.stem !== false) {
-    const up = multi ? voice % 2 === 0 : (lo + hi) / 2 < mid;
     const extra = Math.max(0, baseIdx - 4) * 0.5 * SP; // room for 32nd/64th flags
     const sx = up ? left + w - STEM_W / 2 : left + STEM_W / 2;
     const yStart = up ? yOf(lo) - 0.17 * SP : yOf(hi) + 0.17 * SP;
-    const yEnd = up ? yOf(hi) - STEM_LEN - extra : yOf(lo) + STEM_LEN + extra;
-    push(`<line class="stem" x1="${sx}" x2="${sx}" y1="${yStart}" y2="${yEnd}"/>`);
-    if (baseIdx >= 3) push(glyph((up ? FLAG_UP : FLAG_DOWN)[baseIdx - 3], sx - STEM_W / 2, yEnd));
+    stemEnd = up ? yOf(hi) - STEM_LEN - extra : yOf(lo) + STEM_LEN + extra;
+    push(`<line class="stem" x1="${sx}" x2="${sx}" y1="${yStart}" y2="${stemEnd}"/>`);
+    if (baseIdx >= 3) push(glyph((up ? FLAG_UP : FLAG_DOWN)[baseIdx - 3], sx - STEM_W / 2, stemEnd));
   }
   push('</g>');
+  return {
+    x, left, w, up, stemEnd, mid,
+    heads: pitches.map((p) => ({ key: `${p.step}${p.octave}`, y: yOf(diatonic(p)), d: diatonic(p) })),
+    hi: Math.min(yOf(hi) - 0.5 * SP, stemEnd ?? Infinity), // topmost ink
+    lo: Math.max(yOf(lo) + 0.5 * SP, stemEnd ?? -Infinity), // lowest ink
+  };
+}
+
+/** Is y on a staff line inside the staff? (Then a mark must move to a space.) */
+const onStaffLine = (y, top) => {
+  const k = (y - top) / SP;
+  return k > -0.01 && k < 4.01 && Math.abs(k - Math.round(k)) < 0.01;
+};
+
+/** Articulations, fermata and dynamic of one drawn event. */
+function drawAttachments(push, info) {
+  const { e, top, x } = info;
+  const arts = e.articulations || [];
+  if (arts.length || e.dynamic) push(`<g class="${info.cls}">`);
+
+  // Articulations go on the notehead side (away from the stem), stacked
+  // outward, starting in the nearest staff space.
+  const below = info.up;
+  const ys = info.heads.map((h) => h.y);
+  let y = below ? Math.max(...ys, top + 2 * SP) : Math.min(...ys, top + 2 * SP);
+  if (info.rest) y = below ? top + 4 * SP : top;
+  for (const a of arts) {
+    if (a === 'fermata') continue;
+    y += below ? 1.0 * SP : -1.0 * SP;
+    if (onStaffLine(y, top)) y += below ? 0.5 * SP : -0.5 * SP;
+    push(`<text class="m mark" x="${x}" y="${y}">${ARTIC[a][below ? 1 : 0]}</text>`);
+    // Slurs must clear articulations too: extend the event's ink extent.
+    if (below) info.lo = Math.max(info.lo, y + 0.8 * SP);
+    else info.hi = Math.min(info.hi, y - 0.8 * SP);
+  }
+  if (arts.includes('fermata')) {
+    // Above the staff, or above the highest ink if that is higher.
+    const fy = Math.min(top - 0.6 * SP, info.hi - 0.6 * SP, below ? Infinity : y - 0.8 * SP);
+    push(`<text class="m mark" x="${x}" y="${fy}">${FERMATA}</text>`);
+  }
+  if (e.dynamic) {
+    const dy = Math.max(top + 6.6 * SP, info.lo + 2.2 * SP, below ? y + 2 * SP : -Infinity);
+    push(`<text class="m mark" x="${x}" y="${dy}">${DYNAMIC[e.dynamic]}</text>`);
+  }
+  if (arts.length || e.dynamic) push('</g>');
+}
+
+/**
+ * A tie or slur: a filled crescent from (x1,y1) to (x2,y2) that bulges by
+ * `h` towards `dir` (+1 down, −1 up). Thickest in the middle, as engraved.
+ */
+function arc(x1, y1, x2, y2, dir, h, thick) {
+  const cx = (x1 + x2) / 2;
+  const cy = (y1 + y2) / 2;
+  const outer = cy + dir * h * 2; // a quadratic peaks at half its control offset
+  const inner = cy + dir * (h - thick) * 2;
+  return `<path class="arc" d="M${x1} ${y1} Q${cx} ${outer} ${x2} ${y2} Q${cx} ${inner} ${x1} ${y1}Z"/>`;
+}
+
+const systemEnd = (ms) => MARGIN_X + ms.system.width;
+
+/** Ties: from each tied note to the same pitch in the next event of its voice. */
+function drawTies(push, seqs) {
+  for (const seq of seqs.values()) {
+    seq.forEach((a, i) => {
+      if (!a.e.tie || a.rest) return;
+      const b = seq[i + 1];
+      a.heads.forEach((head) => {
+        // In a chord the top note's tie curves up and the others down;
+        // a single note's tie goes opposite the stem.
+        const isTop = a.heads.length > 1 && head.d === Math.max(...a.heads.map((h) => h.d));
+        const dir = a.heads.length > 1 ? (isTop ? -1 : 1) : (a.up ? 1 : -1);
+        const y = head.y + dir * 0.55 * SP;
+        const x1 = a.left + a.w + 0.15 * SP;
+        const target = b && !b.rest ? b.heads.find((h) => h.key === head.key) : null;
+        push(`<g class="${a.cls}">`);
+        if (!target) {
+          push(arc(x1, y, x1 + 2 * SP, y, dir, 0.45 * SP, 0.14 * SP)); // tie into nothing
+        } else if (b.ms.system === a.ms.system) {
+          const x2 = b.left - 0.15 * SP;
+          push(arc(x1, y, x2, y, dir, Math.min(1.1 * SP, Math.max(0.45 * SP, (x2 - x1) * 0.1)), 0.16 * SP));
+        } else {
+          // Crosses a line break: one half on each system.
+          const y2 = target.y + dir * 0.55 * SP;
+          push(arc(x1, y, systemEnd(a.ms) - 0.3 * SP, y, dir, 0.6 * SP, 0.16 * SP));
+          push(arc(b.ms.contentX - 1.4 * SP, y2, b.left - 0.15 * SP, y2, dir, 0.6 * SP, 0.16 * SP));
+        }
+        push('</g>');
+      });
+    });
+  }
+}
+
+/** Slurs: over (or under) the notes between their start and end events. */
+function drawSlurs(push, slurs, byId, seqs) {
+  for (const s of slurs) {
+    const a = byId.get(s.start);
+    const b = byId.get(s.end);
+    if (!a || !b || a.staff !== b.staff || a.voice !== b.voice) continue;
+    const seq = seqs.get(`${a.staff}:${a.voice}`);
+    const inner = seq.slice(seq.indexOf(a), seq.indexOf(b) + 1);
+    // Below when every stem points up (notehead side), otherwise above.
+    const dir = inner.every((n) => n.up) ? 1 : -1;
+    const end = (n) => (dir > 0 ? n.lo + 0.5 * SP : n.hi - 0.5 * SP);
+    const draw = (part, x1, y1, x2, y2) => {
+      // Lift the curve so it clears every note it spans.
+      const extreme = part.length
+        ? (dir > 0 ? Math.max(...part.map((n) => n.lo)) : Math.min(...part.map((n) => n.hi)))
+        : y1;
+      const base = (y1 + y2) / 2;
+      const need = dir > 0 ? extreme + 0.6 * SP - base : base - (extreme - 0.6 * SP);
+      const h = Math.min(3 * SP, Math.max(0.8 * SP, (x2 - x1) * 0.08, need));
+      push(arc(x1, y1, x2, y2, dir, h, 0.2 * SP));
+    };
+    push(`<g class="${a.cls}">`);
+    if (a.ms.system === b.ms.system) {
+      draw(inner.slice(1, -1), a.x, end(a), b.x, end(b));
+    } else {
+      const first = inner.filter((n) => n.ms.system === a.ms.system);
+      const second = inner.filter((n) => n.ms.system === b.ms.system);
+      draw(first.slice(1), a.x, end(a), systemEnd(a.ms) - 0.3 * SP, end(a));
+      draw(second.slice(0, -1), b.ms.contentX - 1.4 * SP, end(b), b.x, end(b));
+    }
+    push('</g>');
+  }
 }
 
 function drawDots(push, dots, x, y) {
