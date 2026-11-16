@@ -19,6 +19,8 @@ const state = {
   // 'select': click places the caret / drag selects.
   // 'note' / 'rest': the pointer carries the chosen figure; click places it.
   mode: 'select',
+  // Palette switch: whether the figures are notes or rests.
+  kind: 'note',
   pointer: null, // last mouse position over the score, for the ghost figure
   layout: null,
   error: null,
@@ -241,12 +243,19 @@ function syncControls(doc) {
   const staff = doc.score.staves[caret.staff];
   document.querySelector('[data-cmd=undo]').disabled = !doc.can_undo;
   document.querySelector('[data-cmd=redo]').disabled = !doc.can_redo;
-  document.querySelectorAll('[data-dur]').forEach((b) => b.classList.toggle('on', b.dataset.dur === state.duration.base));
+  document.querySelectorAll('[data-dur]').forEach((b) => {
+    b.textContent = b.dataset[state.kind];
+    b.title = `${b.dataset.name} ${state.kind} — choose, then click on a staff to place it (${b.dataset.key})`;
+    b.classList.toggle('on', b.dataset.dur === state.duration.base);
+  });
+  document.querySelectorAll('[data-kind]').forEach((b) => {
+    b.classList.toggle('on', b.dataset.kind === state.kind);
+    b.setAttribute('aria-checked', String(b.dataset.kind === state.kind));
+  });
   document.querySelector('[data-cmd=select]').classList.toggle('on', state.mode === 'select');
-  document.querySelector('[data-cmd=rest]').classList.toggle('on', state.mode === 'rest');
-  document.querySelector('.durations').classList.toggle('placing', state.mode === 'note');
+  document.querySelector('.figures').classList.toggle('placing', state.mode !== 'select');
   document.querySelector('[data-cmd=dot]').classList.toggle('on', state.duration.dots > 0);
-  document.querySelectorAll('[data-voice]').forEach((b) => b.classList.toggle('on', Number(b.dataset.voice) === caret.voice));
+  renderVoices(doc);
   if (document.activeElement !== $('clef')) $('clef').value = staff.clef;
   if (document.activeElement !== $('key')) $('key').value = String(attrs.key.fifths);
   if (document.activeElement !== $('time')) $('time').value = `${attrs.time.beats}/${attrs.time.beat_type}`;
@@ -254,12 +263,45 @@ function syncControls(doc) {
   if (document.activeElement !== $('composer')) $('composer').value = doc.score.metadata.composer;
 }
 
+/** Number of voices to offer: those that contain music, plus the caret's. */
+function voiceCount(doc) {
+  let used = 1;
+  for (const staff of doc.score.staves) {
+    for (const m of staff.measures) {
+      m.voices.forEach((v, i) => { if (v.length) used = Math.max(used, i + 1); });
+    }
+  }
+  return Math.max(used, doc.caret.voice + 1);
+}
+
+// Voices appear only when the user asks for them (e.g. divisi strings).
+function renderVoices(doc) {
+  const n = voiceCount(doc);
+  const current = doc.caret.voice;
+  let html = n === 1
+    ? '<span class="label">Single voice</span>'
+    : Array.from({ length: n }, (_, v) =>
+      `<button data-voice="${v}" class="${v === current ? 'on' : ''}" title="Voice ${v + 1} (Alt+${v + 1})">${v + 1}</button>`).join('');
+  if (n < 4) html += `<button data-voice="${n}" class="add" title="Add voice ${n + 1}: a second independent line on the same staff (Alt+${n + 1})">+ Voice</button>`;
+  $('voices').innerHTML = html;
+}
+
+/** Measures that break the time signature, in score order. */
+function measureErrors(doc) {
+  const seen = new Set();
+  return doc.issues
+    .filter((i) => i.type === 'overfull')
+    .filter((i) => !seen.has(`${i.staff}:${i.measure}`) && seen.add(`${i.staff}:${i.measure}`))
+    .sort((a, b) => a.measure - b.measure || a.staff - b.staff);
+}
+
 function renderStatus() {
   const doc = active();
   const parts = [];
   if (doc) {
     const c = doc.caret;
-    parts.push(`Staff ${c.staff + 1} · Measure ${c.measure + 1} · Voice ${c.voice + 1}`);
+    const voice = voiceCount(doc) > 1 ? ` · Voice ${c.voice + 1}` : '';
+    parts.push(`Staff ${c.staff + 1} · Measure ${c.measure + 1}${voice}`);
     const d = state.duration;
     const value = `${d.dots ? 'dotted ' : ''}${d.base.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()}`;
     parts.push({
@@ -271,8 +313,10 @@ function renderStatus() {
     parts.push(doc.protected
       ? '<span class="ok" title="Every change is journaled; work survives a crash or power cut">● Recovery on</span>'
       : '<span class="warn">● Recovery unavailable</span>');
-    const over = doc.issues.filter((i) => i.type === 'overfull').length;
-    if (over) parts.push(`<span class="warn">${over} overfull measure${over > 1 ? 's' : ''}</span>`);
+    const errors = measureErrors(doc);
+    if (errors.length) {
+      parts.push(`<span class="errors" data-jump title="Go to the next measure with errors">⚠ ${errors.length} measure${errors.length > 1 ? 's' : ''} with errors</span>`);
+    }
     if (doc.warning) parts.push(`<span class="warn">${esc(doc.warning)}</span>`);
   }
   if (state.error) parts.push(`<span class="warn">${esc(state.error)}</span>`);
@@ -293,7 +337,7 @@ function scrollCaretIntoView() {
 
 function setDuration(base, enterMode = false) {
   state.duration = { base, dots: 0 };
-  if (enterMode && state.mode === 'select') state.mode = 'note';
+  if (enterMode) state.mode = state.kind;
   const doc = active();
   if (doc && doc.selection) act({ type: 'set_duration', duration: state.duration });
   else render();
@@ -442,12 +486,32 @@ window.addEventListener('mousemove', (ev) => {
 });
 window.addEventListener('mouseup', () => { dragging = false; });
 
-// Toolbar.
-document.querySelector('.toolbar').addEventListener('click', (ev) => {
+// Notes/rests switch: swaps the figures; keeps placing if already placing.
+function setKind(kind) {
+  state.kind = kind;
+  if (state.mode !== 'select') state.mode = kind;
+  render();
+}
+
+// Status bar: jump to the next measure with errors after the caret.
+$('status').addEventListener('click', (ev) => {
+  if (!ev.target.closest('[data-jump]')) return;
+  const doc = active();
+  const errors = measureErrors(doc);
+  const c = doc.caret;
+  const next = errors.find((e) => e.measure > c.measure || (e.measure === c.measure && e.staff > c.staff)) || errors[0];
+  if (next) act({ type: 'set_caret', caret: { staff: next.staff, measure: next.measure, voice: next.voice, index: 0 }, extend: false });
+  page.focus();
+});
+
+// Toolbar and palette.
+const onControlClick = (ev) => {
   const b = ev.target.closest('button');
   if (!b) return;
   if (b.dataset.dur) setDuration(b.dataset.dur, true);
   else if (b.dataset.voice) setVoice(Number(b.dataset.voice));
+  else if (b.dataset.kind) setKind(b.dataset.kind);
+  else if (b.dataset.alter) act({ type: 'set_accidental', alter: Number(b.dataset.alter) });
   else ({
     select: () => setMode('select'),
     new: () => serial(newDocument),
@@ -456,14 +520,15 @@ document.querySelector('.toolbar').addEventListener('click', (ev) => {
     undo: () => act({ type: 'undo' }),
     redo: () => act({ type: 'redo' }),
     dot: () => { state.duration = { ...state.duration, dots: state.duration.dots ? 0 : 1 }; render(); },
-    rest: () => setMode(state.mode === 'rest' ? 'note' : 'rest'),
     'add-measure': () => act({ type: 'insert_measure' }),
     'remove-measure': () => act({ type: 'remove_measure' }),
     'add-staff': () => act({ type: 'add_staff', clef: 'treble' }),
     'remove-staff': () => act({ type: 'remove_staff' }),
   })[b.dataset.cmd]?.();
   page.focus();
-});
+};
+document.querySelector('.toolbar').addEventListener('click', onControlClick);
+$('palette').addEventListener('click', onControlClick);
 
 $('key').innerHTML = KEY_NAMES.map((n, i) => `<option value="${i - 7}">${n} major</option>`).join('');
 $('key').addEventListener('change', (ev) => { act({ type: 'set_key', fifths: Number(ev.target.value) }); page.focus(); });

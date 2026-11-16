@@ -62,6 +62,12 @@
         view.caret = { ...at, index: at.index + 1 };
       },
       set_caret({ caret }) { view.caret = caret; },
+      set_accidental({ alter: a }) {
+        const e = voiceOf(view.caret)[view.caret.index - 1];
+        if (!e || e.kind === 'rest') return;
+        snapshot();
+        e.kind.chord.pitches.forEach((p) => { p.alter = a; });
+      },
       undo() {
         const s = undo.pop();
         if (s) [view.score, view.caret] = JSON.parse(s);
@@ -74,6 +80,15 @@
             handlers[args.action.type]?.(args.action);
             view.dirty = undo.length > 0;
             view.can_undo = undo.length > 0;
+            // Same rule as Score::validate: a voice longer than its measure.
+            const ticks = (d) => { const b = 3840 >> ['Whole', 'Half', 'Quarter', 'Eighth', 'Sixteenth', 'ThirtySecond', 'SixtyFourth'].indexOf(d.base); let t = 0; for (let i = 0; i <= d.dots; i++) t += b >> i; return t; };
+            view.issues = [];
+            view.score.staves.forEach((st, s) => st.measures.forEach((m, mi) => m.voices.forEach((v, vi) => {
+              const t = v.reduce((a, e) => a + ticks(e.duration), 0);
+              const attrs = view.score.measures[mi];
+              const cap = attrs.time.beats * (3840 / attrs.time.beat_type);
+              if (t > cap) view.issues.push({ type: 'overfull', staff: s, measure: mi, voice: vi, ticks: t, capacity: cap });
+            })));
           }
           if (cmd === 'list_recoverable' || cmd === 'list_documents') return [];
           return structuredClone(view);

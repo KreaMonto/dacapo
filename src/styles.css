@@ -86,12 +86,56 @@ button { cursor: pointer; }
 button:hover { background: var(--button-hover); }
 button:disabled { opacity: 0.4; cursor: default; }
 button.on { background: var(--button-active); border-color: var(--accent); color: var(--accent); }
-.durations button.glyph { font-size: 18px; line-height: 1; padding: 0 8px; min-width: 32px; }
-.voices button { min-width: 28px; padding: 3px 6px; }
+#time { width: 56px; }
+
+/* Workspace: palette + page */
+.workspace {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  min-height: 0;
+}
+.palette {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 116px;
+  padding: 10px 10px 16px;
+  background: var(--chrome);
+  border-right: 1px solid var(--chrome-border);
+  overflow-y: auto;
+}
+.palette h3 {
+  margin: 8px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.palette .wide { width: 100%; }
+.palette .row { display: flex; gap: 4px; }
+.palette .row button { flex: 1; padding: 0; }
+.palette .glyph { font-size: 20px; line-height: 1; }
+.switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 2px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 7px;
+  background: var(--bg);
+}
+.switch button { border: none; background: transparent; padding: 2px 0; min-height: 24px; font-size: 12px; color: var(--muted); }
+.switch button.on { background: var(--button); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); }
+.figures { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.figures button { height: 40px; padding: 0; }
+.figures.placing button.on { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+.voices { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.voices .label { color: var(--muted); font-size: 12px; }
+.voices button { min-width: 24px; padding: 2px 6px; min-height: 24px; font-size: 12px; }
 .voices button[data-voice="1"].on { color: var(--voice2); border-color: var(--voice2); }
 .voices button[data-voice="2"].on { color: var(--voice3); border-color: var(--voice3); }
 .voices button[data-voice="3"].on { color: var(--voice4); border-color: var(--voice4); }
-#time { width: 56px; }
+.voices .add { color: var(--muted); }
 
 /* Tabs */
 .tabs {
@@ -176,7 +220,8 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .score .tsig { font: 700 21px Georgia, "Times New Roman", serif; text-anchor: middle; }
 .score .mnum { font-size: 10px; fill: var(--muted); }
 .score .sel { fill: var(--accent-soft); }
-.score .overfull { fill: var(--danger-soft); }
+.score .overfull { fill: var(--danger-soft); stroke: var(--danger); stroke-width: 1; stroke-dasharray: 4 3; }
+.score .errlabel { font: 600 10px "Segoe UI", system-ui, sans-serif; fill: var(--danger); }
 .score .caret { stroke: var(--accent); stroke-width: 2; animation: blink 1.06s steps(1) infinite; }
 .score .caret.v1 { stroke: var(--voice2); }
 .score .caret.v2 { stroke: var(--voice3); }
@@ -194,8 +239,6 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .score .ghost .ledger { stroke: currentColor; }
 .score .ghost .ins { stroke: currentColor; stroke-width: 1.5; stroke-dasharray: 3 3; }
 .score .ghost .pname { font: 600 10px "Segoe UI", system-ui, sans-serif; }
-.toolbar .tool { font-size: 16px; min-width: 32px; }
-.durations.placing button[data-dur].on { background: var(--accent); color: var(--paper); }
 
 /* Status bar */
 .status {
@@ -208,4 +251,5 @@ button.on { background: var(--button-active); border-color: var(--accent); color
   font-size: 12px;
 }
 .status .warn { color: var(--danger); }
+.status .errors { color: var(--danger); font-weight: 600; cursor: pointer; text-decoration: underline dotted; }
 .status .ok { color: var(--voice2); }

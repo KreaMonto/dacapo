@@ -59,17 +59,21 @@ export function layout(view, width) {
   const measures = score.measures.map((attrs, m) => {
     let maxEvents = 0;
     let maxFill = 0;
-    for (const staff of score.staves) {
+    // Per staff: the fullest voice, when it exceeds the time signature.
+    const overfull = new Map();
+    score.staves.forEach((staff, s) => {
       for (const voice of staff.measures[m].voices) {
+        const fill = voice.reduce((t, e) => t + durationTicks(e.duration), 0);
         maxEvents = Math.max(maxEvents, voice.length);
-        maxFill = Math.max(maxFill, voice.reduce((t, e) => t + durationTicks(e.duration), 0));
+        maxFill = Math.max(maxFill, fill);
+        if (fill > capacity(attrs)) overfull.set(s, Math.max(overfull.get(s) || 0, fill));
       }
-    }
+    });
     const cap = Math.max(capacity(attrs), maxFill, 1);
     const prev = m > 0 ? score.measures[m - 1] : null;
     return {
       m, attrs, cap,
-      overfull: maxFill > capacity(attrs),
+      overfull,
       content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP),
       timeChange: !prev || prev.time.beats !== attrs.time.beats || prev.time.beat_type !== attrs.time.beat_type,
       keyChange: !!prev && prev.key.fifths !== attrs.key.fifths,
@@ -206,8 +210,12 @@ export function renderScore(view, width) {
       const mid = CLEF_MIDDLE[staff.clef];
       const yOf = (d) => top + 2 * SP - (d - mid) * (SP / 2);
 
-      if (ms.overfull) {
-        push(`<rect class="overfull" x="${ms.x + 2}" y="${top - 0.5 * SP}" width="${ms.w - 4}" height="${5 * SP}"><title>Too many beats for the time signature</title></rect>`);
+      if (ms.overfull.has(st)) {
+        const beatTicks = TICKS_WHOLE / ms.attrs.time.beat_type;
+        const beats = +(ms.overfull.get(st) / beatTicks).toFixed(2);
+        const label = `Too many beats: ${beats} of ${ms.attrs.time.beats}`;
+        push(`<rect class="overfull" x="${ms.x + 2}" y="${top - 0.5 * SP}" width="${ms.w - 4}" height="${5 * SP}"><title>${label}</title></rect>`);
+        push(`<text class="errlabel" x="${ms.x + (ms.systemStart ? ms.prefix : 0) + 5}" y="${top - 1.1 * SP}">⚠ ${label}</text>`);
       }
 
       // Prefix: clef, key, time.

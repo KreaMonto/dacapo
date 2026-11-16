@@ -17,23 +17,6 @@
       <button data-cmd="undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
       <button data-cmd="redo" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
     </div>
-    <div class="group durations" aria-label="Note value">
-      <button data-cmd="select" title="Select tool (Esc)" class="tool">↖</button>
-      <button data-dur="Whole" title="Whole — click to place with the mouse (7)" class="glyph">𝅝</button>
-      <button data-dur="Half" title="Half — click to place with the mouse (6)" class="glyph">𝅗𝅥</button>
-      <button data-dur="Quarter" title="Quarter — click to place with the mouse (5)" class="glyph">♩</button>
-      <button data-dur="Eighth" title="Eighth — click to place with the mouse (4)" class="glyph">♪</button>
-      <button data-dur="Sixteenth" title="16th — click to place with the mouse (3)" class="glyph">𝅘𝅥𝅯</button>
-      <button data-dur="ThirtySecond" title="32nd — click to place with the mouse (2)" class="glyph">𝅘𝅥𝅰</button>
-      <button data-cmd="dot" title="Dot (.)" class="dot-btn">•</button>
-      <button data-cmd="rest" title="Rest mode — click to place rests (R or 0 inserts one at the caret)" class="glyph">𝄽</button>
-    </div>
-    <div class="group voices" aria-label="Voice">
-      <button data-voice="0" title="Voice 1 (Alt+1)">1</button>
-      <button data-voice="1" title="Voice 2 (Alt+2)">2</button>
-      <button data-voice="2" title="Voice 3 (Alt+3)">3</button>
-      <button data-voice="3" title="Voice 4 (Alt+4)">4</button>
-    </div>
     <div class="group">
       <label>Clef
         <select id="clef" title="Clef of the current staff">
@@ -62,15 +45,46 @@
 
   <div id="recovery" class="recovery" hidden></div>
 
-  <main id="page" class="page" tabindex="0" aria-label="Score">
-    <div class="sheet">
-      <div class="meta">
-        <input id="title" class="title" placeholder="Title" aria-label="Title">
-        <input id="composer" class="composer" placeholder="Composer" aria-label="Composer">
+  <div class="workspace">
+    <aside class="palette" id="palette" aria-label="Palette">
+      <button data-cmd="select" class="tool wide" title="Select tool: click to place the caret, drag to select (Esc)">↖ Select</button>
+
+      <h3>Figures</h3>
+      <div class="switch" role="radiogroup" aria-label="Notes or rests">
+        <button data-kind="note" role="radio" title="Place notes">Notes</button>
+        <button data-kind="rest" role="radio" title="Place rests">Rests</button>
       </div>
-      <div id="score" class="score"></div>
-    </div>
-  </main>
+      <div class="figures" aria-label="Note value">
+        <button data-dur="Whole" data-note="𝅝" data-rest="𝄻" data-name="Whole" data-key="7" class="glyph"></button>
+        <button data-dur="Half" data-note="𝅗𝅥" data-rest="𝄼" data-name="Half" data-key="6" class="glyph"></button>
+        <button data-dur="Quarter" data-note="♩" data-rest="𝄽" data-name="Quarter" data-key="5" class="glyph"></button>
+        <button data-dur="Eighth" data-note="♪" data-rest="𝄾" data-name="Eighth" data-key="4" class="glyph"></button>
+        <button data-dur="Sixteenth" data-note="𝅘𝅥𝅯" data-rest="𝄿" data-name="16th" data-key="3" class="glyph"></button>
+        <button data-dur="ThirtySecond" data-note="𝅘𝅥𝅰" data-rest="𝅀" data-name="32nd" data-key="2" class="glyph"></button>
+      </div>
+      <button data-cmd="dot" class="wide" title="Dotted value (.)">• Dot</button>
+
+      <h3>Accidentals</h3>
+      <div class="row">
+        <button data-alter="1" class="glyph" title="Sharp: applies to the previous note or the selection">♯</button>
+        <button data-alter="-1" class="glyph" title="Flat: applies to the previous note or the selection">♭</button>
+        <button data-alter="0" class="glyph" title="Natural: applies to the previous note or the selection">♮</button>
+      </div>
+
+      <h3>Voice</h3>
+      <div class="voices" id="voices" aria-label="Voice"></div>
+    </aside>
+
+    <main id="page" class="page" tabindex="0" aria-label="Score">
+      <div class="sheet">
+        <div class="meta">
+          <input id="title" class="title" placeholder="Title" aria-label="Title">
+          <input id="composer" class="composer" placeholder="Composer" aria-label="Composer">
+        </div>
+        <div id="score" class="score"></div>
+      </div>
+    </main>
+  </div>
 
   <footer class="status" id="status" aria-live="polite"></footer>
 
