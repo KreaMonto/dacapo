@@ -45,6 +45,7 @@ docs/                 technical documentation
 - [docs/ROADMAP.md](docs/ROADMAP.md): development plan.
 - [docs/STYLE_GUIDE.md](docs/STYLE_GUIDE.md): code and contribution conventions.
 - [docs/RELEASING.md](docs/RELEASING.md): how installers are built and published.
+- [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md): **code signing policy** and privacy policy.
 
 ## Quick start
 
@@ -54,6 +55,10 @@ cargo run -p dacapo           # launch the app
 ```
 
 See [docs/INSTALLATION.md](docs/INSTALLATION.md) for prerequisites, including a Windows Smart App Control caveat.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). See the [code signing policy](docs/CODE_SIGNING.md), which includes the team roles and the [privacy policy](docs/CODE_SIGNING.md#privacy-policy).
 
 ## Contributing
 
