@@ -228,6 +228,7 @@ button.on { background: var(--button-active); border-color: var(--accent); color
   color: var(--muted);
 }
 .palette .wide { width: 100%; }
+.palette .tools { display: grid; grid-template-columns: 1fr 38px; gap: 4px; }
 .palette .row { display: flex; gap: 4px; }
 .palette .row button { flex: 1; padding: 0; }
 /* Palette symbols in Bravura. SMuFL glyphs sit on the baseline with most of
@@ -246,6 +247,8 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .switch button.on { background: var(--button); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); }
 .figures { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 .figures button { height: 40px; padding: 0; }
+.figures .extended { display: none; }
+.palette.extended-values .figures .extended { display: block; }
 .figures.placing button.on { background: var(--accent); border-color: var(--accent); color: var(--paper); }
 .voices { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .voices .label { color: var(--muted); font-size: 12px; }
@@ -356,6 +359,10 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 
 /* Mouse entry mode: the pointer becomes the chosen figure. */
 .score.entry { cursor: crosshair; }
+.score.over-note, .score.over-note *, .score.dragging-note, .score.dragging-note * { cursor: ns-resize; }
+.score.erasing, .score.erasing * { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cg fill='none' stroke='%23fff' stroke-width='3.5'%3E%3Ccircle cx='16' cy='16' r='8'/%3E%3Cpath d='M16 2v9M16 21v9M2 16h9M21 16h9'/%3E%3C/g%3E%3Cg fill='none' stroke='%23c4322b' stroke-width='1.6'%3E%3Ccircle cx='16' cy='16' r='8'/%3E%3Cpath d='M16 2v9M16 21v9M2 16h9M21 16h9'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='1.3' fill='%23c4322b'/%3E%3C/svg%3E") 16 16, crosshair; }
+.score .ev.erase-hover { color: var(--danger); fill: var(--danger); opacity: 1; }
+.erase-box { position: fixed; display: none; z-index: 20; pointer-events: none; border: 1.5px dashed var(--danger); background: var(--danger-soft); border-radius: 2px; }
 .score.entry.over { cursor: none; }
 .score .ghost { color: var(--accent); fill: var(--accent); opacity: 0.8; pointer-events: none; }
 .score .ghost.v1 { color: var(--voice2); fill: var(--voice2); }

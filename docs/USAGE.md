@@ -69,6 +69,10 @@ This works like the note palette in Encore. The **palette** on the left holds th
 3. Click to place it. Notes you place one after another undo together with a single Ctrl+Z.
 4. Click **on an existing note** (the label shows `+`) to add the pitch to its chord. Clicking on a rest turns it into a note.
 
+## Moving notes with the mouse
+
+With the **Select** tool, point at a notehead: the pointer becomes a vertical double arrow. Press and drag up or down to move the note one line or space at a time; it sounds at each step. In a chord, only the note you grabbed moves. Let go to drop it. One **Ctrl+Z** undoes the whole drag. The key signature's accidentals are not applied while dragging: an altered note keeps its accidental, as with **Alt+↑/↓**.
+
 ## The palette
 
 The palette is grouped into collapsible categories. Click a heading to open or close it; Da Capo remembers your choice. Hover any button, or reach it with Tab, to see a tooltip with its name, what it does, and its keyboard shortcut.
@@ -78,7 +82,8 @@ Marks (accidentals, ties, articulations, dynamics) apply to **the note just befo
 | Category | Contents |
 |---|---|
 | **↖ Select** | Back to normal editing: click to place the caret, drag to select. **Esc**, a right-click or `N` leave entry mode. |
-| **Figures** | **Notes \| Rests** switches the figures between notes and their matching rests. **• Dot** makes the figure dotted. |
+| **Eraser** (next to Select, `X`) | The pointer becomes a crosshair. Aim at a note and click to erase just that note; in a chord, only the tone you aim at goes. Drag a box to erase every note and rest inside it. The note under the crosshair turns red before you click. One Ctrl+Z brings back everything erased in one go. **Esc**, a right-click or `X` leave the eraser. |
+| **Figures** | **Notes \| Rests** switches the figures between notes and their matching rests. **• Dot** makes the figure dotted. **View → Breve and 128th Notes** adds the breve (double whole note), the 64th and the 128th. |
 | **Accidentals** | ♯ ♭ ♮. The key signature's sharps and flats are applied automatically when you place a note. |
 | **Ties & slurs** | **Tie** (`T`) joins a note to the next one of the same pitch. **Slur** (`S`) draws a phrase mark over the selected notes, and needs a selection. Deleting a slurred note removes its slur; undo restores both. |
 | **Articulations** | Staccato, staccatissimo, tenuto, accent, marcato, fermata. They are placed on the notehead side; the fermata goes above and also works on rests. |
@@ -104,6 +109,17 @@ How the score is played:
 - **Dynamics** set the loudness from that note on. **sfz** affects only its note, and **fp** plays forte then piano. **Accents** and **marcato** add emphasis.
 - Every staff plays piano for now. Choosing an instrument per staff is on the roadmap.
 
+## Beams
+
+Eighths and shorter notes are beamed automatically, following the time signature:
+
+- In x/4 time, notes are grouped by quarter-note beat. In 4/4, four eighths in the same half of the bar share one beam.
+- In 6/8, 9/8 and 12/8 they are grouped by dotted quarter; in 3/8 the whole bar is one group.
+- In x/2 time they are grouped by half note.
+- Rests and quarter notes (or longer) break the beam.
+
+The stems of a group all point the same way, away from the note farthest from the middle line; with several voices, voice 1 and 3 point up and voice 2 and 4 down. Sixteenths and shorter get extra beams, and a lone shorter note in a group gets a short partial beam.
+
 ## Rests that fill a measure
 
 A rest that fills the whole measure is drawn as a whole rest **centered** in the measure, following standard notation. A plain whole rest counts as "rest for the whole measure" in any time signature (3/4, 6/8…), so it is never flagged as an error.
@@ -124,6 +140,7 @@ A measure that holds more beats than its time signature allows is outlined in re
 | `Shift` + `A`–`G` | Add a note to the chord just before the caret (above its top note). |
 | `R` or `0` | Insert a rest. |
 | `1`…`7` | Choose the note value: 64th, 32nd, 16th, eighth, quarter, half, whole. With a selection, change its note values. |
+| `8` / `9` | Breve / 128th, when **View → Breve and 128th Notes** is on. |
 | `.` | Toggle a dot. |
 | `+` / `-` | Raise or lower the accidental of the previous note (or the selection). |
 | `Alt` + `↑` / `↓` | Move the previous note (or the selection) up or down one step. |

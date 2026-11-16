@@ -52,11 +52,52 @@
     const voiceOf = (c) => view.score.staves[c.staff].measures[c.measure].voices[c.voice];
     const snapshot = () => undo.push(JSON.stringify([view.score, view.caret]));
     const handlers = {
+      move_pitch({ id, pitch, steps }) {
+        snapshot();
+        const shift = (q) => { const d = q.octave * 7 + STEPS.indexOf(q.step) + steps; return { ...q, step: STEPS[((d % 7) + 7) % 7], octave: Math.floor(d / 7) }; };
+        for (const st of view.score.staves) for (const m of st.measures) for (const v of m.voices) {
+          const i = v.findIndex((e) => e.id === id);
+          if (i < 0 || v[i].kind === 'rest') continue;
+          const ps = v[i].kind.chord.pitches;
+          const only = pitch && ps.length > 1 ? pitch : null;
+          v[i].kind.chord.pitches = ps.map((q) => (only && !(q.step === only.step && q.octave === only.octave) ? q : shift(q)));
+          view.caret = { ...view.caret, index: i + 1 };
+        }
+      },
+      erase({ targets }) {
+        snapshot();
+        for (const { id, pitch } of targets) {
+          for (const st of view.score.staves) for (const m of st.measures) for (const v of m.voices) {
+            const i = v.findIndex((e) => e.id === id);
+            if (i < 0) continue;
+            const ps = v[i].kind.chord?.pitches;
+            const keep = pitch && ps ? ps.filter((q) => !(q.step === pitch.step && q.octave === pitch.octave)) : [];
+            if (keep.length && keep.length < ps.length) v[i].kind.chord.pitches = keep;
+            else v.splice(i, 1);
+          }
+        }
+      },
       place_note({ at, step, octave, duration }) {
         snapshot();
         replaceMeasureRest(at);
         voiceOf(at).splice(at.index, 0, { id: nextId++, duration, kind: { chord: { pitches: [{ step, octave, alter: alter(at.measure, step) }] } } });
         view.caret = { ...at, index: at.index + 1 };
+      },
+      // Keyboard entry, roughly like the core: nearest octave to the previous note.
+      insert_note({ step, duration }) {
+        const prev = voiceOf(view.caret)[view.caret.index - 1]?.kind.chord?.pitches.at(-1) || { step: 'B', octave: 4 };
+        const di = (s, o) => o * 7 + STEPS.indexOf(s);
+        const octave = [prev.octave - 1, prev.octave, prev.octave + 1]
+          .sort((a, b) => Math.abs(di(step, a) - di(prev.step, prev.octave)) - Math.abs(di(step, b) - di(prev.step, prev.octave)))[0];
+        handlers.place_note({ at: { ...view.caret }, step, octave, duration });
+      },
+      add_to_chord({ step }) {
+        const index = view.caret.index - 1;
+        const e = voiceOf(view.caret)[index];
+        if (!e || e.kind === 'rest') return;
+        const top = e.kind.chord.pitches.at(-1);
+        const octave = STEPS.indexOf(step) <= STEPS.indexOf(top.step) ? top.octave + 1 : top.octave;
+        handlers.add_pitch({ at: { ...view.caret, index }, step, octave });
       },
       place_rest({ at, duration }) {
         snapshot();
@@ -190,7 +231,7 @@
             view.dirty = undo.length > 0;
             view.can_undo = undo.length > 0;
             // Same rule as Score::validate: a voice longer than its measure.
-            const ticks = (d) => { const b = 3840 >> ['Whole', 'Half', 'Quarter', 'Eighth', 'Sixteenth', 'ThirtySecond', 'SixtyFourth'].indexOf(d.base); let t = 0; for (let i = 0; i <= d.dots; i++) t += b >> i; return t; };
+            const ticks = (d) => { const b = 7680 >> ['Breve', 'Whole', 'Half', 'Quarter', 'Eighth', 'Sixteenth', 'ThirtySecond', 'SixtyFourth', 'HundredTwentyEighth'].indexOf(d.base); let t = 0; for (let i = 0; i <= d.dots; i++) t += b >> i; return t; };
             view.issues = [];
             view.score.staves.forEach((st, s) => st.measures.forEach((m, mi) => m.voices.forEach((v, vi) => {
               const t = v.reduce((a, e) => a + ticks(e.duration), 0);

@@ -833,7 +833,7 @@ dependencies = [
 
 [[package]]
 name = "dacapo"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "cpal",
  "dacapo-core",
@@ -851,7 +851,7 @@ dependencies = [
 
 [[package]]
 name = "dacapo-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "crc32fast",
  "postcard",

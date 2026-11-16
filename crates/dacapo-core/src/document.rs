@@ -15,10 +15,10 @@ use thiserror::Error;
 use crate::cursor::{self, Caret, Move, SelectionRange};
 use crate::history::{History, Transaction, TxKind};
 use crate::model::{
-    is_measure_rest, Articulation, Clef, Duration, Dynamic, Event, EventKind, KeySignature,
-    Metadata, Pitch, Score, Slur, Step, TimeSignature,
+    is_measure_rest, Articulation, Clef, Duration, Dynamic, Event, EventId, EventKind,
+    KeySignature, Metadata, Pitch, Score, Slur, Step, TimeSignature,
 };
-use crate::ops::{apply_all, Op, OpError};
+use crate::ops::{apply_all, Op, OpError, VoiceLoc};
 
 /// One durable change, as written to the recovery journal.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -717,6 +717,69 @@ impl Document {
         self.commit(TxKind::Deleting, vec![op], c, now_ms, false)
     }
 
+    /// The eraser: removes the given events in one undo step. When a target
+    /// names a pitch of a chord that has other pitches, only that pitch is
+    /// removed (matched by step and octave). Unknown ids are ignored. The
+    /// caret moves to where the first erased event was.
+    pub fn erase(
+        &mut self,
+        targets: &[(EventId, Option<Pitch>)],
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let mut removals = Vec::new();
+        let mut ops = Vec::new();
+        let mut first: Option<(usize, usize, usize, usize)> = None;
+        for &(id, pitch) in targets {
+            let Some(found) = self.score.locate(id) else {
+                continue;
+            };
+            let (s, m, v, i) = found;
+            first = Some(first.map_or(found, |f| f.min(found)));
+            let at = VoiceLoc {
+                staff: s,
+                measure: m,
+                voice: v,
+            };
+            let event = &self.score.staves[s].measures[m].voices[v][i];
+            if let (Some(p), EventKind::Chord { pitches }) = (pitch, &event.kind) {
+                let keep: Vec<Pitch> = pitches
+                    .iter()
+                    .copied()
+                    .filter(|q| !(q.step == p.step && q.octave == p.octave))
+                    .collect();
+                if !keep.is_empty() && keep.len() < pitches.len() {
+                    let mut event = event.clone();
+                    event.kind = EventKind::Chord { pitches: keep };
+                    ops.push(Op::ReplaceEvent {
+                        at,
+                        index: i,
+                        event,
+                    });
+                    continue;
+                }
+            }
+            removals.push((at, i));
+        }
+        // Remove back to front so earlier indices stay valid.
+        removals.sort_by_key(|t| std::cmp::Reverse(a_key(t)));
+        removals.dedup();
+        ops.extend(
+            removals
+                .into_iter()
+                .map(|(at, index)| Op::RemoveEvent { at, index }),
+        );
+        let Some((staff, measure, voice, index)) = first else {
+            return Ok(());
+        };
+        let caret = Caret {
+            staff,
+            measure,
+            voice,
+            index,
+        };
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
+    }
+
     // ----- changing pitches ----------------------------------------------
 
     /// Events affected by pitch commands: the selection, or the event
@@ -758,6 +821,54 @@ impl Document {
             .collect();
         let caret = self.caret;
         self.commit(TxKind::Repitch, ops, caret, now_ms, true)
+    }
+
+    /// Dragging a notehead: moves one event's notes by diatonic steps, or
+    /// only the tone `pitch` (matched by step and octave) when the event is
+    /// a chord of several notes. The caret goes after the event, so the
+    /// moved note sounds and Alt+Up/Down keep moving it. Consecutive moves
+    /// undo as one step.
+    pub fn move_pitch(
+        &mut self,
+        id: EventId,
+        pitch: Option<Pitch>,
+        steps: i32,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let Some((staff, measure, voice, index)) = self.score.locate(id) else {
+            return Ok(());
+        };
+        let event = &self.score.staves[staff].measures[measure].voices[voice][index];
+        let EventKind::Chord { pitches } = &event.kind else {
+            return Ok(());
+        };
+        let only = pitch.filter(|_| pitches.len() > 1);
+        let pitches = pitches
+            .iter()
+            .map(|q| match only {
+                Some(p) if !(q.step == p.step && q.octave == p.octave) => *q,
+                _ => q.shifted(steps),
+            })
+            .collect();
+        let op = Op::ReplaceEvent {
+            at: VoiceLoc {
+                staff,
+                measure,
+                voice,
+            },
+            index,
+            event: Event {
+                kind: EventKind::Chord { pitches },
+                ..event.clone()
+            },
+        };
+        let caret = Caret {
+            staff,
+            measure,
+            voice,
+            index: index + 1,
+        };
+        self.commit(TxKind::Repitch, vec![op], caret, now_ms, false)
     }
 
     /// Moves notes up/down by diatonic steps (Alt+Up/Down; 7 = octave).
@@ -1224,6 +1335,83 @@ mod tests {
             voice: 0,
             index,
         }
+    }
+
+    #[test]
+    fn eraser_removes_notes_and_single_chord_tones_in_one_step() {
+        let mut doc = Document::new(Score::new("t", 2));
+        doc.place_note(at(0, 0, 0), C, 5, Q, 10_000).unwrap();
+        doc.place_note(at(0, 0, 1), D, 5, Q, 10_100).unwrap();
+        doc.place_note(at(0, 0, 2), E, 5, Q, 10_200).unwrap();
+        doc.add_pitch(at(0, 0, 2), G, 5, 10_300).unwrap();
+        let ids: Vec<EventId> = doc
+            .score
+            .voice(0, 0, 0)
+            .unwrap()
+            .iter()
+            .map(|e| e.id)
+            .collect();
+        let before = doc.score.clone();
+
+        // C5 and D5 go; of the E5–G5 chord only G5 goes.
+        let g5 = Pitch::new(G, 5);
+        doc.erase(
+            &[
+                (ids[1], None),
+                (ids[0], None),
+                (ids[2], Some(g5)),
+                (999, None),
+            ],
+            20_000,
+        )
+        .unwrap();
+        let voice = doc.score.voice(0, 0, 0).unwrap();
+        assert_eq!(voice.len(), 1);
+        assert_eq!(voice[0].pitches(), &[Pitch::new(E, 5)]);
+        assert_eq!(doc.caret, at(0, 0, 0));
+
+        // Erasing the last tone of a chord removes the event.
+        doc.erase(&[(ids[2], Some(Pitch::new(E, 5)))], 21_000)
+            .unwrap();
+        assert!(doc.score.voice(0, 0, 0).unwrap().is_empty());
+
+        doc.undo().unwrap();
+        doc.undo().unwrap();
+        assert_eq!(doc.score, before);
+    }
+
+    #[test]
+    fn dragging_moves_a_note_or_one_chord_tone() {
+        let mut doc = Document::new(Score::new("t", 1));
+        doc.place_note(at(0, 0, 0), C, 5, Q, 10_000).unwrap();
+        doc.place_note(at(0, 0, 1), E, 4, Q, 10_100).unwrap();
+        doc.add_pitch(at(0, 0, 1), G, 4, 10_200).unwrap();
+        let ids: Vec<EventId> = doc
+            .score
+            .voice(0, 0, 0)
+            .unwrap()
+            .iter()
+            .map(|e| e.id)
+            .collect();
+        let before = doc.score.clone();
+
+        doc.move_pitch(ids[0], None, 2, 20_000).unwrap();
+        doc.move_pitch(ids[0], None, 1, 20_050).unwrap();
+        assert_eq!(
+            doc.score.voice(0, 0, 0).unwrap()[0].pitches(),
+            &[Pitch::new(F, 5)]
+        );
+        assert_eq!(doc.caret, at(0, 0, 1));
+        // Only the G of the E–G chord moves.
+        doc.move_pitch(ids[1], Some(Pitch::new(G, 4)), -1, 30_000)
+            .unwrap();
+        assert_eq!(
+            doc.score.voice(0, 0, 0).unwrap()[1].pitches(),
+            &[Pitch::new(E, 4), Pitch::new(F, 4)]
+        );
+        doc.undo().unwrap();
+        doc.undo().unwrap();
+        assert_eq!(doc.score, before);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 // Da Capo frontend. Owns no musical state: every edit is sent to Rust,
 // which answers with the full document view to redraw.
 
-import { renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, playheadMarkup, esc } from './render.js';
+import { SP, renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, playheadMarkup, esc, eraserTarget, eventsInBox } from './render.js';
 import { installTooltips } from './tooltip.js';
 import { installMenuBar } from './menu.js';
 
@@ -12,6 +12,9 @@ const dialog = tauri.dialog;
 const FILTERS = [{ name: 'Da Capo score', extensions: ['dacapo'] }];
 const KEY_NAMES = ['C♭', 'G♭', 'D♭', 'A♭', 'E♭', 'B♭', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F♯', 'C♯'];
 const DURATION_KEYS = { 1: 'SixtyFourth', 2: 'ThirtySecond', 3: 'Sixteenth', 4: 'Eighth', 5: 'Quarter', 6: 'Half', 7: 'Whole' };
+// Only with View → Breve and 128th Notes on.
+const EXTENDED_KEYS = { 8: 'Breve', 9: 'HundredTwentyEighth' };
+const VALUE_NAMES = { Breve: 'breve', HundredTwentyEighth: '128th', SixtyFourth: '64th', ThirtySecond: '32nd', Sixteenth: '16th' };
 
 // Small per-user view preferences. Storage may be unavailable; fall back
 // to defaults silently.
@@ -39,6 +42,7 @@ const state = {
   kind: 'note',
   // View preference (per user, not saved in the document).
   multiRest: loadPref('multiRest', true),
+  extendedValues: loadPref('extendedValues', false), // breve, 64th and 128th in the palette
   view: loadPref('view', 'page'), // 'page' | 'wrap' | 'continuous'
   paper: loadPref('paper', 'a4'), // 'a4' | 'letter'
   theme: loadPref('theme', 'system'), // 'system' | 'light' | 'dark'
@@ -203,7 +207,7 @@ function render() {
   document.body.dataset.view = state.view;
   // At zoom z the wrap view lays out for width/z so it still fills the window.
   const width = (scoreEl.clientWidth || 1000) / state.zoom;
-  const { pages, layout } = renderScore(doc, width, {
+  const { pages, layout, hits } = renderScore(doc, width, {
     multiRest: state.multiRest, view: state.view, paper: state.paper, zoom: state.zoom,
   });
   if (layout.mode === 'page') {
@@ -216,7 +220,9 @@ function render() {
     scoreEl.innerHTML = pages[0];
   }
   state.layout = layout;
-  scoreEl.classList.toggle('entry', state.mode !== 'select');
+  state.hits = hits;
+  scoreEl.classList.toggle('entry', entering());
+  scoreEl.classList.toggle('erasing', state.mode === 'erase');
   drawGhost();
   drawPlayhead();
   syncControls(doc);
@@ -247,6 +253,9 @@ function pointerInLayout(clientX, clientY) {
 
 // ----- mouse entry mode ------------------------------------------------------
 
+/** Is the pointer carrying a note or rest (as opposed to Select or the eraser)? */
+const entering = () => state.mode === 'note' || state.mode === 'rest';
+
 function setMode(mode) {
   state.mode = mode;
   render();
@@ -254,7 +263,7 @@ function setMode(mode) {
 
 function currentTarget() {
   const doc = active();
-  if (!doc || !state.layout || !state.pointer || state.mode === 'select') return null;
+  if (!doc || !state.layout || !state.pointer || !entering()) return null;
   const p = pointerInLayout(state.pointer.x, state.pointer.y);
   return p && pointerTarget(state.layout, doc, p.x, p.y, doc.caret.voice);
 }
@@ -314,7 +323,8 @@ function syncControls(doc) {
     b.setAttribute('aria-checked', String(b.dataset.kind === state.kind));
   });
   document.querySelector('[data-cmd=select]').classList.toggle('on', state.mode === 'select');
-  document.querySelector('.figures').classList.toggle('placing', state.mode !== 'select');
+  document.querySelector('[data-cmd=erase]').classList.toggle('on', state.mode === 'erase');
+  document.querySelector('.figures').classList.toggle('placing', entering());
   document.querySelector('[data-cmd=dot]').classList.toggle('on', state.duration.dots > 0);
   const mr = document.querySelector('[data-cmd=multirest]');
   mr.classList.toggle('on', state.multiRest);
@@ -369,11 +379,12 @@ function renderStatus() {
     const voice = voiceCount(doc) > 1 ? ` · Voice ${c.voice + 1}` : '';
     parts.push(`Staff ${c.staff + 1} · Measure ${c.measure + 1}${voice}`);
     const d = state.duration;
-    const value = `${d.dots ? 'dotted ' : ''}${d.base.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()}`;
+    const value = `${d.dots ? 'dotted ' : ''}${VALUE_NAMES[d.base] || d.base.toLowerCase()}`;
     parts.push({
       select: `Select tool · next value: ${value}`,
       note: `<b>Placing ${value} notes</b> — click a line or space · click a note to add to its chord · Esc to stop`,
       rest: `<b>Placing ${value} rests</b> — click to place · Esc to stop`,
+      erase: '<b>Eraser</b> — click a note, or drag a box · Esc to stop',
     }[state.mode]);
     parts.push(doc.dirty ? 'Unsaved changes' : (doc.path ? 'Saved' : 'New document'));
     parts.push(doc.protected
@@ -505,7 +516,8 @@ document.addEventListener('keydown', (ev) => {
       ev.preventDefault();
       if (ev.shiftKey) return runCommand('play-start');
       return togglePlayback();
-    case 'n': case 'N': ev.preventDefault(); return setMode(state.mode === 'select' ? 'note' : 'select');
+    case 'n': case 'N': ev.preventDefault(); return setMode(entering() ? 'select' : 'note');
+    case 'x': case 'X': ev.preventDefault(); return setMode(state.mode === 'erase' ? 'select' : 'erase');
     case 't': case 'T': return run({ type: 'toggle_tie' });
     case 's': case 'S': return run({ type: 'toggle_slur' });
     case 'ArrowLeft': return run({ type: 'move', to: 'left', extend: ev.shiftKey });
@@ -530,7 +542,8 @@ document.addEventListener('keydown', (ev) => {
     return run(ev.shiftKey ? { type: 'add_to_chord', step } : { type: 'insert_note', step, duration: state.duration });
   }
   if (lower === 'r' || key === '0') return run({ type: 'insert_rest', duration: state.duration });
-  if (DURATION_KEYS[key]) { ev.preventDefault(); setDuration(DURATION_KEYS[key]); }
+  const base = DURATION_KEYS[key] || (state.extendedValues && EXTENDED_KEYS[key]);
+  if (base) { ev.preventDefault(); setDuration(base); }
 });
 
 // Click to place the caret, Shift+click or drag to select.
@@ -544,7 +557,15 @@ function caretFromMouse(ev) {
 }
 $('score').addEventListener('mousedown', (ev) => {
   if (ev.button !== 0) return;
-  if (state.mode !== 'select') {
+  if (state.mode === 'erase') {
+    // Click: erase what is under the crosshair. Drag: a box (see below).
+    const p = pointerInLayout(ev.clientX, ev.clientY);
+    ev.preventDefault();
+    page.focus();
+    if (p) eraser.start = { cx: ev.clientX, cy: ev.clientY, x: p.x, y: p.y, dragged: false };
+    return;
+  }
+  if (entering()) {
     // Entry mode: the click places the figure the pointer carries.
     state.pointer = { x: ev.clientX, y: ev.clientY };
     ev.preventDefault();
@@ -556,18 +577,117 @@ $('score').addEventListener('mousedown', (ev) => {
   if (!caret) return;
   ev.preventDefault();
   page.focus();
-  dragging = true;
-  lastHit = JSON.stringify(caret);
+  // Pressing on a notehead grabs it: dragging up or down changes its pitch.
+  // Anywhere else, dragging selects.
+  const p = pointerInLayout(ev.clientX, ev.clientY);
+  const head = !ev.shiftKey && p && eraserTarget(state.hits || [], p.x, p.y);
+  if (head && !head.rest) {
+    noteDrag = { id: head.id, pitch: head.pitch, y: p.y, steps: 0 };
+  } else {
+    dragging = true;
+    lastHit = JSON.stringify(caret);
+  }
   act({ type: 'set_caret', caret, extend: ev.shiftKey });
 });
 $('score').addEventListener('mousemove', (ev) => {
-  if (state.mode === 'select') return;
+  if (state.mode === 'erase') {
+    if (eraser.start) return; // the box drag is followed on window
+    const p = pointerInLayout(ev.clientX, ev.clientY);
+    const t = p && eraserTarget(state.hits || [], p.x, p.y);
+    highlightErasable(t ? [t.id] : []);
+    return;
+  }
+  if (state.mode === 'select') {
+    // Show that a notehead can be grabbed.
+    const p = !dragging && !noteDrag && pointerInLayout(ev.clientX, ev.clientY);
+    const t = p && eraserTarget(state.hits || [], p.x, p.y);
+    $('score').classList.toggle('over-note', !!(t && !t.rest));
+    return;
+  }
+  if (!entering()) return;
   state.pointer = { x: ev.clientX, y: ev.clientY };
   drawGhost();
+});
+
+// ----- dragging notes ------------------------------------------------------------
+
+let noteDrag = null; // { id, pitch, y, steps } while a notehead is held
+
+/** A pitch moved by diatonic steps (accidental left to the core). */
+function shiftedPitch(p, steps) {
+  const d = p.octave * 7 + 'CDEFGAB'.indexOf(p.step) + steps;
+  return { ...p, step: 'CDEFGAB'[((d % 7) + 7) % 7], octave: Math.floor(d / 7) };
+}
+
+window.addEventListener('mousemove', (ev) => {
+  if (!noteDrag) return;
+  const p = pointerInLayout(ev.clientX, ev.clientY);
+  if (!p) return;
+  $('score').classList.add('dragging-note');
+  // One step per half staff space (a line or a space).
+  const steps = Math.round((noteDrag.y - p.y) / (SP / 2));
+  const delta = steps - noteDrag.steps;
+  if (!delta) return;
+  noteDrag.steps = steps;
+  act({ type: 'move_pitch', id: noteDrag.id, pitch: noteDrag.pitch, steps: delta });
+  if (noteDrag.pitch) noteDrag.pitch = shiftedPitch(noteDrag.pitch, delta);
+});
+window.addEventListener('mouseup', () => {
+  if (!noteDrag) return;
+  noteDrag = null;
+  $('score').classList.remove('dragging-note');
 });
 $('score').addEventListener('mouseleave', () => {
   state.pointer = null;
   drawGhost();
+  if (!eraser.start) highlightErasable([]);
+});
+
+// ----- eraser ------------------------------------------------------------------
+
+const eraser = {
+  start: null, // { cx, cy, x, y, dragged } while the button is down
+  box: Object.assign(document.createElement('div'), { className: 'erase-box' }),
+};
+document.body.append(eraser.box);
+
+/** Marks the events the eraser would remove. */
+function highlightErasable(ids) {
+  const scoreEl = $('score');
+  scoreEl.querySelectorAll('.erase-hover').forEach((g) => g.classList.remove('erase-hover'));
+  for (const id of ids) scoreEl.querySelectorAll(`g[data-id="${id}"]`).forEach((g) => g.classList.add('erase-hover'));
+}
+
+window.addEventListener('mousemove', (ev) => {
+  const s = eraser.start;
+  if (!s) return;
+  if (!s.dragged && Math.hypot(ev.clientX - s.cx, ev.clientY - s.cy) < 5) return;
+  s.dragged = true;
+  Object.assign(eraser.box.style, {
+    display: 'block',
+    left: `${Math.min(s.cx, ev.clientX)}px`,
+    top: `${Math.min(s.cy, ev.clientY)}px`,
+    width: `${Math.abs(ev.clientX - s.cx)}px`,
+    height: `${Math.abs(ev.clientY - s.cy)}px`,
+  });
+  const p = pointerInLayout(ev.clientX, ev.clientY);
+  if (p) highlightErasable(eventsInBox(state.hits || [], s.x, s.y, p.x, p.y));
+});
+window.addEventListener('mouseup', (ev) => {
+  const s = eraser.start;
+  if (!s || ev.button !== 0) return;
+  eraser.start = null;
+  eraser.box.style.display = 'none';
+  highlightErasable([]);
+  let targets = [];
+  if (s.dragged) {
+    const p = pointerInLayout(ev.clientX, ev.clientY);
+    if (p) targets = eventsInBox(state.hits || [], s.x, s.y, p.x, p.y).map((id) => ({ id, pitch: null }));
+  } else {
+    const t = eraserTarget(state.hits || [], s.x, s.y);
+    if (t) targets = [t];
+  }
+  if (targets.length) act({ type: 'erase', targets });
 });
 // Right-click leaves entry mode, like dropping the tool.
 $('score').addEventListener('contextmenu', (ev) => {
@@ -681,7 +801,7 @@ window.addEventListener('mouseup', () => { dragging = false; });
 // Notes/rests switch: swaps the figures; keeps placing if already placing.
 function setKind(kind) {
   state.kind = kind;
-  if (state.mode !== 'select') state.mode = kind;
+  if (entering()) state.mode = kind;
   render();
 }
 
@@ -703,6 +823,11 @@ $('status').addEventListener('click', (ev) => {
 function setPref(key, value) {
   state[key] = value;
   savePref(key, value);
+}
+
+/** Shows or hides the rarely used values (breve, 64th, 128th) in the palette. */
+function applyExtendedValues() {
+  $('palette').classList.toggle('extended-values', state.extendedValues);
 }
 
 function applyTheme() {
@@ -734,6 +859,7 @@ const commands = {
   'paper:a4': () => { setPref('paper', 'a4'); render(); },
   'paper:letter': () => { setPref('paper', 'letter'); render(); },
   multirest: () => { setPref('multiRest', !state.multiRest); render(); },
+  'extended-values': () => { setPref('extendedValues', !state.extendedValues); applyExtendedValues(); },
   'zoom-in': () => stepZoom(1),
   'zoom-out': () => stepZoom(-1),
   'zoom-reset': () => setZoom(1),
@@ -749,6 +875,7 @@ const commands = {
   tie: () => act({ type: 'toggle_tie' }),
   slur: () => act({ type: 'toggle_slur' }),
   select: () => setMode('select'),
+  erase: () => setMode(state.mode === 'erase' ? 'select' : 'erase'),
   dot: () => { state.duration = { ...state.duration, dots: state.duration.dots ? 0 : 1 }; render(); },
   // Playback
   play: () => togglePlayback(),
@@ -950,12 +1077,14 @@ const SHORTCUTS = [
     ['Shift + A – G', 'Add a note to the previous chord'],
     ['R or 0', 'Insert a rest'],
     ['1 – 7', 'Note value: 64th … whole'],
+    ['8 / 9', 'Breve / 128th (View → Breve and 128th Notes)'],
     ['.', 'Dot'],
     ['+ / −', 'Raise / lower the accidental'],
     ['Alt + ↑ / ↓', 'Move the note a step (Ctrl+Alt: an octave)'],
     ['T', 'Tie to the next note'],
     ['S', 'Slur over the selection'],
     ['N', 'Mouse entry mode on / off'],
+    ['X', 'Eraser on / off (click a note, or drag a box)'],
     ['Alt + 1 – 4', 'Switch voice'],
   ]],
   ['Moving and selecting', [
@@ -1291,6 +1420,7 @@ const MENUS = [
     { label: 'Fit Page Width', cmd: 'zoom-fit', enabled: () => state.view === 'page' },
     { sep: true },
     { label: 'Multi-measure Rests', cmd: 'multirest', checked: () => state.multiRest },
+    { label: 'Breve and 128th Notes', cmd: 'extended-values', checked: () => state.extendedValues },
     { sep: true },
     { label: 'Theme: System', cmd: 'theme:system', radio: true, checked: () => state.theme === 'system' },
     { label: 'Theme: Light', cmd: 'theme:light', radio: true, checked: () => state.theme === 'light' },
@@ -1328,6 +1458,7 @@ const MENUS = [
 ];
 installMenuBar($('menubar'), MENUS, runCommand, () => page.focus());
 applyTheme();
+applyExtendedValues();
 
 installTooltips();
 

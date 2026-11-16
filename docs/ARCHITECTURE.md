@@ -161,7 +161,11 @@ Note-entry edits also call `Engine::preview` to sound the note just written.
 1. Packs measures into systems.
 2. Justifies them.
 3. Places events proportionally to time, so all staves line up vertically.
-4. Draws clefs, key and time signatures, noteheads, stems, flags, ledger lines, accidentals, dots, rests, the selection and the caret.
+4. Draws clefs, key and time signatures, noteheads, stems, flags, beams, ledger lines, accidentals, dots, rests, the selection and the caret.
+
+It also returns the position of every notehead and rest (`hits`), which the eraser uses to pick one note out of a crowded passage.
+
+**Beams.** `beamGroups` splits each voice of a measure into beam groups: runs of notes of an eighth or shorter that start in the same beat group, broken by rests. Beat groups follow the time signature (a dotted quarter in 6/8, 9/8 and 12/8, the whole bar in 3/8, a quarter in x/4, a half in x/2), and in 4/4 four plain eighths in a half bar share one beam. A group has one stem direction, away from the note farthest from the middle line. `drawBeams` slants the beam with the outer notes (at most one space, flat when an inner note reaches further), keeps every stem long enough for its beams and long enough to reach the middle line, and draws secondary beams and beamlets. Beaming is computed while drawing and is not stored in the document; manual beam overrides would be stored per event later.
 
 **Views.** The layout has three modes:
 
@@ -182,7 +186,7 @@ SMuFL fonts follow fixed conventions:
 
 Because of this, symbols are placed exactly from staff positions, with no font-specific offsets. Glyph widths (noteheads, rests, accidentals) are taken from Bravura's metadata. Line thicknesses follow its engraving defaults.
 
-`dev/preview.html` renders sample data without Tauri, for working on the renderer in a normal browser.
+`dev/preview.html` renders sample data without Tauri, for working on the renderer in a normal browser. `dev/beams.html` shows the beaming cases, and `dev/app.html` runs the whole interface against a small fake backend.
 
 ## Design principles
 

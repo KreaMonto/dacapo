@@ -20,12 +20,22 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 pub enum UpdateStatus {
     Idle,
     Checking,
-    UpToDate { current: String },
+    UpToDate {
+        current: String,
+    },
     Available(UpdateInfo),
-    Downloading { version: String, received: u64, total: u64 },
+    Downloading {
+        version: String,
+        received: u64,
+        total: u64,
+    },
     /// Downloaded and verified; installed when the user restarts.
-    Ready { version: String },
-    Error { message: String },
+    Ready {
+        version: String,
+    },
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Beams Preview</title>
+  <link rel="stylesheet" href="../src/styles.css">
+  <style>body { display: block; overflow: auto; } .sheet { margin: 24px; } h2 { font: 600 14px system-ui; margin: 18px 24px 0; }</style>
+</head>
+<body>
+  <!-- Development only: beaming cases rendered with render.js. Serve the
+       repository root over HTTP and open /dev/beams.html. -->
+  <div id="out"></div>
+  <script type="module">
+    import { renderScore } from '../src/render.js';
+    let id = 1;
+    const n = (step, octave, base = 'Eighth', dots = 0) =>
+      ({ id: id++, duration: { base, dots }, kind: { chord: { pitches: [{ step, alter: 0, octave }] } } });
+    const ch = (ps, base = 'Eighth') =>
+      ({ id: id++, duration: { base, dots: 0 }, kind: { chord: { pitches: ps.map(([step, octave]) => ({ step, alter: 0, octave })) } } });
+    const r = (base) => ({ id: id++, duration: { base, dots: 0 }, kind: 'rest' });
+    const seq = (s, base) => s.split(' ').map((p) => n(p[0], Number(p[1]), base));
+
+    // Each case: [title, time, voices of measure 1, voices of measure 2 …]
+    const cases = [
+      ['4/4: eighths beamed by half bar, quarters by beat', [4, 4], [
+        [seq('C5 D5 E5 F5 G5 F5 E5 D5')],
+        [[...seq('E4 G4'), n('C', 5, 'Quarter'), ...seq('B4 A4 G4 F4')]],
+      ]],
+      ['16ths, 32nds, 64ths and 128ths', [4, 4], [
+        [[...seq('C5 D5 E5 F5', 'Sixteenth'), ...seq('G4 A4 B4 C5 D5 E5 F5 G5', 'ThirtySecond'), ...seq('A4 B4 C5 D5 E5 F5 G5 A5 B5 A5 G5 F5 E5 D5 C5 B4', 'SixtyFourth'), n('C', 5, 'Quarter')]],
+        [[...seq('E5 D5 C5 B4 A4 G4 F4 E4 D4 E4 F4 G4 A4 B4 C5 D5 E5 F5 G5 A5 B5 C6 D6 E6 F6 E6 D6 C6 B5 A5 G5 F5', 'HundredTwentyEighth'), n('C', 5, 'Quarter'), n('C', 5, 'Half')]],
+      ]],
+      ['Dotted rhythms and beamlets', [4, 4], [
+        // 8. 16 | 16 8. | 8 16 16 | 16 16 8
+        [[n('C', 5, 'Eighth', 1), n('D', 5, 'Sixteenth'), n('E', 5, 'Sixteenth'), n('F', 5, 'Eighth', 1), n('G', 5, 'Eighth'), n('A', 5, 'Sixteenth'), n('G', 5, 'Sixteenth'), n('F', 5, 'Sixteenth'), n('E', 5, 'Sixteenth'), n('D', 5, 'Eighth')]],
+        // 16 8 16 | 8 16 8 … (beamlets in the middle) | half
+        [[n('E', 4, 'Sixteenth'), n('F', 4, 'Eighth'), n('G', 4, 'Sixteenth'), n('A', 4, 'Sixteenth'), n('B', 4, 'Eighth'), n('A', 4, 'Sixteenth'), n('C', 5, 'Half')]],
+      ]],
+      ['Rests break beams; slants, flat beams, chords, notes off the staff', [4, 4], [
+        [[n('C', 4), r('Eighth'), n('E', 5), n('G', 5), n('G', 4), n('C', 5), n('E', 5), n('G', 5)]],
+        [[n('E', 5), n('C', 5), n('E', 5), n('C', 6), ch([['C', 4], ['E', 4], ['G', 4]]), ch([['D', 4], ['F', 4], ['A', 4]]), n('A', 3), n('C', 4)]],
+      ]],
+      ['6/8 and 3/8', [6, 8], [
+        [seq('C5 D5 E5 F5 G5 A5')],
+        [[n('C', 5, 'Quarter'), n('E', 5), n('G', 5, 'Eighth', 1), n('F', 5, 'Sixteenth'), n('E', 5)]],
+      ]],
+      ['2/2 and two voices', [2, 2], [
+        [seq('C5 D5 E5 F5 G5 F5 E5 D5')],
+        [seq('C5 B4 A4 G4 F5 E5 D5 C5'), seq('E4 F4 G4 A4 G3 A3 B3 C4')],
+      ]],
+      ['Breve and breve rest (4/2)', [4, 2], [
+        [[n('C', 5, 'Breve'), r('Breve')]],
+        [[ch([['C', 4], ['E', 4], ['G', 4]], 'Breve'), r('Whole'), n('G', 4, 'Half'), r('HundredTwentyEighth')]],
+      ]],
+    ];
+
+    await document.fonts.load('40px Bravura', '');
+    const out = document.getElementById('out');
+    for (const [title, [beats, beat_type], measures] of cases) {
+      const cell = (voices) => ({ voices: [voices[0] || [], voices[1] || [], [], []] });
+      const view = {
+        id: 'x', name: title, caret: { staff: 0, measure: 0, voice: 0, index: 0 }, selection: null,
+        score: {
+          metadata: { title: '', composer: '' }, slurs: [],
+          measures: measures.map(() => ({ time: { beats, beat_type }, key: { fifths: 0 } })),
+          staves: [{ id: 1, name: '', clef: 'treble', measures: measures.map(cell) }],
+        },
+      };
+      out.insertAdjacentHTML('beforeend', `<h2>${title}</h2><div class="sheet score">${renderScore(view, 1100).svg}</div>`);
+    }
+  </script>
+</body>
+</html>
