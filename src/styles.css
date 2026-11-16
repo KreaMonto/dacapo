@@ -373,6 +373,9 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .status .warn { color: var(--danger); }
 .status .errors { color: var(--danger); font-weight: 600; cursor: pointer; text-decoration: underline dotted; }
 .status .ok { color: var(--voice2); }
+.status > span:has(.zoom) { margin-left: auto; }
+.status .zoom { cursor: pointer; font-variant-numeric: tabular-nums; }
+.status .zoom:hover { color: var(--text); }
 
 /* ----- Menu bar ------------------------------------------------------------ */
 .menubar {
@@ -426,20 +429,23 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .menu-sep { height: 1px; margin: 4px 6px; background: var(--chrome-border); }
 
 /* ----- Views ----------------------------------------------------------------- */
-/* Page view: each page is a sheet of paper; the music scales with it. */
+/* Page view: each page is a sheet of paper, sized by the zoom (app.js sets
+   its width). Centred while it fits; when zoomed wider than the window it
+   starts at the left edge so the page can scroll sideways (auto margins
+   never go negative, unlike align-items: center). */
 body[data-view="page"] .sheet {
   max-width: none;
+  width: max-content;
+  min-width: 100%;
   background: transparent;
   box-shadow: none;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
 }
-body[data-view="page"] .score { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+body[data-view="page"] .score { display: flex; flex-direction: column; align-items: flex-start; gap: 24px; }
 .paper {
   position: relative;
-  width: 100%;
+  flex: none;
+  margin: 0 auto;
   background: var(--paper);
   border-radius: 2px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), 0 8px 28px rgba(0, 0, 0, 0.1);
@@ -495,7 +501,8 @@ body[data-view="continuous"] .meta input { width: 400px; text-align: left; }
   .workspace { display: block; }
   .page { overflow: visible; padding: 0; }
   body[data-view="page"] .score { gap: 0; }
-  .paper { box-shadow: none; border-radius: 0; max-width: none !important; width: 100%; break-after: page; }
+  body[data-view="page"] .sheet { width: auto; }
+  .paper { box-shadow: none; border-radius: 0; width: 100% !important; margin: 0; break-after: page; }
   .paper:last-child { break-after: auto; }
   .meta input { border-color: transparent !important; color: #000; }
   .meta input:placeholder-shown { visibility: hidden; }
