@@ -28,6 +28,8 @@ This document tracks the development goals and major stages toward a complete op
 - [ ] Rectangle (marquee) selection and dragging notes up and down to change pitch.
 - [x] Side palette: figures with a notes/rests switch, dot, accidentals, voices on demand.
 - [x] Measures with errors labelled in red and counted in the status bar (click to jump).
+- [x] Centered measure rests; writing into a measure rest replaces it.
+- [x] Multi-measure rests (view toggle).
 - [ ] **New score wizard**, like Encore's: title, tempo, key, time signature, number of measures, and instrument templates (piano grand staff, string quartet, voice + piano, guitar with tablature).
 - [ ] Note property panel.
 - [ ] Insert vs. overwrite mode (the Insert key, as in a word processor).
