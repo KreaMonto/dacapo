@@ -37,6 +37,45 @@
     for (const st of view.score.staves) {
       for (let m = 2; m <= 5; m++) st.measures[m].voices[0] = [{ id: nextId++, duration: { base: 'Whole', dots: 0 }, kind: 'rest' }];
     }
+    // `?theme=light|dark` forces the theme (for screenshots).
+    const forcedTheme = new URLSearchParams(location.search).get('theme');
+    if (forcedTheme) try { localStorage.setItem('dacapo.theme', JSON.stringify(forcedTheme)); } catch {}
+    // `?demo`: a short piano piece instead, for screenshots of the app.
+    if (new URLSearchParams(location.search).has('demo')) {
+      const n = (s, base, extra = {}) => {
+        const ps = s.split(',').map((x) => ({ step: x[0], alter: x.includes('#') ? 1 : 0, octave: Number(x.at(-1)) }));
+        return { id: nextId++, duration: { base, dots: extra.dots || 0 }, kind: { chord: { pitches: ps } }, ...extra, dots: undefined };
+      };
+      const r = (base) => ({ id: nextId++, duration: { base, dots: 0 }, kind: 'rest' });
+      const cell = (events) => ({ voices: [events, [], [], []] });
+      const E = 'Eighth', S = 'Sixteenth', Q = 'Quarter', H = 'Half', W = 'Whole';
+      const rh = [
+        [n('G4', E, { dynamic: 'mp' }), n('B4', E), n('D5', E), n('G5', E), n('F#5', Q, { articulations: ['tenuto'] }), n('E5', Q)],
+        [n('D5', Q, { dots: 1 }), n('C5', E), n('B4', S), n('C5', S), n('D5', E), n('G4', Q)],
+        [n('B4,D5,G5', H), r(Q), n('A4', E), n('B4', E)],
+        [n('C5', E, { articulations: ['staccato'], dynamic: 'f' }), n('E5', E, { articulations: ['staccato'] }), n('A5', E, { articulations: ['staccato'] }), n('G5', E, { articulations: ['staccato'] }), n('F#5', S), n('E5', S), n('D5', S), n('C5', S), n('B4', Q, { articulations: ['accent'] })],
+        [n('A4', H, { tie: true }), n('A4', Q), n('C5', E), n('F#4', E)],
+        [n('G4,B4,D5', W, { articulations: ['fermata'] })],
+      ];
+      const lh = [
+        [n('G2,D3', H), n('G2,D3', H)],
+        [n('G2', Q), n('B2', Q), n('D3', Q), n('B2', Q)],
+        [n('G2,D3', W)],
+        [n('A2', E), n('E3', E), n('A3', E), n('E3', E), n('D3', H)],
+        [n('D2', Q), n('A2', Q), n('D3', H)],
+        [n('G2,D3,G3', W)],
+      ];
+      view.name = 'Morning Song';
+      view.score.metadata = { title: 'Morning Song', composer: 'Da Capo demo' };
+      view.score.measures = rh.map(() => ({ time: { beats: 4, beat_type: 4 }, key: { fifths: 1 } }));
+      view.score.staves[0].measures = rh.map(cell);
+      view.score.staves[1].measures = lh.map(cell);
+      view.score.slurs = [
+        { id: 900, start: rh[0][0].id, end: rh[0][3].id },
+        { id: 901, start: rh[1][0].id, end: rh[1][5].id },
+      ];
+      view.caret = { staff: 0, measure: 2, voice: 0, index: 1 };
+    }
     const undo = [];
     // Like Document::insert_event: writing into a measure rest replaces it.
     const replaceMeasureRest = (at) => {
