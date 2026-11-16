@@ -343,4 +343,110 @@ function drawDots(push, dots, x, y) {
   }
 }
 
+// ----- mouse note entry ----------------------------------------------------
+
+const STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const ALTER_TEXT = { '-2': '𝄫', '-1': '♭', '0': '', '1': '♯', '2': '𝄪' };
+
+/**
+ * Where a note would land if the user clicked at (x, y) in note-entry mode.
+ * Returns null when the pointer is too far from any staff.
+ *
+ * - `index`: insertion point in the voice (between events).
+ * - `onEvent`: index of the event under the pointer (click adds to its chord).
+ * - `step`/`octave`: pitch snapped to the nearest line or space.
+ */
+export function pointerTarget(lay, view, x, y, voice) {
+  let best = null;
+  for (const s of lay.systems) {
+    for (let st = 0; st < lay.nStaves; st++) {
+      const center = s.y + st * STAFF_GAP + 2 * SP;
+      const dist = Math.abs(y - center);
+      if (!best || dist < best.dist) best = { s, st, dist };
+    }
+  }
+  if (!best || best.dist > 7 * SP) return null;
+  const { s, st: staff } = best;
+  const ms = s.measures.find((m) => x >= m.x && x < m.x + m.w);
+  if (!ms) return null;
+
+  const top = s.y + staff * STAFF_GAP;
+  const clef = view.score.staves[staff].clef;
+  const mid = CLEF_MIDDLE[clef];
+  const d = mid + Math.round((top + 2 * SP - y) / (SP / 2));
+  const events = view.score.staves[staff].measures[ms.m].voices[voice];
+
+  let index = 0;
+  let tick = 0;
+  let onEvent = null;
+  let onEventDist = Infinity;
+  let eventX = 0;
+  events.forEach((e, i) => {
+    const ex = lay.tickX(ms, tick);
+    if (x > ex + 0.2 * SP) index++;
+    const dist = Math.abs(x - ex);
+    if (dist <= 0.8 * SP && dist < onEventDist) {
+      onEvent = i;
+      onEventDist = dist;
+      eventX = ex;
+    }
+    tick += durationTicks(e.duration);
+  });
+
+  return {
+    staff, measure: ms.m, voice, index, onEvent,
+    step: STEPS[((d % 7) + 7) % 7],
+    octave: Math.floor(d / 7),
+    alter: keyAlter(ms.attrs.key.fifths, STEPS[((d % 7) + 7) % 7]),
+    d, mid, top,
+    x: onEvent !== null ? eventX : x,
+    y: top + 2 * SP - (d - mid) * (SP / 2),
+    gapX: gapX(lay, ms, events, index),
+  };
+}
+
+/** Semi-transparent preview of the figure that a click would place. */
+export function ghostMarkup(t, duration, rest) {
+  if (!t) return '';
+  const baseIdx = BASES.indexOf(baseKey(duration.base));
+  const out = [];
+  const push = (s) => out.push(s);
+  // Insertion marker (where the new event goes), unless adding to a chord.
+  if (t.onEvent === null || rest) {
+    push(`<line class="ins" x1="${t.gapX}" x2="${t.gapX}" y1="${t.top - 1.5 * SP}" y2="${t.top + 5.5 * SP}"/>`);
+  }
+  if (rest) {
+    if (baseIdx <= 1) {
+      push(`<rect x="${t.x - 0.6 * SP}" y="${t.top + (baseIdx === 0 ? SP : 1.5 * SP)}" width="${1.2 * SP}" height="${0.5 * SP}"/>`);
+    } else {
+      push(`<text class="glyph" x="${t.x - 0.5 * SP}" y="${t.top + 2.9 * SP}" font-size="${3.2 * SP}">${REST_GLYPH[baseKey(duration.base)]}</text>`);
+    }
+    drawDots(push, duration.dots, t.x + 0.9 * SP, t.top + 1.5 * SP);
+  } else {
+    const { x, y, d, mid } = t;
+    const rx = baseIdx === 0 ? 0.78 * SP : 0.62 * SP;
+    const yOf = (k) => t.top + 2 * SP - (k - mid) * (SP / 2);
+    for (let k = mid + 6; k <= d; k += 2) push(`<line class="ledger" x1="${x - rx - 0.45 * SP}" x2="${x + rx + 0.45 * SP}" y1="${yOf(k)}" y2="${yOf(k)}"/>`);
+    for (let k = mid - 6; k >= d; k -= 2) push(`<line class="ledger" x1="${x - rx - 0.45 * SP}" x2="${x + rx + 0.45 * SP}" y1="${yOf(k)}" y2="${yOf(k)}"/>`);
+    const rot = baseIdx === 0 ? '' : ` transform="rotate(-20 ${x} ${y})"`;
+    push(`<ellipse class="${baseIdx <= 1 ? 'hollow' : 'head'}" cx="${x}" cy="${y}" rx="${rx}" ry="${0.46 * SP}"${rot}/>`);
+    if (baseIdx >= 1 && t.onEvent === null) {
+      const up = d < mid;
+      const sx = up ? x + rx - 0.6 : x - rx + 0.6;
+      const yEnd = up ? y - 3.4 * SP : y + 3.4 * SP;
+      push(`<line class="stem" x1="${sx}" x2="${sx}" y1="${y}" y2="${yEnd}"/>`);
+      for (let f = 0; f < Math.max(0, baseIdx - 2); f++) {
+        const fy = up ? yEnd + f * 0.8 * SP : yEnd - f * 0.8 * SP;
+        const dir = up ? 1 : -1;
+        push(`<path class="flag" d="M${sx} ${fy} c ${0.2 * SP} ${dir * 0.9 * SP}, ${1.3 * SP} ${dir * 1.2 * SP}, ${0.9 * SP} ${dir * 2.6 * SP}"/>`);
+      }
+    }
+    const onLine = (d - mid) % 2 === 0;
+    drawDots(push, duration.dots, x + rx + 0.55 * SP, onLine ? y - SP / 2 : y);
+    // Pitch name next to the figure.
+    push(`<text class="pname" x="${x + rx + 1.2 * SP}" y="${y - 0.8 * SP}">${t.step}${ALTER_TEXT[String(t.alter)]}${t.octave}${t.onEvent !== null ? ' +' : ''}</text>`);
+  }
+  return `<g class="ghost">${out.join('')}</g>`;
+}
+
 export { esc };

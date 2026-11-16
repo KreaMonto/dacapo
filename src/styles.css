@@ -183,6 +183,20 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .score .caret.v3 { stroke: var(--voice4); }
 @keyframes blink { 50% { opacity: 0; } }
 
+/* Mouse entry mode: the pointer becomes the chosen figure. */
+.score.entry { cursor: crosshair; }
+.score.entry.over { cursor: none; }
+.score .ghost { color: var(--accent); fill: var(--accent); opacity: 0.8; pointer-events: none; }
+.score .ghost.v1 { color: var(--voice2); fill: var(--voice2); }
+.score .ghost.v2 { color: var(--voice3); fill: var(--voice3); }
+.score .ghost.v3 { color: var(--voice4); fill: var(--voice4); }
+.score .ghost text { fill: currentColor; }
+.score .ghost .ledger { stroke: currentColor; }
+.score .ghost .ins { stroke: currentColor; stroke-width: 1.5; stroke-dasharray: 3 3; }
+.score .ghost .pname { font: 600 10px "Segoe UI", system-ui, sans-serif; }
+.toolbar .tool { font-size: 16px; min-width: 32px; }
+.durations.placing button[data-dur].on { background: var(--accent); color: var(--paper); }
+
 /* Status bar */
 .status {
   display: flex;

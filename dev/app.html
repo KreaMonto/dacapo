@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>App Preview</title>
+  <link rel="stylesheet" href="../src/styles.css">
+</head>
+<body>
+  <!-- Development only: runs the real frontend (src/index.html + app.js)
+       against an in-memory fake backend, so the UI can be tried in a normal
+       browser. The fake supports only a few actions and none of the real
+       rules; the Rust core is the reference. -->
+  <script type="module">
+    const html = await (await fetch('../src/index.html')).text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('script').forEach((s) => s.remove());
+    document.body.innerHTML = doc.body.innerHTML;
+
+    const STEPS = 'CDEFGAB';
+    const SHARPS = 'FCGDAEB';
+    let nextId = 1;
+    const blank = () => ({ voices: [[], [], [], []] });
+    const view = {
+      id: 'dev', name: 'Dev preview', path: null, dirty: false, can_undo: false, can_redo: false,
+      protected: true, warning: null, selection: null, issues: [],
+      caret: { staff: 0, measure: 0, voice: 0, index: 0 },
+      score: {
+        metadata: { title: 'Dev preview', composer: '' },
+        measures: Array.from({ length: 8 }, () => ({ time: { beats: 4, beat_type: 4 }, key: { fifths: 1 } })),
+        staves: [
+          { id: 1, name: 'RH', clef: 'treble', measures: Array.from({ length: 8 }, blank) },
+          { id: 2, name: 'LH', clef: 'bass', measures: Array.from({ length: 8 }, blank) },
+        ],
+      },
+    };
+    const undo = [];
+    const alter = (m, step) => {
+      const f = view.score.measures[m].key.fifths;
+      if (f > 0 && SHARPS.slice(0, f).includes(step)) return 1;
+      if (f < 0 && SHARPS.slice(7 + f).includes(step)) return -1;
+      return 0;
+    };
+    const voiceOf = (c) => view.score.staves[c.staff].measures[c.measure].voices[c.voice];
+    const snapshot = () => undo.push(JSON.stringify([view.score, view.caret]));
+    const handlers = {
+      place_note({ at, step, octave, duration }) {
+        snapshot();
+        voiceOf(at).splice(at.index, 0, { id: nextId++, duration, kind: { chord: { pitches: [{ step, octave, alter: alter(at.measure, step) }] } } });
+        view.caret = { ...at, index: at.index + 1 };
+      },
+      place_rest({ at, duration }) {
+        snapshot();
+        voiceOf(at).splice(at.index, 0, { id: nextId++, duration, kind: 'rest' });
+        view.caret = { ...at, index: at.index + 1 };
+      },
+      add_pitch({ at, step, octave }) {
+        snapshot();
+        const e = voiceOf(at)[at.index];
+        const p = { step, octave, alter: alter(at.measure, step) };
+        if (e.kind === 'rest') e.kind = { chord: { pitches: [p] } };
+        else e.kind.chord.pitches.push(p);
+        view.caret = { ...at, index: at.index + 1 };
+      },
+      set_caret({ caret }) { view.caret = caret; },
+      undo() {
+        const s = undo.pop();
+        if (s) [view.score, view.caret] = JSON.parse(s);
+      },
+    };
+    window.__TAURI__ = {
+      core: {
+        async invoke(cmd, args) {
+          if (cmd === 'edit') {
+            handlers[args.action.type]?.(args.action);
+            view.dirty = undo.length > 0;
+            view.can_undo = undo.length > 0;
+          }
+          if (cmd === 'list_recoverable' || cmd === 'list_documents') return [];
+          return structuredClone(view);
+        },
+      },
+      dialog: {},
+      event: { listen: async () => {} },
+    };
+    window.__STEPS = STEPS;
+    await import('../src/app.js');
+  </script>
+</body>
+</html>

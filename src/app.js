@@ -1,7 +1,7 @@
 // Da Capo frontend. Owns no musical state: every edit is sent to Rust,
 // which answers with the full document view to redraw.
 
-import { renderScore, hitTest, esc } from './render.js';
+import { renderScore, hitTest, pointerTarget, ghostMarkup, esc } from './render.js';
 
 const tauri = window.__TAURI__;
 const invoke = tauri.core.invoke;
@@ -16,6 +16,10 @@ const state = {
   order: [], // tab order
   active: null,
   duration: { base: 'Quarter', dots: 0 },
+  // 'select': click places the caret / drag selects.
+  // 'note' / 'rest': the pointer carries the chosen figure; click places it.
+  mode: 'select',
+  pointer: null, // last mouse position over the score, for the ghost figure
   layout: null,
   error: null,
 };
@@ -171,9 +175,55 @@ function render() {
   const { svg, layout } = renderScore(doc, width);
   scoreEl.innerHTML = svg;
   state.layout = layout;
+  scoreEl.classList.toggle('entry', state.mode !== 'select');
+  drawGhost();
   syncControls(doc);
   renderStatus();
   scrollCaretIntoView();
+}
+
+// ----- mouse entry mode ------------------------------------------------------
+
+function setMode(mode) {
+  state.mode = mode;
+  render();
+}
+
+function currentTarget() {
+  const doc = active();
+  if (!doc || !state.layout || !state.pointer || state.mode === 'select') return null;
+  const svg = $('score').querySelector('svg');
+  if (!svg) return null;
+  const r = svg.getBoundingClientRect();
+  return pointerTarget(state.layout, doc, state.pointer.x - r.left, state.pointer.y - r.top, doc.caret.voice);
+}
+
+/** Draws the figure the pointer is carrying (or removes it). */
+function drawGhost() {
+  const scoreEl = $('score');
+  const svg = scoreEl.querySelector('svg');
+  if (!svg) return;
+  svg.querySelector('.ghost')?.remove();
+  const target = currentTarget();
+  scoreEl.classList.toggle('over', !!target);
+  if (!target) return;
+  const voice = active().caret.voice;
+  svg.insertAdjacentHTML('beforeend', ghostMarkup(target, state.duration, state.mode === 'rest')
+    .replace('class="ghost"', `class="ghost v${voice}"`));
+}
+
+function placeAtPointer() {
+  const t = currentTarget();
+  if (!t) return false;
+  const at = { staff: t.staff, measure: t.measure, voice: t.voice, index: t.index };
+  if (state.mode === 'rest') {
+    act({ type: 'place_rest', at, duration: state.duration });
+  } else if (t.onEvent !== null) {
+    act({ type: 'add_pitch', at: { ...at, index: t.onEvent }, step: t.step, octave: t.octave });
+  } else {
+    act({ type: 'place_note', at, step: t.step, octave: t.octave, duration: state.duration });
+  }
+  return true;
 }
 
 function renderTabs() {
@@ -192,6 +242,9 @@ function syncControls(doc) {
   document.querySelector('[data-cmd=undo]').disabled = !doc.can_undo;
   document.querySelector('[data-cmd=redo]').disabled = !doc.can_redo;
   document.querySelectorAll('[data-dur]').forEach((b) => b.classList.toggle('on', b.dataset.dur === state.duration.base));
+  document.querySelector('[data-cmd=select]').classList.toggle('on', state.mode === 'select');
+  document.querySelector('[data-cmd=rest]').classList.toggle('on', state.mode === 'rest');
+  document.querySelector('.durations').classList.toggle('placing', state.mode === 'note');
   document.querySelector('[data-cmd=dot]').classList.toggle('on', state.duration.dots > 0);
   document.querySelectorAll('[data-voice]').forEach((b) => b.classList.toggle('on', Number(b.dataset.voice) === caret.voice));
   if (document.activeElement !== $('clef')) $('clef').value = staff.clef;
@@ -208,7 +261,12 @@ function renderStatus() {
     const c = doc.caret;
     parts.push(`Staff ${c.staff + 1} · Measure ${c.measure + 1} · Voice ${c.voice + 1}`);
     const d = state.duration;
-    parts.push(`Note value: ${d.base}${d.dots ? ' dotted' : ''}`);
+    const value = `${d.dots ? 'dotted ' : ''}${d.base.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()}`;
+    parts.push({
+      select: `Select tool · next value: ${value}`,
+      note: `<b>Placing ${value} notes</b> — click a line or space · click a note to add to its chord · Esc to stop`,
+      rest: `<b>Placing ${value} rests</b> — click to place · Esc to stop`,
+    }[state.mode]);
     parts.push(doc.dirty ? 'Unsaved changes' : (doc.path ? 'Saved' : 'New document'));
     parts.push(doc.protected
       ? '<span class="ok" title="Every change is journaled; work survives a crash or power cut">● Recovery on</span>'
@@ -233,8 +291,9 @@ function scrollCaretIntoView() {
 
 // ----- input -----------------------------------------------------------------
 
-function setDuration(base) {
+function setDuration(base, enterMode = false) {
   state.duration = { base, dots: 0 };
+  if (enterMode && state.mode === 'select') state.mode = 'note';
   const doc = active();
   if (doc && doc.selection) act({ type: 'set_duration', duration: state.duration });
   else render();
@@ -301,6 +360,8 @@ document.addEventListener('keydown', (ev) => {
   }
 
   switch (key) {
+    case 'Escape': ev.preventDefault(); return setMode('select');
+    case 'n': case 'N': ev.preventDefault(); return setMode(state.mode === 'select' ? 'note' : 'select');
     case 'ArrowLeft': return run({ type: 'move', to: 'left', extend: ev.shiftKey });
     case 'ArrowRight': return run({ type: 'move', to: 'right', extend: ev.shiftKey });
     case 'ArrowUp': return run({ type: 'move', to: 'up', extend: ev.shiftKey });
@@ -338,6 +399,14 @@ function caretFromMouse(ev) {
 }
 $('score').addEventListener('mousedown', (ev) => {
   if (ev.button !== 0) return;
+  if (state.mode !== 'select') {
+    // Entry mode: the click places the figure the pointer carries.
+    state.pointer = { x: ev.clientX, y: ev.clientY };
+    ev.preventDefault();
+    page.focus();
+    placeAtPointer();
+    return;
+  }
   const caret = caretFromMouse(ev);
   if (!caret) return;
   ev.preventDefault();
@@ -346,6 +415,23 @@ $('score').addEventListener('mousedown', (ev) => {
   lastHit = JSON.stringify(caret);
   act({ type: 'set_caret', caret, extend: ev.shiftKey });
 });
+$('score').addEventListener('mousemove', (ev) => {
+  if (state.mode === 'select') return;
+  state.pointer = { x: ev.clientX, y: ev.clientY };
+  drawGhost();
+});
+$('score').addEventListener('mouseleave', () => {
+  state.pointer = null;
+  drawGhost();
+});
+// Right-click leaves entry mode, like dropping the tool.
+$('score').addEventListener('contextmenu', (ev) => {
+  if (state.mode === 'select') return;
+  ev.preventDefault();
+  setMode('select');
+});
+// The ghost must follow the page when it scrolls under a still mouse.
+page.addEventListener('scroll', () => { if (state.mode !== 'select') drawGhost(); });
 window.addEventListener('mousemove', (ev) => {
   if (!dragging) return;
   const caret = caretFromMouse(ev);
@@ -360,16 +446,17 @@ window.addEventListener('mouseup', () => { dragging = false; });
 document.querySelector('.toolbar').addEventListener('click', (ev) => {
   const b = ev.target.closest('button');
   if (!b) return;
-  if (b.dataset.dur) setDuration(b.dataset.dur);
+  if (b.dataset.dur) setDuration(b.dataset.dur, true);
   else if (b.dataset.voice) setVoice(Number(b.dataset.voice));
   else ({
+    select: () => setMode('select'),
     new: () => serial(newDocument),
     open: () => serial(openDocument),
     save: () => serial(() => saveDocument()),
     undo: () => act({ type: 'undo' }),
     redo: () => act({ type: 'redo' }),
     dot: () => { state.duration = { ...state.duration, dots: state.duration.dots ? 0 : 1 }; render(); },
-    rest: () => act({ type: 'insert_rest', duration: state.duration }),
+    rest: () => setMode(state.mode === 'rest' ? 'note' : 'rest'),
     'add-measure': () => act({ type: 'insert_measure' }),
     'remove-measure': () => act({ type: 'remove_measure' }),
     'add-staff': () => act({ type: 'add_staff', clef: 'treble' }),
