@@ -208,6 +208,9 @@ enum Action {
         instrument: u8,
         #[serde(default)]
         transposition: Transposition,
+        /// 2 for a piano, harp or organ: braced staves, treble and bass.
+        #[serde(default = "one")]
+        staves: usize,
     },
     RemoveStaff,
     SetClef {
@@ -239,6 +242,10 @@ enum Action {
         last: usize,
         kind: Option<GroupKind>,
     },
+}
+
+fn one() -> usize {
+    1
 }
 
 fn start_session(state: &AppState, doc: Document) -> Result<Session, String> {
@@ -414,6 +421,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
                 short_name,
                 instrument,
                 transposition,
+                staves,
             } => {
                 let name = name
                     .filter(|n| !n.trim().is_empty())
@@ -425,7 +433,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
                     clef,
                     transposition,
                 };
-                d.add_instrument_staff(props, now)
+                d.add_instrument(props, staves, now)
             }
             Action::RemoveStaff => d.remove_staff(d.caret().staff, now),
             Action::SetClef { clef } => d.set_clef(d.caret().staff, clef, now),

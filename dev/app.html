@@ -208,14 +208,18 @@
         snapshot();
         Object.assign(view.score.staves[staff], { name, short_name, instrument, clef, transposition });
       },
-      add_staff({ clef, name, short_name, instrument, transposition }) {
+      add_staff({ clef, name, short_name, instrument, transposition, staves = 1 }) {
         snapshot();
         const len = view.score.measures.length;
-        view.score.staves.push({
-          id: nextId++, name: name || `Staff ${view.score.staves.length + 1}`, short_name: short_name || '', clef,
-          instrument: instrument || 0, transposition: transposition || { diatonic: 0, chromatic: 0 }, group: null,
-          measures: Array.from({ length: len }, () => ({ voices: [[], [], [], []] })),
-        });
+        const group = staves > 1 ? { id: nextId++, kind: 'brace' } : null;
+        for (let k = 0; k < staves; k++) {
+          view.score.staves.push({
+            id: nextId++, name: name || `Staff ${view.score.staves.length + 1}`, short_name: short_name || '',
+            clef: k === 0 ? clef : 'bass',
+            instrument: instrument || 0, transposition: transposition || { diatonic: 0, chromatic: 0 }, group,
+            measures: Array.from({ length: len }, () => ({ voices: [[], [], [], []] })),
+          });
+        }
       },
       group_staves({ first, last, kind }) {
         snapshot();
