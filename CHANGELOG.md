@@ -4,6 +4,13 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Spanish.** The whole interface is translated, including the 128 instrument sounds, error messages and the names Partita gives new documents and staves. **View → Language** chooses English, Español, or the computer's language (the default); the window reloads in the new language and open scores stay as they are.
+- **Notes → Accidentals, Articulations and Dynamics**: the palette's marks are now in the menus too, so they can be reached from the keyboard. They go on the selection, or on the note before the caret.
+
+### Changed
+- **The menus are organized in categories, with submenus.** **Insert** is replaced by **Score** (Measure, Staff, Group Staves) and **Notes** (ties, slurs, lyrics and marks). In **View**, Layout, Zoom, Paper, Theme and Language are submenus that show their current setting. Every item fits on one line; resting the pointer on an item explains what it does.
+
 ## [0.3.0] - 2026-11-16
 
 ### Added

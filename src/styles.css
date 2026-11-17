@@ -477,7 +477,12 @@ button.on { background: var(--button-active); border-color: var(--accent); color
   position: absolute;
   top: calc(100% + 2px);
   left: 0;
-  min-width: 250px;
+  /* As wide as its longest item (not as narrow as the menu's button, which
+     is what made long labels wrap), up to 340px; longer labels end in "…"
+     and show whole in a tooltip. */
+  width: max-content;
+  min-width: 220px;
+  max-width: 340px;
   padding: 4px;
   background: var(--chrome);
   border: 1px solid var(--chrome-border);
@@ -499,10 +504,16 @@ button.on { background: var(--button-active); border-color: var(--accent); color
   border-radius: 5px;
 }
 .menu-item:hover:not(:disabled), .menu-item:focus { background: var(--accent); color: #fff; outline: none; }
+/* The item whose submenu is open stays marked while the pointer is in it. */
+.menu-item.sub-open:not(:focus) { background: var(--button-hover); }
 .menu-item:disabled { opacity: 0.4; }
 .menu-check { text-align: center; font-size: 11px; }
-.menu-key { color: var(--muted); font-size: 12px; padding-left: 16px; }
+/* One line per item, always. */
+.menu-label { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu-key { color: var(--muted); font-size: 12px; padding-left: 16px; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
 .menu-item:hover:not(:disabled) .menu-key, .menu-item:focus .menu-key { color: inherit; opacity: 0.8; }
+.menu-arrow { font-size: 15px; line-height: 1; margin-right: -4px; }
+.menu-pop.sub { position: fixed; z-index: 60; }
 .menu-sep { height: 1px; margin: 4px 6px; background: var(--chrome-border); }
 
 /* ----- Views ----------------------------------------------------------------- */

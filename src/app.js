@@ -2000,6 +2000,23 @@ $('palette').addEventListener('click', onControlClick);
 
 const hasDoc = () => !!active();
 const hasSelection = () => !!active()?.selection;
+
+// Marks from the palette, also offered in Notes so the keyboard reaches them.
+// They go on the selection, or on the note before the caret.
+const ACCIDENTALS = [['sharp', 1], ['flat', -1], ['natural', 0]];
+const ARTICULATIONS = ['staccato', 'staccatissimo', 'tenuto', 'accent', 'marcato', 'fermata'];
+const DYNAMICS = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'sfz', 'fp'];
+for (const [name, alter] of ACCIDENTALS) commands[`alter:${name}`] = () => act({ type: 'set_accidental', alter });
+for (const a of ARTICULATIONS) commands[`artic:${a}`] = () => act({ type: 'toggle_articulation', articulation: a });
+for (const d of DYNAMICS) commands[`dyn:${d}`] = () => act({ type: 'set_dynamic', dynamic: d });
+
+/** A radio choice of a submenu: label and tooltip from `key` (and `key.desc` if there is one). */
+const choice = (key, cmd, checked) => ({
+  label: t(key), cmd, radio: true, checked, ...(has(`${key}.desc`) ? { desc: t(`${key}.desc`) } : {}),
+});
+
+// Every label fits on one line: the menu that holds an item says what it is
+// about ("Group Staves › Brace"), and `desc` explains it in a tooltip.
 const MENUS = [
   { label: t('menu.file'), items: [
     { label: t('menu.file.new'), cmd: 'new', key: 'Ctrl+N' },
@@ -2008,8 +2025,12 @@ const MENUS = [
     { label: t('menu.file.save'), cmd: 'save', key: 'Ctrl+S', enabled: hasDoc },
     { label: t('menu.file.saveas'), cmd: 'saveas', key: 'Ctrl+Shift+S', enabled: hasDoc },
     { sep: true },
-    { label: t('menu.file.import'), cmd: 'import-musicxml' },
-    { label: t('menu.file.export'), cmd: 'export-musicxml', enabled: hasDoc },
+    { label: t('menu.file.import'), items: [
+      { label: t('menu.file.musicxml'), cmd: 'import-musicxml', desc: t('menu.file.import.desc') },
+    ] },
+    { label: t('menu.file.export'), enabled: hasDoc, items: [
+      { label: t('menu.file.musicxml'), cmd: 'export-musicxml', desc: t('menu.file.export.desc') },
+    ] },
     { sep: true },
     { label: t('menu.file.print'), cmd: 'print', key: 'Ctrl+P', enabled: hasDoc },
     { sep: true },
@@ -2027,48 +2048,71 @@ const MENUS = [
     { label: t('menu.edit.selectall'), cmd: 'selectall', key: 'Ctrl+A', enabled: hasDoc },
   ] },
   { label: t('menu.view'), items: [
-    { label: t('menu.view.page'), cmd: 'view:page', radio: true, checked: () => state.view === 'page' },
-    { label: t('menu.view.wrap'), cmd: 'view:wrap', radio: true, checked: () => state.view === 'wrap' },
-    { label: t('menu.view.continuous'), cmd: 'view:continuous', radio: true, checked: () => state.view === 'continuous' },
+    { label: t('menu.view.layout'), value: () => t(`menu.view.layout.${state.view}`), items: [
+      choice('menu.view.layout.page', 'view:page', () => state.view === 'page'),
+      choice('menu.view.layout.wrap', 'view:wrap', () => state.view === 'wrap'),
+      choice('menu.view.layout.continuous', 'view:continuous', () => state.view === 'continuous'),
+    ] },
+    { label: t('menu.view.zoom'), value: () => t('menu.view.zoom.value', { pct: Math.round(state.zoom * 100) }), items: [
+      { label: t('menu.view.zoom.in'), cmd: 'zoom-in', key: 'Ctrl+=', enabled: () => state.zoom < ZOOM_MAX },
+      { label: t('menu.view.zoom.out'), cmd: 'zoom-out', key: 'Ctrl+−', enabled: () => state.zoom > ZOOM_MIN },
+      { label: t('menu.view.zoom.reset'), cmd: 'zoom-reset', key: 'Ctrl+0', enabled: () => state.zoom !== 1 },
+      { label: t('menu.view.zoom.fit'), cmd: 'zoom-fit', enabled: () => state.view === 'page', desc: t('menu.view.zoom.fit.desc') },
+    ] },
+    { label: t('menu.view.paper'), value: () => t(`menu.view.paper.${state.paper}`), items: [
+      choice('menu.view.paper.a4', 'paper:a4', () => state.paper === 'a4'),
+      choice('menu.view.paper.letter', 'paper:letter', () => state.paper === 'letter'),
+    ] },
     { sep: true },
-    { label: t('menu.view.a4'), cmd: 'paper:a4', radio: true, checked: () => state.paper === 'a4' },
-    { label: t('menu.view.letter'), cmd: 'paper:letter', radio: true, checked: () => state.paper === 'letter' },
+    { label: t('menu.view.multirest'), cmd: 'multirest', checked: () => state.multiRest, desc: t('toolbar.multirest.desc') },
+    { label: t('menu.view.extended'), cmd: 'extended-values', checked: () => state.extendedValues, desc: t('menu.view.extended.desc') },
     { sep: true },
-    { label: t('menu.view.zoomin'), cmd: 'zoom-in', key: 'Ctrl+=', enabled: () => state.zoom < ZOOM_MAX },
-    { label: t('menu.view.zoomout'), cmd: 'zoom-out', key: 'Ctrl+−', enabled: () => state.zoom > ZOOM_MIN },
-    { label: t('menu.view.zoomreset'), cmd: 'zoom-reset', key: 'Ctrl+0', enabled: () => state.zoom !== 1 },
-    { label: t('menu.view.zoomfit'), cmd: 'zoom-fit', enabled: () => state.view === 'page' },
-    { sep: true },
-    { label: t('menu.view.multirest'), cmd: 'multirest', checked: () => state.multiRest },
-    { label: t('menu.view.extended'), cmd: 'extended-values', checked: () => state.extendedValues },
-    { sep: true },
-    { label: t('menu.view.themesystem'), cmd: 'theme:system', radio: true, checked: () => state.theme === 'system' },
-    { label: t('menu.view.themelight'), cmd: 'theme:light', radio: true, checked: () => state.theme === 'light' },
-    { label: t('menu.view.themedark'), cmd: 'theme:dark', radio: true, checked: () => state.theme === 'dark' },
-    { sep: true },
-    { label: t('menu.view.languagesystem'), cmd: 'language:system', radio: true, checked: () => languageChoice === 'system' },
-    // Each language is offered under its own name.
-    ...LANGUAGES.map((code) => ({
-      label: t('menu.view.language', { name: LANGUAGE_NAMES[code] }),
-      cmd: `language:${code}`,
-      radio: true,
-      checked: () => languageChoice === code,
-    })),
+    { label: t('menu.view.theme'), value: () => t(`menu.view.theme.${state.theme}`), items: [
+      choice('menu.view.theme.system', 'theme:system', () => state.theme === 'system'),
+      choice('menu.view.theme.light', 'theme:light', () => state.theme === 'light'),
+      choice('menu.view.theme.dark', 'theme:dark', () => state.theme === 'dark'),
+    ] },
+    { label: t('menu.view.language'),
+      value: () => (languageChoice === 'system' ? t('menu.view.language.system') : LANGUAGE_NAMES[languageChoice]),
+      items: [
+        choice('menu.view.language.system', 'language:system', () => languageChoice === 'system'),
+        { sep: true },
+        // Each language is offered under its own name.
+        ...LANGUAGES.map((code) => ({
+          label: LANGUAGE_NAMES[code], cmd: `language:${code}`, radio: true, checked: () => languageChoice === code,
+          desc: t('menu.view.language.reload'),
+        })),
+      ] },
   ] },
-  { label: t('menu.insert'), items: [
-    { label: t('menu.insert.measure'), cmd: 'add-measure', key: 'Ctrl+Enter', enabled: hasDoc },
-    { label: t('menu.insert.staff'), cmd: 'add-staff', enabled: hasDoc },
-    { label: t('menu.insert.staffprops'), cmd: 'staff-properties', enabled: hasDoc },
-    { label: t('menu.insert.bracket'), cmd: 'group-bracket', enabled: hasDoc },
-    { label: t('menu.insert.brace'), cmd: 'group-brace', enabled: hasDoc },
-    { label: t('menu.insert.ungroup'), cmd: 'group-none', enabled: hasDoc },
+  { label: t('menu.score'), items: [
+    { label: t('menu.score.measure'), enabled: hasDoc, items: [
+      { label: t('menu.score.measure.add'), cmd: 'add-measure', key: 'Ctrl+Enter', desc: t('toolbar.addmeasure.desc') },
+      { label: t('menu.score.measure.remove'), cmd: 'remove-measure', desc: t('toolbar.removemeasure.desc') },
+    ] },
+    { label: t('menu.score.staff'), enabled: hasDoc, items: [
+      { label: t('menu.score.staff.add'), cmd: 'add-staff', desc: t('toolbar.addstaff.desc') },
+      { label: t('menu.score.staff.props'), cmd: 'staff-properties', desc: t('menu.score.staff.props.desc') },
+      { sep: true },
+      { label: t('menu.score.staff.remove'), cmd: 'remove-staff', desc: t('toolbar.removestaff.desc') },
+    ] },
+    { label: t('menu.score.group'), enabled: hasDoc, items: [
+      { label: t('menu.score.group.bracket'), cmd: 'group-bracket', desc: t('menu.score.group.bracket.desc') },
+      { label: t('menu.score.group.brace'), cmd: 'group-brace', desc: t('menu.score.group.brace.desc') },
+      { sep: true },
+      { label: t('menu.score.group.none'), cmd: 'group-none', desc: t('menu.score.group.none.desc') },
+    ] },
+  ] },
+  { label: t('menu.notes'), items: [
+    { label: t('palette.tie'), cmd: 'tie', key: 'T', enabled: hasDoc, desc: t('palette.tie.desc') },
+    { label: t('palette.slur'), cmd: 'slur', key: 'S', enabled: hasSelection, desc: t('palette.slur.desc') },
+    { label: t('menu.notes.lyrics'), cmd: 'lyrics', key: 'Ctrl+L', enabled: hasDoc, checked: () => !!state.lyric, desc: t('menu.notes.lyrics.desc') },
     { sep: true },
-    { label: t('menu.insert.tie'), cmd: 'tie', key: 'T', enabled: hasDoc },
-    { label: t('menu.insert.slur'), cmd: 'slur', key: 'S', enabled: hasSelection },
-    { label: t('menu.insert.lyrics'), cmd: 'lyrics', key: 'Ctrl+L', enabled: hasDoc, checked: () => !!state.lyric },
-    { sep: true },
-    { label: t('menu.insert.removemeasure'), cmd: 'remove-measure', enabled: hasDoc },
-    { label: t('menu.insert.removestaff'), cmd: 'remove-staff', enabled: hasDoc },
+    { label: t('palette.accidentals'), enabled: hasDoc, items: ACCIDENTALS.map(([name]) =>
+      ({ label: t(`palette.${name}`), cmd: `alter:${name}`, desc: t(`palette.${name}.desc`) })) },
+    { label: t('palette.articulations'), enabled: hasDoc, items: ARTICULATIONS.map((a) =>
+      ({ label: t(`palette.${a}`), cmd: `artic:${a}`, desc: t(`palette.${a}.desc`) })) },
+    { label: t('palette.dynamics'), enabled: hasDoc, items: DYNAMICS.map((d) =>
+      ({ label: t('menu.notes.dynamic', { name: t(`palette.${d}`), mark: d }), cmd: `dyn:${d}`, desc: t(`palette.${d}.desc`) })) },
   ] },
   { label: t('menu.play'), items: [
     { label: t('menu.play.toggle'), cmd: 'play', key: 'Space', enabled: hasDoc },
@@ -2084,7 +2128,7 @@ const MENUS = [
     { label: t('menu.help.support'), cmd: 'support' },
     { sep: true },
     { label: t('menu.help.updates'), cmd: 'check-updates' },
-    { label: t('menu.help.autoupdates'), cmd: 'auto-updates', checked: () => loadPref('updates.auto', true) },
+    { label: t('menu.help.autoupdates'), cmd: 'auto-updates', checked: () => loadPref('updates.auto', true), desc: t('menu.help.autoupdates.desc') },
     { sep: true },
     { label: t('menu.help.credits'), cmd: 'credits' },
     { label: t('menu.help.about'), cmd: 'about' },

@@ -30,7 +30,9 @@ The menu bar has **File**, **Edit**, **View**, **Insert**, **Play** and **Help**
 
   **Copy version info** puts a short summary on the clipboard to paste into a bug report.
 
-The rest of the menu bar: Press **Alt** to move into it, or **Alt + first letter** (Alt+F, Alt+E, Alt+V…) to open a menu. Then use the arrows, Enter, and Esc. **Help → Keyboard Shortcuts** (F1) lists every shortcut.
+The rest of the menu bar: **File**, **Edit**, **View**, **Score** (measures, staves and their groups), **Notes** (ties, slurs, lyrics, accidentals, articulations and dynamics), **Play** and **Help**. Items marked **›** open a submenu; where an item has a current setting (the theme, the zoom), it shows on the right. Rest the pointer on an item for a moment to see what it does.
+
+Press **Alt** to move into the menu bar, or **Alt + first letter** (Alt+F, Alt+E, Alt+V…) to open a menu. Then use the arrows (**→** opens a submenu, **←** closes it), Enter, and Esc. **Help → Keyboard Shortcuts** (F1) lists every shortcut.
 
 ## Views
 
@@ -55,14 +57,14 @@ All views edit the same way. Clicking, selecting and the pointer figure work ide
 | Ctrl + = / Ctrl + − / Ctrl + 0 | Zoom in / out / back to 100% |
 
 - At **100%**, one staff space is 10 pixels in every view. In page view, a whole A4 page at 100% is about 1200 px wide.
-- **View → Fit Page Width** sizes the page to the window. Page view starts that way the first time.
+- **View → Zoom → Fit Page Width** sizes the page to the window. Page view starts that way the first time.
 - The zoom is shown at the right of the status bar. Click it to go back to 100%.
 
 **Print** (Ctrl+P) prints the page view in black on white, one sheet per page. Editing aids such as the caret, the selection and the error marks are left out. From another view, Partita switches to page view for the print and back afterwards.
 
 **Theme:** **System** (default) follows your computer's light or dark setting. **Light** or **Dark** fix it for Partita only.
 
-**Language:** Partita speaks English and Spanish. **View → Language: System** (default) follows your computer's language; choosing **English** or **Español** fixes it for Partita only. The window reloads in the new language; open scores and their undo history stay as they are.
+**Language:** Partita speaks English and Spanish. **View → Language → System** (default) follows your computer's language; choosing **English** or **Español** fixes it for Partita only. The window reloads in the new language; open scores and their undo history stay as they are.
 
 ## Entering music with the mouse
 
@@ -160,7 +162,7 @@ Lyrics are written **under the notes**, one syllable per note, so they move, cop
 To start, either:
 
 - click **under a staff**, below the note where the words begin (a dashed box shows where you would type), or
-- press **Ctrl+L** (or **Insert → Lyrics**) to start at the note next to the caret.
+- press **Ctrl+L** (or **Notes → Lyrics**) to start at the note next to the caret.
 
 A text field opens under the note. Type the syllable, then:
 
@@ -218,12 +220,12 @@ A text field opens under the note. Type the syllable, then:
 Every staff has a **name**, a **sound** and a **clef**:
 
 - The name is printed at the start of the staff, on the first system (for example *Flute*, *Violin I*, *Piano*). A score with a single staff that is still called "Staff 1" shows no name.
-- **Click the name** on the page, or use **Insert → Staff Name, Sound and Clef…** for the staff with the caret, to change all three at once (one undo step).
+- **Click the name** on the page, or use **Score → Staff → Name, Sound and Clef…** for the staff with the caret, to change all three at once (one undo step).
 - **Sound** is one of the 128 General MIDI instruments, grouped by family. Picking one proposes its usual name and clef (Viola → alto clef, Violoncello → bass clef); a name you typed yourself is kept.
-- **Insert → Staff…** adds a staff at the bottom and asks for its instrument first. Keyboards, the harp and the organ come on **two braced staves** (treble and bass) in one step; the *Staves* field lets you choose one or two. Repeat it to build an ensemble, up to a full orchestra.
+- **Score → Staff → Add…** adds a staff at the bottom and asks for its instrument first. Keyboards, the harp and the organ come on **two braced staves** (treble and bass) in one step; the *Staves* field lets you choose one or two. Repeat it to build an ensemble, up to a full orchestra.
 - **Short name**: shown on the systems after the first (*Vln. I*, *Vc.*). It follows the name and the sound until you type your own; leave it empty for no name on later systems.
 - **Transposition**: for instruments that sound in another key than written. A clarinet in B♭ is written a major second higher than it sounds, so in a concert C major score its staff shows D major. Notes are entered and shown as written, and played at concert pitch. Picking a sound sets its usual transposition (B♭ clarinet and trumpet, F horn, E♭ alto saxophone, piccolo an octave up, guitar and double bass an octave down…). Changing it rewrites the staff's notes so the music keeps sounding the same.
-- **Brackets and braces**: select some music across the staves to join, then choose **Insert → Bracket Selected Staves** (an instrument family: woodwinds, brass, strings) or **Brace Selected Staves** (one instrument on several staves: piano, harp, organ). **Remove Bracket or Brace** undoes it. Barlines run through a group, and when the staves of a brace share a name, it is shown once, centred.
+- **Brackets and braces**: select some music across the staves to join, then choose **Score → Group Staves → Bracket** (an instrument family: woodwinds, brass, strings) or **Brace** (one instrument on several staves: piano, harp, organ). **Ungroup** undoes it. Barlines run through a group, and when the staves of a brace share a name, it is shown once, centred.
 
 
 ## Crash protection
