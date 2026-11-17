@@ -2948,7 +2948,7 @@ dependencies = [
 
 [[package]]
 name = "partita"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "cpal",
  "partita-core",
@@ -2966,7 +2966,7 @@ dependencies = [
 
 [[package]]
 name = "partita-core"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "crc32fast",
  "postcard",

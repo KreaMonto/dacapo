@@ -4,6 +4,8 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-16
+
 ### Added
 - **MusicXML import and export**, to exchange scores with Finale, Sibelius, Dorico, MuseScore and other notation programs.
   - **File → Import MusicXML…** (or **Open**) reads `.musicxml`, `.xml` and compressed `.mxl` files as a new score: parts and their staves (a piano becomes two staves), clefs, keys, time signatures, notes, chords, rests, up to four voices per staff, ties, slurs, articulations, dynamics, lyrics, tempo, title and composer.
