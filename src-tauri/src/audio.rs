@@ -80,6 +80,11 @@ enum Msg {
         channel: i32,
         key: i32,
     },
+    /// Selects the instrument (General MIDI program) of a channel.
+    Program {
+        channel: i32,
+        program: i32,
+    },
 }
 
 /// A scheduled MIDI message, in samples from the start of playback.
@@ -129,6 +134,9 @@ impl Player {
                     velocity,
                 } => s.note_on(channel, key, velocity),
                 Msg::Off { channel, key } => s.note_off(channel, key),
+                Msg::Program { channel, program } => {
+                    s.process_midi_message(channel, 0xC0, program, 0)
+                }
             }
         }
     }
@@ -374,6 +382,12 @@ impl Engine {
         let end = at(timeline.end) + self.sample_rate as u64 / 4; // let the last note ring briefly
         let mut p = self.player.lock().unwrap();
         p.stop_all();
+        for (staff, &program) in timeline.instruments.iter().enumerate() {
+            p.apply(Msg::Program {
+                channel: channel_for(staff),
+                program: program as i32,
+            });
+        }
         p.queue = queue;
         p.next = 0;
         p.pos = 0;
@@ -400,13 +414,18 @@ impl Engine {
         self.player.lock().unwrap().state()
     }
 
-    /// Sounds a few keys briefly (feedback while entering notes).
-    pub fn preview(&self, staff: usize, keys: &[u8]) {
+    /// Sounds a few keys briefly with the staff's instrument (feedback
+    /// while entering notes).
+    pub fn preview(&self, staff: usize, instrument: u8, keys: &[u8]) {
         if !matches!(self.status(), SoundStatus::Ready) {
             return;
         }
         let channel = channel_for(staff);
         let mut p = self.player.lock().unwrap();
+        p.apply(Msg::Program {
+            channel,
+            program: instrument as i32,
+        });
         let off_at = p.clock + (self.sample_rate as u64 * 45 / 100);
         for &k in keys {
             let key = k as i32;

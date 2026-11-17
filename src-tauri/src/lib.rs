@@ -17,6 +17,7 @@ use partita_core::model::{
     Articulation, Clef, Duration, Dynamic, Issue, KeySignature, LyricJoin, Metadata, Score, Step,
     TimeSignature,
 };
+use partita_core::musicxml;
 use partita_core::recovery::{Recoverable, RecoveryStore};
 use partita_core::session::{now_ms, Session};
 use serde::{Deserialize, Serialize};
@@ -195,8 +196,13 @@ enum Action {
     Redo,
     InsertMeasure,
     RemoveMeasure,
+    /// Adds a staff at the bottom. Without a name it is "Staff N".
     AddStaff {
         clef: Clef,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        instrument: u8,
     },
     RemoveStaff,
     SetClef {
@@ -215,6 +221,13 @@ enum Action {
     },
     SetTempo {
         bpm: u16,
+    },
+    /// Name, playback instrument (General MIDI program) and clef of a staff.
+    SetStaff {
+        staff: usize,
+        name: String,
+        instrument: u8,
+        clef: Clef,
     },
 }
 
@@ -270,6 +283,31 @@ fn open_document(state: State<AppState>, path: String) -> Result<serde_json::Val
     let v = view(&mut session);
     inner.sessions.push(session);
     Ok(v)
+}
+
+/// Opens a MusicXML file as a new, unsaved document. Returns the view
+/// plus `import_notes`: what had to be simplified, for the user to read.
+#[tauri::command]
+fn import_musicxml(state: State<AppState>, path: String) -> Result<serde_json::Value, String> {
+    let imported = musicxml::import_file(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    let mut inner = state.inner.lock().unwrap();
+    let mut session = start_session(&state, Document::new(imported.score))?;
+    let mut v = view(&mut session);
+    v["import_notes"] = serde_json::json!(imported.notes);
+    inner.sessions.push(session);
+    Ok(v)
+}
+
+/// Writes the document as MusicXML for other notation programs.
+#[tauri::command]
+fn export_musicxml(state: State<AppState>, id: String, path: String) -> Result<(), String> {
+    let mut path = PathBuf::from(path);
+    if path.extension().is_none() {
+        path.set_extension("musicxml");
+    }
+    let mut inner = state.inner.lock().unwrap();
+    let doc = inner.find(&id)?.doc();
+    musicxml::export_to(&path, &doc.score).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -360,9 +398,15 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::Redo => d.redo().map(|_| ()),
             Action::InsertMeasure => d.insert_measure(d.caret().measure + 1, now),
             Action::RemoveMeasure => d.remove_measure(d.caret().measure, now),
-            Action::AddStaff { clef } => {
-                let name = format!("Staff {}", d.score.staves.len() + 1);
-                d.add_staff(name, clef, now)
+            Action::AddStaff {
+                clef,
+                name,
+                instrument,
+            } => {
+                let name = name
+                    .filter(|n| !n.trim().is_empty())
+                    .unwrap_or_else(|| format!("Staff {}", d.score.staves.len() + 1));
+                d.add_instrument_staff(name, clef, instrument, now)
             }
             Action::RemoveStaff => d.remove_staff(d.caret().staff, now),
             Action::SetClef { clef } => d.set_clef(d.caret().staff, clef, now),
@@ -379,6 +423,12 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
                 d.set_metadata(Metadata { title, composer }, now)
             }
             Action::SetTempo { bpm } => d.set_tempo(bpm, now),
+            Action::SetStaff {
+                staff,
+                name,
+                instrument,
+                clef,
+            } => d.set_staff_properties(staff, name, instrument, clef, now),
         };
         r.map_err(|e| e.to_string())
     });
@@ -395,7 +445,8 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
                 .iter()
                 .map(|p| p.midi().clamp(0, 127) as u8)
                 .collect();
-            state.audio.preview(c.staff, &keys);
+            let instrument = d.score.staves.get(c.staff).map_or(0, |s| s.instrument);
+            state.audio.preview(c.staff, instrument, &keys);
         }
     }
     if let Some(c) = copied {
@@ -840,6 +891,8 @@ pub fn run() {
             list_documents,
             new_document,
             open_document,
+            import_musicxml,
+            export_musicxml,
             get_document,
             edit,
             save_document,

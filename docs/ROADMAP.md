@@ -14,7 +14,7 @@ This document tracks the development goals and major stages toward a complete op
 - [x] Basic SVG rendering: clefs, key and time signatures, notes, rests, accidentals, ledger lines.
 - [x] Keyboard note entry and editing shortcuts.
 - [ ] First run on Windows (blocked by Smart App Control on the main development machine; see INSTALLATION.md).
-- [ ] Basic MusicXML export.
+- [x] Basic MusicXML export.
 
 ## Phase 2: Interactive editing
 
@@ -50,7 +50,7 @@ This document tracks the development goals and major stages toward a complete op
 
 ## Phase 3: Export and formats
 
-- [ ] MusicXML import.
+- [x] MusicXML import (`.musicxml`, `.xml`, `.mxl`). Next: tuplets, grace notes and clef changes, once the model has them.
 - [ ] PDF export with page layout.
 - [ ] Print.
 - [ ] Recent files list and file association for `.partita`.
@@ -62,12 +62,15 @@ This document tracks the development goals and major stages toward a complete op
 - [x] Notes sound while entering them.
 - [x] Tempo per score; ties, articulations, slurs and dynamics affect playback.
 - [ ] Metronome / count-in.
-- [ ] Instrument per staff (General MIDI programs) and volume/pan per staff.
+- [x] Instrument per staff (General MIDI programs).
+- [ ] Volume and pan per staff.
 - [ ] Fermatas and tempo changes inside the score.
 - [ ] Choose another SoundFont (.sf2) in the settings.
 - [ ] Verify the downloaded SoundFont with a pinned SHA-256 (today: exact size + RIFF/sfbk signature).
 - [ ] MIDI input (step-time and real-time entry).
-- [ ] Multi-instrument support with instrument names and transposing instruments.
+- [x] Instrument names at the start of the staff.
+- [ ] Short names on later systems (Vln. I, Vc.), brackets and braces for instrument groups.
+- [ ] Transposing instruments (clarinet in B♭, horn in F).
 
 ## Phase 5: UX and collaboration
 

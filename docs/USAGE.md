@@ -5,7 +5,9 @@ Partita is designed to feel like a word processor whose "text" is music. A blink
 ## Documents
 
 - **New** (Ctrl+N) opens a new tab with an empty 8-measure score.
-- **Open** (Ctrl+O) loads a `.partita` file.
+- **Open** (Ctrl+O) loads a `.partita` file (or a `.dacapo` file from before the project was renamed). It also opens MusicXML files, like **Import MusicXML**.
+- **Import MusicXML…** (File menu) opens a score from another notation program (`.musicxml`, `.xml` or compressed `.mxl`) as a new, unsaved score. What Partita cannot show yet is simplified, and a message lists it: tuplets keep their written values, grace notes are left out, voices beyond four per staff are dropped, and each staff keeps the clef it starts with.
+- **Export MusicXML…** (File menu) saves the score as MusicXML for Finale, Sibelius, Dorico, MuseScore and others: one part per staff, with its name and instrument.
 - **Save** (Ctrl+S) saves the document. **Save As** is Ctrl+Shift+S.
 - **Close tab** is Ctrl+W, and **next/previous tab** is Ctrl+Tab and Ctrl+Shift+Tab.
 - Edit the **title** and **composer** directly on the page.
@@ -109,7 +111,7 @@ How the score is played:
 - **Ties** sustain the note, including across barlines.
 - **Staccato** plays half the value and **staccatissimo** a quarter. **Tenuto**, **slurs** and tied notes are played full length. Other notes play slightly detached.
 - **Dynamics** set the loudness from that note on. **sfz** affects only its note, and **fp** plays forte then piano. **Accents** and **marcato** add emphasis.
-- Every staff plays piano for now. Choosing an instrument per staff is on the roadmap.
+- **Each staff plays its own instrument** (see *Staves and instruments*). Notes you enter sound with it too.
 
 ## Beams
 
@@ -208,6 +210,15 @@ A text field opens under the note. Type the syllable, then:
 - **Key** and **Time**: apply from the caret's measure until the next change. For Time, type something like `3/4` and press Enter.
 - **+ Measure / − Measure**: insert after, or delete, the current measure.
 - **+ Staff / − Staff**: add a staff at the bottom, or delete the current staff.
+
+## Staves and instruments
+
+Every staff has a **name**, a **sound** and a **clef**:
+
+- The name is printed at the start of the staff, on the first system (for example *Flute*, *Violin I*, *Piano*). A score with a single staff that is still called "Staff 1" shows no name.
+- **Click the name** on the page, or use **Insert → Staff Name, Sound and Clef…** for the staff with the caret, to change all three at once (one undo step).
+- **Sound** is one of the 128 General MIDI instruments, grouped by family. Picking one proposes its usual name and clef (Viola → alto clef, Violoncello → bass clef); a name you typed yourself is kept.
+- **Insert → Staff…** adds a staff at the bottom and asks for its instrument first. Repeat it to build an ensemble, up to a full orchestra.
 
 
 ## Crash protection

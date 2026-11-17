@@ -356,6 +356,14 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .score .tsig, .score .mark { text-anchor: middle; }
 .score .ev .arc { fill: currentColor; }
 .score .mnum { font-size: 10px; fill: var(--muted); }
+/* Staff dialog (name, sound, clef). */
+.staff-form { display: grid; gap: 12px; min-width: min(360px, 80vw); }
+.staff-form label { display: grid; gap: 4px; font-weight: 600; }
+.staff-form input, .staff-form select { font: inherit; font-weight: normal; padding: 5px 8px; border: 1px solid var(--chrome-border); border-radius: 6px; background: var(--button); color: var(--text); }
+/* Staff names: click to change the name, sound or clef. */
+.score .sname { cursor: pointer; }
+.score .sname:hover { fill: var(--accent); text-decoration: underline; }
+@media print { .score .sname:hover { fill: var(--ink); text-decoration: none; } }
 /* Lyrics: font and size are set in render.js (LYRIC_FONT, LYRIC_PX). */
 .score .lyric-line { stroke: var(--ink); stroke-width: 1; }
 .score .lyric-hover { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; opacity: 0.7; pointer-events: none; }

@@ -46,6 +46,8 @@ pub struct Timeline {
     pub end: u64,
     /// Quarter notes per minute.
     pub tempo: u16,
+    /// General MIDI program of each staff.
+    pub instruments: Vec<u8>,
 }
 
 impl Timeline {
@@ -238,6 +240,7 @@ pub fn build(score: &Score) -> Timeline {
         measure_starts,
         end: t,
         tempo: score.tempo,
+        instruments: score.staves.iter().map(|s| s.instrument).collect(),
     }
 }
 

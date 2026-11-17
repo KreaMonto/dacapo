@@ -47,6 +47,18 @@ function textWidth(text) {
   widthCache.set(text, w);
   return w;
 }
+/**
+ * The name shown at the start of a staff, or '' for none: a single staff
+ * with the automatic name ("Staff 1") shows nothing, as in a lead sheet.
+ */
+export function shownStaffName(score, staff) {
+  const name = (score.staves[staff].name || '').trim();
+  if (!name) return '';
+  if (score.staves.length === 1 && /^Staff \d+$/.test(name)) return '';
+  return name;
+}
+const NAME_GAP = 1.4 * SP; // between a staff name and the start of the staff
+
 const syllableAt = (e, verse) => (e.lyrics && e.lyrics[verse] && e.lyrics[verse].text ? e.lyrics[verse] : null);
 
 // ----- paper (page view) -----------------------------------------------------
@@ -257,13 +269,18 @@ export function layout(view, width, opts = {}) {
   const byMeasure = [];
   for (const ms of measures) for (let m = ms.m; m <= ms.mEnd; m++) byMeasure[m] = ms;
 
+  // Staff names sit left of the first system, which is indented for them.
+  const names = score.staves.map((_, st) => shownStaffName(score, st));
+  const nameIndent = names.some(Boolean) ? Math.max(...names.map((n) => (n ? textWidth(n) : 0))) + NAME_GAP : 0;
+
   const keyWidth = (f) => Math.abs(f) * 1.05 * SP;
   const systems = [];
   let sys = null;
   for (const ms of measures) {
     const startPrefix = 0.6 * SP + CLEF_COL + keyWidth(ms.attrs.key.fifths) + (ms.timeChange ? 2.8 * SP : 0) + SP;
     const midPrefix = (ms.keyChange ? keyWidth(ms.attrs.key.fifths) + SP : 0) + (ms.timeChange ? 2.8 * SP : 0);
-    const fitsMid = sys && sys.width + midPrefix + ms.content <= avail;
+    const room = avail - (systems.length === 1 ? nameIndent : 0);
+    const fitsMid = sys && sys.width + midPrefix + ms.content <= room;
     if (!fitsMid) {
       sys = { measures: [], width: 0 };
       systems.push(sys);
@@ -343,8 +360,10 @@ export function layout(view, width, opts = {}) {
     y += s.height + SYSTEM_GAP;
     // Justify every system but the last (unless it is already nearly full).
     const last = i === systems.length - 1;
-    const stretch = Number.isFinite(avail) && (!last || s.width > avail * 0.75) ? (avail - s.width) / s.measures.length : 0;
-    let x = marginX;
+    const indent = i === 0 ? nameIndent : 0;
+    const room = avail - indent;
+    const stretch = Number.isFinite(room) && (!last || s.width > room * 0.75) ? (room - s.width) / s.measures.length : 0;
+    let x = marginX + indent;
     for (const ms of s.measures) {
       ms.w += Math.max(0, stretch);
       ms.x = x;
@@ -353,11 +372,11 @@ export function layout(view, width, opts = {}) {
       ms.contentW = ms.w - ms.prefix - 2.6 * SP;
       x += ms.w;
     }
-    s.x0 = marginX;
-    s.width = x - marginX;
+    s.x0 = marginX + indent;
+    s.width = x - s.x0;
   });
 
-  const contentWidth = Math.max(...systems.map((s) => s.width), 0) + 2 * marginX;
+  const contentWidth = Math.max(...systems.map((s) => s.x0 - marginX + s.width), 0) + 2 * marginX;
   const totalWidth = geo ? geo.w : mode === 'continuous' ? Math.max(width, contentWidth) : Math.max(width, avail + 2 * marginX);
   // Below the last staff: room for low notes' stems and beams.
   const totalHeight = geo ? (page + 1) * geo.h : y - SYSTEM_GAP + 2 * MARGIN_TOP;
@@ -367,7 +386,7 @@ export function layout(view, width, opts = {}) {
     : [{ index: 0, x: 0, y: 0, w: totalWidth, h: totalHeight }];
 
   return {
-    systems, measures, byMeasure, nStaves, pages, mode, geo, marginX, verses,
+    systems, measures, byMeasure, nStaves, pages, mode, geo, marginX, verses, names,
     width: totalWidth,
     height: totalHeight,
     staffTop: (ms, staff) => ms.system.y + ms.system.staffY[staff],
@@ -473,6 +492,14 @@ export function renderScore(view, width, opts = {}) {
     const xEnd = s.x0 + s.width;
     // Measure number.
     push(`<text class="mnum" x="${s.x0}" y="${s.y - 1.6 * SP}">${first.m + 1}</text>`);
+    // Staff names on the first system; click one to edit the staff.
+    if (s.index === 0) {
+      lay.names.forEach((name, st) => {
+        if (!name) return;
+        const mid = s.y + s.staffY[st] + 2 * SP;
+        push(`<text class="sname" data-staff="${st}" font-family='${LYRIC_FONT}' font-size="${LYRIC_PX}" text-anchor="end" dominant-baseline="central" x="${s.x0 - NAME_GAP}" y="${mid}">${esc(name)}</text>`);
+      });
+    }
     // System bracket.
     if (lay.nStaves > 1) {
       push(`<line class="bar" x1="${s.x0}" x2="${s.x0}" y1="${s.y}" y2="${s.y + s.span}"/>`);

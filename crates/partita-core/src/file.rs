@@ -31,7 +31,9 @@ pub const FILE_EXTENSION: &str = "partita";
 ///   as version 4, so everything else still opens in older versions.
 /// - 5: lyrics on events. As with version 4, only files that have lyrics
 ///   are written as version 5.
-pub const FORMAT_VERSION: u32 = 5;
+/// - 6: an instrument per staff. Only files where a staff plays something
+///   other than the piano are written as version 6.
+pub const FORMAT_VERSION: u32 = 6;
 const FORMAT_MARKER: &str = "partita";
 /// Marker written by Da Capo (the project's former name) up to 0.2.2.
 const LEGACY_FORMAT_MARKER: &str = "dacapo";
@@ -77,7 +79,9 @@ fn required_version(score: &Score) -> u32 {
                 .any(|m| m.voices.iter().any(|v| v.iter().any(test)))
         })
     };
-    if any_event(|e| e.has_lyrics()) {
+    if score.staves.iter().any(|s| s.instrument != 0) {
+        6
+    } else if any_event(|e| e.has_lyrics()) {
         5
     } else if any_event(|e| e.duration.base.is_extended()) {
         4
@@ -277,6 +281,26 @@ mod tests {
         event.as_object_mut().unwrap().remove("lyrics");
         let old = from_bytes(&serde_json::to_vec(&v).unwrap()).unwrap();
         assert!(old.staves[0].measures[0].voices[0][0].lyrics.is_empty());
+    }
+
+    #[test]
+    fn instruments_need_format_6_only_when_used() {
+        let mut score = Score::new("Band", 1);
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format_version"], 3);
+        score.staves[0].instrument = 73; // flute
+        let bytes = to_bytes(&score).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(v["format_version"], 6);
+        assert_eq!(from_bytes(&bytes).unwrap(), score);
+        // Files without the field (older versions) play the piano.
+        let mut v = v;
+        v["score"]["staves"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("instrument");
+        let old = from_bytes(&serde_json::to_vec(&v).unwrap()).unwrap();
+        assert_eq!(old.staves[0].instrument, 0);
     }
 
     #[test]

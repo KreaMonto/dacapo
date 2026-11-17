@@ -13,6 +13,9 @@ postcard.workspace = true
 crc32fast.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+# MusicXML import: XML parsing (MIT/Apache-2.0) and .mxl archives (MIT).
+roxmltree = "0.20"
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [dev-dependencies]
 tempfile = "3"

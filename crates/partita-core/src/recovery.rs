@@ -41,23 +41,40 @@ pub const DEFAULT_SYNC_INTERVAL: Duration = Duration::from_millis(500);
 // types must bump these: data from an older build is then reported as
 // unreadable instead of being misread.
 //
-// Version 4 added lyrics to events. Version 3 data (Da Capo 0.2.0 and
-// 0.2.1) is still read: updating the program must not lose the unsaved work
-// it promises to give back after the restart. It is never written.
-const JOURNAL_MAGIC: &[u8; 4] = b"DCJ\x04";
-const SNAPSHOT_MAGIC: &[u8; 4] = b"DCS\x04";
-const SNAPSHOT_VERSION: u32 = 4;
-const JOURNAL_MAGIC_V3: &[u8; 4] = b"DCJ\x03";
-const SNAPSHOT_MAGIC_V3: &[u8; 4] = b"DCS\x03";
-const SNAPSHOT_VERSION_V3: u32 = 3;
+// Version 4 added lyrics to events, version 5 an instrument to staves.
+// Older data (version 3: Da Capo 0.2.0 and 0.2.1; version 4: Da Capo
+// 0.2.2) is still read: updating the program must not lose the unsaved
+// work it promises to give back after the restart. It is never written.
+// (The "DC" in the magic bytes is from the project's former name.)
+const FORMAT_VERSION: u32 = 5;
+const READABLE_VERSIONS: [u32; 3] = [5, 4, 3];
 
-/// Decodes binary data written by the current version, or by version 3
-/// when `v3` is set.
-fn decode<T: serde::de::DeserializeOwned>(payload: &[u8], v3: bool) -> Result<T, postcard::Error> {
-    if v3 {
-        crate::model::reading_pre_lyrics(|| postcard::from_bytes(payload))
-    } else {
+fn journal_magic(version: u32) -> [u8; 4] {
+    [b'D', b'C', b'J', version as u8]
+}
+
+fn snapshot_magic(version: u32) -> [u8; 4] {
+    [b'D', b'C', b'S', version as u8]
+}
+
+/// Which readable format `bytes` starts with, and the rest after the magic.
+fn strip_magic(bytes: &[u8], magic: fn(u32) -> [u8; 4]) -> Option<(u32, &[u8])> {
+    READABLE_VERSIONS.iter().find_map(|&v| {
+        bytes
+            .strip_prefix(magic(v).as_slice())
+            .map(|rest| (v, rest))
+    })
+}
+
+/// Decodes binary data written in format `version`.
+fn decode<T: serde::de::DeserializeOwned>(
+    payload: &[u8],
+    version: u32,
+) -> Result<T, postcard::Error> {
+    if version == FORMAT_VERSION {
         postcard::from_bytes(payload)
+    } else {
+        crate::model::reading_legacy(version, || postcard::from_bytes(payload))
     }
 }
 
@@ -133,11 +150,7 @@ pub fn encode_record(record: &JournalRecord) -> Result<Vec<u8>, postcard::Error>
 /// Parses a journal file. Returns the valid records and whether trailing
 /// bytes had to be discarded (torn or corrupted write).
 pub fn decode_journal(bytes: &[u8]) -> (Vec<JournalRecord>, bool) {
-    let (mut rest, v3) = if let Some(rest) = bytes.strip_prefix(JOURNAL_MAGIC.as_slice()) {
-        (rest, false)
-    } else if let Some(rest) = bytes.strip_prefix(JOURNAL_MAGIC_V3.as_slice()) {
-        (rest, true)
-    } else {
+    let Some((version, mut rest)) = strip_magic(bytes, journal_magic) else {
         return (Vec::new(), !bytes.is_empty());
     };
     let mut records = Vec::new();
@@ -145,7 +158,7 @@ pub fn decode_journal(bytes: &[u8]) -> (Vec<JournalRecord>, bool) {
         let Some((payload, used)) = unframe(rest) else {
             return (records, true);
         };
-        match decode(payload, v3) {
+        match decode(payload, version) {
             Ok(r) => records.push(r),
             Err(_) => return (records, true),
         }
@@ -156,31 +169,20 @@ pub fn decode_journal(bytes: &[u8]) -> (Vec<JournalRecord>, bool) {
 
 fn encode_snapshot(seq: u64, document: &Document) -> Result<Vec<u8>, postcard::Error> {
     let payload = postcard::to_stdvec(&Snapshot {
-        version: SNAPSHOT_VERSION,
+        version: FORMAT_VERSION,
         seq,
         document: document.clone(),
     })?;
-    let mut out = SNAPSHOT_MAGIC.to_vec();
+    let mut out = snapshot_magic(FORMAT_VERSION).to_vec();
     out.extend(frame(&payload));
     Ok(out)
 }
 
 fn decode_snapshot(bytes: &[u8]) -> Result<Snapshot, RecoveryError> {
-    let (rest, v3) = if let Some(rest) = bytes.strip_prefix(SNAPSHOT_MAGIC.as_slice()) {
-        (rest, false)
-    } else if let Some(rest) = bytes.strip_prefix(SNAPSHOT_MAGIC_V3.as_slice()) {
-        (rest, true)
-    } else {
-        return Err(RecoveryError::BadSnapshot);
-    };
+    let (version, rest) = strip_magic(bytes, snapshot_magic).ok_or(RecoveryError::BadSnapshot)?;
     let (payload, _) = unframe(rest).ok_or(RecoveryError::BadSnapshot)?;
-    let snap: Snapshot = decode(payload, v3).map_err(|_| RecoveryError::BadSnapshot)?;
-    let expected = if v3 {
-        SNAPSHOT_VERSION_V3
-    } else {
-        SNAPSHOT_VERSION
-    };
-    if snap.version != expected {
+    let snap: Snapshot = decode(payload, version).map_err(|_| RecoveryError::BadSnapshot)?;
+    if snap.version != version {
         return Err(RecoveryError::BadSnapshot);
     }
     Ok(snap)
@@ -188,7 +190,7 @@ fn decode_snapshot(bytes: &[u8]) -> Result<Snapshot, RecoveryError> {
 
 fn reset_journal(path: &Path) -> io::Result<File> {
     let mut f = File::create(path)?;
-    f.write_all(JOURNAL_MAGIC)?;
+    f.write_all(&journal_magic(FORMAT_VERSION))?;
     f.sync_all()?;
     Ok(f)
 }
@@ -575,7 +577,7 @@ mod tests {
 
     #[test]
     fn journal_survives_torn_tail() {
-        let mut bytes = JOURNAL_MAGIC.to_vec();
+        let mut bytes = journal_magic(FORMAT_VERSION).to_vec();
         for seq in 1..=3 {
             bytes.extend(encode_record(&record(seq)).unwrap());
         }
@@ -591,7 +593,7 @@ mod tests {
 
         // Bit flip in the second record: it and everything after is dropped.
         let mut flipped = bytes.clone();
-        let second = JOURNAL_MAGIC.len() + encode_record(&record(1)).unwrap().len() + 10;
+        let second = 4 + encode_record(&record(1)).unwrap().len() + 10;
         flipped[second] ^= 0xFF;
         let (records, damaged) = decode_journal(&flipped);
         assert_eq!(records.len(), 1);

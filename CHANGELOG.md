@@ -4,6 +4,17 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 
 ## [Unreleased]
 
+### Added
+- **MusicXML import and export**, to exchange scores with Finale, Sibelius, Dorico, MuseScore and other notation programs.
+  - **File → Import MusicXML…** (or **Open**) reads `.musicxml`, `.xml` and compressed `.mxl` files as a new score: parts and their staves (a piano becomes two staves), clefs, keys, time signatures, notes, chords, rests, up to four voices per staff, ties, slurs, articulations, dynamics, lyrics, tempo, title and composer.
+  - What Partita cannot show yet is simplified, and a message says what: tuplets keep their written values, grace notes are left out, and only the first clef of each staff is kept.
+  - **File → Export MusicXML…** writes the score as MusicXML 4.0, one part per staff, with each staff's name and instrument.
+- **An instrument for every staff**, to write for any ensemble up to a full orchestra.
+  - Each staff plays its own sound, chosen from the 128 General MIDI instruments of FluidR3 GM (strings, woodwinds, brass, percussion, keyboards, voices…). Notes you enter sound with that instrument too.
+  - The staff's name is printed at its start, on the first system. Click it (or use **Insert → Staff Name, Sound and Clef…**) to change the name, the sound and the clef in one step. Picking a sound proposes its usual name and clef, for example *Violoncello* in bass clef.
+  - **Insert → Staff…** asks for the instrument of the new staff.
+  - Scores where a staff plays something other than the piano are saved as file format 6, which Da Capo 0.2.2 and older cannot open. Crash-recovery data is now format 5; data left by 0.2.0 to 0.2.2 is still read, so unsaved work survives the update.
+
 ### Changed
 - **Da Capo is now Partita.** Another free notation editor was already called DaCapo Editor, so the project has a new name, a new home at https://github.com/partita-notation/partita and a new website at https://partita-notation.github.io. It comes with a new icon: a Baroque letter P in gold on dark walnut.
   - Scores are now saved as `.partita`. Files saved as `.dacapo` still open (and open with a double-click), and keep their name when saved again.
