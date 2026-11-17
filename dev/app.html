@@ -202,6 +202,18 @@
         snapshot();
         e.kind.chord.pitches.forEach((p) => { p.alter = a; });
       },
+      set_staff({ staff, name, instrument, clef }) {
+        snapshot();
+        Object.assign(view.score.staves[staff], { name, instrument, clef });
+      },
+      add_staff({ clef, name, instrument }) {
+        snapshot();
+        const len = view.score.measures.length;
+        view.score.staves.push({
+          id: nextId++, name: name || `Staff ${view.score.staves.length + 1}`, clef, instrument: instrument || 0,
+          measures: Array.from({ length: len }, () => ({ voices: [[], [], [], []] })),
+        });
+      },
       undo() {
         const s = undo.pop();
         if (s) [view.score, view.caret] = JSON.parse(s);

@@ -82,6 +82,12 @@ pub enum Op {
     SetTempo {
         bpm: u16,
     },
+    /// Playback sound of a staff (General MIDI program). Added last so
+    /// recovery data from older versions keeps its variant numbers.
+    SetStaffInstrument {
+        staff: usize,
+        instrument: u8,
+    },
 }
 
 /// Why an op could not be applied. The score is left untouched.
@@ -293,6 +299,17 @@ impl Op {
                 Ok(Op::SetStaffName {
                     staff: *staff,
                     name: old,
+                })
+            }
+            Op::SetStaffInstrument { staff, instrument } => {
+                let s = score
+                    .staves
+                    .get_mut(*staff)
+                    .ok_or(OpError::StaffIndex(*staff))?;
+                let old = std::mem::replace(&mut s.instrument, (*instrument).min(127));
+                Ok(Op::SetStaffInstrument {
+                    staff: *staff,
+                    instrument: old,
                 })
             }
             Op::SetMetadata { metadata } => {

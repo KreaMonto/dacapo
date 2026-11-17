@@ -8,6 +8,7 @@
 //! - [`history`]: undo/redo with word-processor style grouping.
 //! - [`document`]: an open document and every editing command.
 //! - [`file`]: the `.partita` file format and atomic saving.
+//! - [`musicxml`]: MusicXML import and export.
 //! - [`recovery`]: snapshot + journal crash recovery.
 //! - [`session`]: a document wired to its recovery journal.
 
@@ -16,6 +17,7 @@ pub mod document;
 pub mod file;
 pub mod history;
 pub mod model;
+pub mod musicxml;
 pub mod ops;
 pub mod playback;
 pub mod recovery;

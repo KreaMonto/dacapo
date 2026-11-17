@@ -31,3 +31,27 @@ fn reads_recovery_data_from_0_2_1() {
     assert!(loaded.document.can_redo());
     assert!(loaded.document.is_dirty());
 }
+
+/// `recovery-0.2.2` was written by Da Capo 0.2.2 (binary format 4, before
+/// staff instruments): a snapshot with two staves, and a journal with
+/// notes, a lyric, a dynamic, a staff added and renamed, and a note that
+/// is undone. `expected.partita` is the score that session held.
+#[test]
+fn reads_recovery_data_from_0_2_2() {
+    let dir = fixture("recovery-0.2.2");
+    let loaded = load_dir(&dir).expect("0.2.2 recovery data loads");
+    assert!(!loaded.truncated, "no record was dropped");
+    assert!(loaded.replayed > 0, "the journal was replayed");
+
+    let expected = file::load_score(&dir.join("expected.partita")).unwrap();
+    assert_eq!(loaded.document.score, expected);
+    assert_eq!(loaded.document.score.staves.len(), 3);
+    assert!(loaded
+        .document
+        .score
+        .staves
+        .iter()
+        .all(|s| s.instrument == 0));
+    assert!(loaded.document.can_undo());
+    assert!(loaded.document.can_redo());
+}

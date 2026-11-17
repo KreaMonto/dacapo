@@ -7,14 +7,23 @@ import {
 } from './render.js';
 import { installTooltips } from './tooltip.js';
 import { installMenuBar } from './menu.js';
+import { INSTRUMENTS, instrumentByProgram, instrumentOptions } from './instruments.js';
 
 const tauri = window.__TAURI__;
 const invoke = tauri.core.invoke;
 const dialog = tauri.dialog;
 
 const FILTERS = [{ name: 'Partita score', extensions: ['partita'] }];
-// Opening also accepts scores saved under the project's former name, Da Capo.
-const OPEN_FILTERS = [{ name: 'Partita score', extensions: ['partita', 'dacapo'] }];
+// Opening also accepts scores saved under the project's former name, Da Capo,
+// and MusicXML from other notation programs (imported as a new score).
+const MUSICXML_EXTENSIONS = ['musicxml', 'mxl', 'xml'];
+const OPEN_FILTERS = [
+  { name: 'All scores', extensions: ['partita', 'dacapo', ...MUSICXML_EXTENSIONS] },
+  { name: 'Partita score', extensions: ['partita', 'dacapo'] },
+  { name: 'MusicXML', extensions: MUSICXML_EXTENSIONS },
+];
+const MUSICXML_FILTERS = [{ name: 'MusicXML', extensions: ['musicxml'] }];
+const isMusicXml = (path) => MUSICXML_EXTENSIONS.includes(String(path).split('.').pop().toLowerCase());
 const KEY_NAMES = ['C♭', 'G♭', 'D♭', 'A♭', 'E♭', 'B♭', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F♯', 'C♯'];
 const DURATION_KEYS = { 1: 'SixtyFourth', 2: 'ThirtySecond', 3: 'Sixteenth', 4: 'Eighth', 5: 'Quarter', 6: 'Half', 7: 'Whole' };
 // Only with View → Breve and 128th Notes on.
@@ -104,9 +113,91 @@ async function newDocument() {
 async function openDocument() {
   const path = await dialog.open({ multiple: false, filters: OPEN_FILTERS });
   if (!path) return;
+  if (isMusicXml(path)) return importMusicXml(path);
   const v = adopt(await invoke('open_document', { path }));
   state.active = v.id;
   render();
+}
+
+/** Opens a MusicXML file as a new score and says what was simplified. */
+async function importMusicXml(path) {
+  const v = adopt(await invoke('import_musicxml', { path }));
+  state.active = v.id;
+  render();
+  const notes = v.import_notes || [];
+  if (notes.length) {
+    await choiceDialog('Imported with a few changes',
+      `<p>Partita opened the score. A few things it cannot show yet were simplified:</p><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`,
+      [{ spacer: true }, { label: 'OK', value: 'ok', primary: true }]);
+  }
+}
+
+async function importMusicXmlFromDialog() {
+  const path = await dialog.open({ multiple: false, filters: [{ name: 'MusicXML', extensions: MUSICXML_EXTENSIONS }] });
+  if (path) await importMusicXml(path);
+}
+
+/** Saves the active score as MusicXML, for other notation programs. */
+async function exportMusicXml() {
+  const doc = active();
+  if (!doc) return;
+  const path = await dialog.save({ filters: MUSICXML_FILTERS, defaultPath: `${doc.name}.musicxml` });
+  if (!path) return;
+  await invoke('export_musicxml', { id: doc.id, path });
+}
+
+const CLEF_LABELS = { treble: 'Treble', bass: 'Bass', alto: 'Alto', tenor: 'Tenor' };
+
+/**
+ * Name, sound and clef of a staff. With `staff` null it adds a new staff.
+ * Picking a sound proposes its usual name and clef, unless the name was
+ * already changed by hand.
+ */
+async function staffDialog(staff) {
+  const doc = active();
+  if (!doc) return;
+  const adding = staff === null;
+  const current = adding
+    ? { name: '', instrument: 0, clef: 'treble' }
+    : doc.score.staves[staff];
+  if (!current) return;
+  const body = `<form class="staff-form" id="staff-form">
+    <label>Name at the start of the staff
+      <input id="staff-name" type="text" maxlength="40" value="${esc(current.name)}" placeholder="${adding ? 'e.g. Violin I' : ''}" autocomplete="off"></label>
+    <label>Sound
+      <select id="staff-sound">${instrumentOptions(current.instrument || 0, esc)}</select></label>
+    <label>Clef
+      <select id="staff-clef">${Object.entries(CLEF_LABELS).map(([v, l]) =>
+        `<option value="${v}"${v === current.clef ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+  </form>`;
+  const pending = choiceDialog(adding ? 'Add a staff' : 'Staff', body, [
+    { spacer: true },
+    { label: 'Cancel', value: 'cancel' },
+    { label: adding ? 'Add Staff' : 'OK', value: 'ok', primary: true },
+  ]);
+  const name = $('staff-name');
+  const sound = $('staff-sound');
+  const clef = $('staff-clef');
+  // The name follows the sound until the user types one.
+  let nameTouched = adding ? false : current.name !== instrumentByProgram(current.instrument || 0).name && !/^Staff \d+$/.test(current.name);
+  name.addEventListener('input', () => { nameTouched = name.value.trim() !== ''; });
+  sound.addEventListener('change', () => {
+    const inst = INSTRUMENTS[Number(sound.value)];
+    if (!nameTouched) name.value = inst.name;
+    clef.value = inst.clef;
+  });
+  $('staff-form').addEventListener('submit', (ev) => { ev.preventDefault(); $('dialog').querySelector('[data-answer="ok"]').click(); });
+  name.focus();
+  name.select();
+  const answer = await pending;
+  if (answer !== 'ok') return;
+  const instrument = Number(sound.value);
+  const chosenName = name.value.trim() || instrumentByProgram(instrument).name;
+  if (adding) {
+    await act({ type: 'add_staff', clef: clef.value, name: chosenName, instrument });
+  } else {
+    await act({ type: 'set_staff', staff, name: chosenName, instrument, clef: clef.value });
+  }
 }
 
 async function saveDocument(saveAs = false) {
@@ -667,6 +758,13 @@ function caretFromMouse(ev) {
 }
 $('score').addEventListener('mousedown', (ev) => {
   if (ev.button !== 0) return;
+  // A staff name opens that staff's name, sound and clef.
+  const name = ev.target.closest?.('.sname');
+  if (name) {
+    ev.preventDefault();
+    staffDialog(Number(name.dataset.staff));
+    return;
+  }
   if (state.mode === 'mark') {
     ev.preventDefault();
     page.focus();
@@ -1004,7 +1102,10 @@ const commands = {
   // Insert / notation
   'add-measure': () => act({ type: 'insert_measure' }),
   'remove-measure': () => act({ type: 'remove_measure' }),
-  'add-staff': () => act({ type: 'add_staff', clef: 'treble' }),
+  'add-staff': () => staffDialog(null),
+  'staff-properties': () => staffDialog(active()?.caret.staff ?? 0),
+  'import-musicxml': () => importMusicXmlFromDialog(),
+  'export-musicxml': () => exportMusicXml(),
   'remove-staff': () => act({ type: 'remove_staff' }),
   tie: () => act({ type: 'toggle_tie' }),
   slur: () => act({ type: 'toggle_slur' }),
@@ -1804,6 +1905,9 @@ const MENUS = [
     { label: 'Save', cmd: 'save', key: 'Ctrl+S', enabled: hasDoc },
     { label: 'Save As…', cmd: 'saveas', key: 'Ctrl+Shift+S', enabled: hasDoc },
     { sep: true },
+    { label: 'Import MusicXML…', cmd: 'import-musicxml' },
+    { label: 'Export MusicXML…', cmd: 'export-musicxml', enabled: hasDoc },
+    { sep: true },
     { label: 'Print…', cmd: 'print', key: 'Ctrl+P', enabled: hasDoc },
     { sep: true },
     { label: 'Close Tab', cmd: 'close', key: 'Ctrl+W', enabled: hasDoc },
@@ -1841,7 +1945,8 @@ const MENUS = [
   ] },
   { label: 'Insert', items: [
     { label: 'Measure After Current', cmd: 'add-measure', key: 'Ctrl+Enter', enabled: hasDoc },
-    { label: 'Staff', cmd: 'add-staff', enabled: hasDoc },
+    { label: 'Staff…', cmd: 'add-staff', enabled: hasDoc },
+    { label: 'Staff Name, Sound and Clef…', cmd: 'staff-properties', enabled: hasDoc },
     { sep: true },
     { label: 'Tie', cmd: 'tie', key: 'T', enabled: hasDoc },
     { label: 'Slur over Selection', cmd: 'slur', key: 'S', enabled: hasSelection },

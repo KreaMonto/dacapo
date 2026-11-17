@@ -259,6 +259,8 @@ impl Syllable {
 pub const MAX_VERSES: usize = 8;
 /// Longest syllable, in characters.
 pub const MAX_SYLLABLE_CHARS: usize = 48;
+/// Longest staff name, in characters.
+pub const MAX_STAFF_NAME_CHARS: usize = 40;
 
 /// One rhythmic event inside a voice.
 ///
@@ -267,7 +269,7 @@ pub const MAX_SYLLABLE_CHARS: usize = 48;
 /// binary recovery format needs every field to be written.)
 ///
 /// `Deserialize` is written by hand below, so that recovery data written
-/// before a field existed can still be read (see [`reading_pre_lyrics`]).
+/// before a field existed can still be read (see [`reading_legacy`]).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Event {
     pub id: EventId,
@@ -317,30 +319,36 @@ struct EventPreLyrics {
 }
 
 thread_local! {
-    static PRE_LYRICS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Binary recovery format being read; 0 means the current one.
+    static LEGACY_FORMAT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
-/// Runs `f` with events read in the binary layout used before lyrics
-/// existed (Da Capo 0.2.1 and older).
+/// Runs `f` with the document types read in the binary layout of recovery
+/// format `version`: 3 (Da Capo 0.2.0 and 0.2.1: no lyrics, no staff
+/// instruments) or 4 (Da Capo 0.2.2: no staff instruments).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
 /// the previous version must stay readable: an in-app update restarts the
 /// program and gives unsaved work back through crash recovery.
-pub(crate) fn reading_pre_lyrics<T>(f: impl FnOnce() -> T) -> T {
-    struct Restore(bool);
+pub(crate) fn reading_legacy<T>(version: u32, f: impl FnOnce() -> T) -> T {
+    struct Restore(u32);
     impl Drop for Restore {
         fn drop(&mut self) {
-            PRE_LYRICS.with(|c| c.set(self.0));
+            LEGACY_FORMAT.with(|c| c.set(self.0));
         }
     }
-    let _restore = Restore(PRE_LYRICS.with(|c| c.replace(true)));
+    let _restore = Restore(LEGACY_FORMAT.with(|c| c.replace(version)));
     f()
+}
+
+fn legacy_format() -> u32 {
+    LEGACY_FORMAT.with(|c| c.get())
 }
 
 impl<'de> Deserialize<'de> for Event {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        if PRE_LYRICS.with(|c| c.get()) {
+        if legacy_format() == 3 {
             let e = EventPreLyrics::deserialize(deserializer)?;
             return Ok(Event {
                 id: e.id,
@@ -507,13 +515,60 @@ impl Default for StaffMeasure {
 }
 
 /// A horizontal line of music for one instrument or hand.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Staff {
     pub id: StaffId,
+    /// Shown at the start of the staff (e.g. "Violin I", "Piano").
     pub name: String,
     pub clef: Clef,
+    /// Sound for playback: General MIDI program 0-127 (0 = piano).
+    #[serde(default)]
+    pub instrument: u8,
     /// One entry per score measure.
     pub measures: Vec<StaffMeasure>,
+}
+
+#[derive(Deserialize)]
+struct StaffFields {
+    id: StaffId,
+    name: String,
+    clef: Clef,
+    #[serde(default)]
+    instrument: u8,
+    measures: Vec<StaffMeasure>,
+}
+
+/// [`Staff`] as written to recovery data before instruments existed
+/// (Da Capo 0.2.2 and older).
+#[derive(Deserialize)]
+struct StaffPreInstrument {
+    id: StaffId,
+    name: String,
+    clef: Clef,
+    measures: Vec<StaffMeasure>,
+}
+
+impl<'de> Deserialize<'de> for Staff {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        if matches!(legacy_format(), 3 | 4) {
+            let s = StaffPreInstrument::deserialize(deserializer)?;
+            return Ok(Staff {
+                id: s.id,
+                name: s.name,
+                clef: s.clef,
+                instrument: 0,
+                measures: s.measures,
+            });
+        }
+        let s = StaffFields::deserialize(deserializer)?;
+        Ok(Staff {
+            id: s.id,
+            name: s.name,
+            clef: s.clef,
+            instrument: s.instrument.min(127),
+            measures: s.measures,
+        })
+    }
 }
 
 /// Score-level metadata.
@@ -628,6 +683,7 @@ impl Score {
             id: self.alloc_id(),
             name: name.into(),
             clef,
+            instrument: 0,
             measures: vec![StaffMeasure::default(); self.measures.len()],
         }
     }

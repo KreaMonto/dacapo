@@ -17,7 +17,7 @@ use crate::history::{History, Transaction, TxKind};
 use crate::model::{
     is_measure_rest, Articulation, Clef, Duration, Dynamic, Event, EventId, EventKind,
     KeySignature, LyricJoin, Metadata, Pitch, Score, Slur, Step, Syllable, TimeSignature,
-    MAX_SYLLABLE_CHARS, MAX_VERSES,
+    MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS, MAX_VERSES,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
 
@@ -1290,6 +1290,30 @@ impl Document {
         self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
     }
 
+    /// Adds a staff at the bottom that plays `instrument` (General MIDI).
+    pub fn add_instrument_staff(
+        &mut self,
+        name: impl Into<String>,
+        clef: Clef,
+        instrument: u8,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let name: String = name
+            .into()
+            .trim()
+            .chars()
+            .take(MAX_STAFF_NAME_CHARS)
+            .collect();
+        let mut staff = self.score.blank_staff(name, clef);
+        staff.instrument = instrument.min(127);
+        let op = Op::InsertStaff {
+            index: self.score.staves.len(),
+            staff,
+        };
+        let caret = self.caret;
+        self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
+    }
+
     pub fn remove_staff(&mut self, index: usize, now_ms: u64) -> Result<(), EditError> {
         let caret = self.caret;
         self.commit(
@@ -1310,6 +1334,40 @@ impl Document {
             now_ms,
             false,
         )
+    }
+
+    /// Sets a staff's name, playback instrument and clef in one undo step.
+    /// Only what changes is recorded.
+    pub fn set_staff_properties(
+        &mut self,
+        staff: usize,
+        name: String,
+        instrument: u8,
+        clef: Clef,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let Some(current) = self.score.staves.get(staff) else {
+            return Err(crate::ops::OpError::StaffIndex(staff).into());
+        };
+        let name: String = name.trim().chars().take(MAX_STAFF_NAME_CHARS).collect();
+        let mut ops = Vec::new();
+        if current.name != name {
+            ops.push(Op::SetStaffName { staff, name });
+        }
+        if current.instrument != instrument {
+            ops.push(Op::SetStaffInstrument {
+                staff,
+                instrument: instrument.min(127),
+            });
+        }
+        if current.clef != clef {
+            ops.push(Op::SetStaffClef { staff, clef });
+        }
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
     }
 
     pub fn set_staff_name(
@@ -2154,5 +2212,33 @@ mod tests {
         doc.mark_saved("x.partita".into());
         assert!(!doc.is_dirty());
         assert_eq!(doc.display_name(), "x");
+    }
+}
+
+#[cfg(test)]
+mod staff_properties_tests {
+    use super::*;
+
+    #[test]
+    fn name_instrument_and_clef_are_one_undo_step() {
+        let mut doc = Document::new(Score::new("Orchestra", 2));
+        doc.set_staff_properties(0, "  Violoncello  ".into(), 42, Clef::Bass, 1_000)
+            .unwrap();
+        let s = &doc.score.staves[0];
+        assert_eq!(
+            (s.name.as_str(), s.instrument, s.clef),
+            ("Violoncello", 42, Clef::Bass)
+        );
+        assert!(doc.undo().unwrap());
+        let s = &doc.score.staves[0];
+        assert_eq!(
+            (s.name.as_str(), s.instrument, s.clef),
+            ("Staff 1", 0, Clef::Treble)
+        );
+        assert!(!doc.can_undo());
+        // Nothing changed: nothing recorded.
+        doc.set_staff_properties(0, "Staff 1".into(), 0, Clef::Treble, 2_000)
+            .unwrap();
+        assert!(!doc.can_undo());
     }
 }
