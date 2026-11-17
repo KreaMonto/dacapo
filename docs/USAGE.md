@@ -10,7 +10,7 @@ Partita is designed to feel like a word processor whose "text" is music. A blink
 - **Export MusicXML…** (File menu) saves the score as MusicXML for Finale, Sibelius, Dorico, MuseScore and others: one part per staff, with its name and instrument.
 - **Save** (Ctrl+S) saves the document. **Save As** is Ctrl+Shift+S.
 - **Close tab** is Ctrl+W, and **next/previous tab** is Ctrl+Tab and Ctrl+Shift+Tab.
-- Edit the **title** and **composer** directly on the page.
+- Click the **title** or the **composer** on the page to type them (see [Titles, header and footer](#titles-header-and-footer)).
 
 The tab of a document with unsaved changes shows a dot (●). Closing it asks whether to save.
 
@@ -40,7 +40,7 @@ Choose how the score is laid out in **View**:
 
 | View | What you see |
 |---|---|
-| **Page (as printed)** | Default. Real sheets of paper (A4 or Letter, chosen in View) with margins. The title sits on page 1 and page numbers appear from page 2 on. What you see is what prints. |
+| **Page (as printed)** | Default. Real sheets of paper (A4 or Letter, chosen in View) with margins. The titles sit on page 1, with the header, footer and page numbers you choose. What you see is what prints. |
 | **Wrap to Window** | The music fills the window width and wraps to new lines, with no page breaks. Handy on small screens. |
 | **Continuous (one line)** | Encore-style: the whole piece on one endless line that grows to the right. The view scrolls sideways to follow the caret. |
 
@@ -65,6 +65,20 @@ All views edit the same way. Clicking, selecting and the pointer figure work ide
 **Theme:** **System** (default) follows your computer's light or dark setting. **Light** or **Dark** fix it for Partita only.
 
 **Language:** Partita speaks English and Spanish. **View → Language → System** (default) follows your computer's language; choosing **English** or **Español** fixes it for Partita only. The window reloads in the new language; open scores and their undo history stay as they are.
+
+## Titles, header and footer
+
+The texts around the music are part of the score and print as shown.
+
+- **On page 1:** the **title**, a **subtitle** under it, the **composer** on the right and a **lyricist or arranger** on the left ("Words: …", "Arr. …"), a **dedication** above the title, the **part** at the top left (for a set of parts: "Violin I"), and a **copyright** line at the bottom.
+- **On every page:** a **footer**; and from page 2 on, a **header**.
+- **Page numbers:** at the top or the bottom, left, centre, right or on the outside edge (right on odd pages, left on even ones, as in a book); from page 2 on, or on page 1 too.
+
+**Score → Titles, Header and Footer…** has all of them. In the header, the footer and the page number text, `{page}`, `{pages}`, `{title}` and `{composer}` are filled in for each page (the **Insert** buttons type them): `{title} · page {page} of {pages}` prints *Sonata · page 2 of 3*. A text left empty is not printed. Clicking a page number opens the dialog too.
+
+**Click any text on the page** to change it there: type, then **Enter** (or click elsewhere) to keep it, **Esc** to leave it as it was. An empty title or composer shows a grey hint where it goes; hints are never printed. Every change can be undone with Ctrl+Z.
+
+The headings of page 1 also show above the music in the other views. MusicXML keeps the title, subtitle, composer, lyricist, part and copyright; the header, footer and page numbers are saved in `.partita` files only.
 
 ## Entering music with the mouse
 

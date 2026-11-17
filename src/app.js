@@ -3,7 +3,7 @@
 
 import {
   SP, renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, playheadMarkup, esc, eraserTarget, eventsInBox,
-  lyricTarget, LYRIC_PX, LYRIC_FONT, MAX_VERSES,
+  lyricTarget, LYRIC_PX, LYRIC_FONT, MAX_VERSES, fullMetadata, TEXT_FONT, TEXT_SIZE,
 } from './render.js';
 import { installTooltips } from './tooltip.js';
 import { installMenuBar } from './menu.js';
@@ -370,23 +370,19 @@ function render() {
   const doc = active();
   if (!doc) return;
   const scoreEl = $('score');
-  const meta = $('meta');
-  // The title/composer block is re-attached on every render: inside page 1
-  // in page view, above the music otherwise.
-  scoreEl.before(meta);
-  meta.removeAttribute('style');
   document.body.dataset.view = state.view;
   // At zoom z the wrap view lays out for width/z so it still fills the window.
   const width = (scoreEl.clientWidth || 1000) / state.zoom;
   const { pages, layout, hits, slots } = renderScore(doc, width, {
     multiRest: state.multiRest, view: state.view, paper: state.paper, zoom: state.zoom, lyricEdit: lyricEdit(doc),
+    // Grey hints where an empty title or composer can be clicked (not printed).
+    placeholders: { title: t('pagetext.title'), composer: t('pagetext.composer') },
   });
   if (layout.mode === 'page') {
     scoreEl.innerHTML = pages.map((svg, i) => {
       const p = layout.pages[i];
       return `<div class="paper" style="width:${p.w * state.zoom}px">${svg}</div>`;
     }).join('');
-    placeTitleOnPage(meta, scoreEl.querySelector('.paper'), layout);
   } else {
     scoreEl.innerHTML = pages[0];
   }
@@ -394,6 +390,7 @@ function render() {
   state.hits = hits;
   state.slots = slots;
   placeLyricInput();
+  placeTextInput();
   scoreEl.classList.toggle('entry', entering());
   scoreEl.classList.toggle('erasing', state.mode === 'erase');
   scoreEl.classList.toggle('marking', state.mode === 'mark');
@@ -402,21 +399,6 @@ function render() {
   syncControls(doc);
   renderStatus();
   scrollCaretIntoView();
-}
-
-/** Puts the editable title block inside the top margin of page 1, scaled with the page. */
-function placeTitleOnPage(meta, paper, layout) {
-  const { geo } = layout;
-  const scale = paper.clientWidth / geo.w;
-  paper.append(meta);
-  Object.assign(meta.style, {
-    position: 'absolute',
-    left: `${geo.margin * scale}px`,
-    top: `${geo.margin * scale}px`,
-    width: `${geo.w - 2 * geo.margin}px`,
-    transform: `scale(${scale})`,
-    transformOrigin: 'top left',
-  });
 }
 
 /** Mouse position in layout coordinates (through whichever page is under it). */
@@ -604,8 +586,6 @@ function syncControls(doc) {
   if (document.activeElement !== $('time')) $('time').value = `${attrs.time.beats}/${attrs.time.beat_type}`;
   if (document.activeElement !== $('tempo')) $('tempo').value = String(doc.score.tempo ?? 100);
   syncTransport();
-  if (document.activeElement !== $('title')) $('title').value = doc.score.metadata.title;
-  if (document.activeElement !== $('composer')) $('composer').value = doc.score.metadata.composer;
 }
 
 /** Number of voices to offer: those that contain music, plus the caret's. */
@@ -745,8 +725,9 @@ document.addEventListener('keydown', (ev) => {
     }[lower === 'Tab' ? 'tab' : lower];
     if (handled) {
       ev.preventDefault();
-      // What is being typed as lyrics goes into the document first.
+      // What is being typed (lyrics, a title) goes into the document first.
       commitLyric();
+      commitTextEdit();
       handled();
       return;
     }
@@ -836,6 +817,15 @@ function caretFromMouse(ev) {
 }
 $('score').addEventListener('mousedown', (ev) => {
   if (ev.button !== 0) return;
+  // Texts around the music (title, header, footer...): a click edits the
+  // text there; the page number opens the dialog with all of them.
+  const ptext = ev.target.closest?.('[data-text]');
+  if (ptext) {
+    ev.preventDefault();
+    if (ptext.dataset.text === 'pnum') pageTextsDialog();
+    else openTextEdit(ptext.dataset.text);
+    return;
+  }
   // A staff name opens that staff's name, sound and clef.
   const name = ev.target.closest?.('.sname');
   if (name) {
@@ -1097,7 +1087,7 @@ window.addEventListener('mouseup', (ev) => {
 page.addEventListener('auxclick', (ev) => { if (ev.button === 1) ev.preventDefault(); });
 
 // The ghost must follow the page when it scrolls under a still mouse.
-page.addEventListener('scroll', () => { if (state.mode !== 'select') drawGhost(); placeLyricInput(); });
+page.addEventListener('scroll', () => { if (state.mode !== 'select') drawGhost(); placeLyricInput(); placeTextInput(); });
 window.addEventListener('mousemove', (ev) => {
   if (!dragging) return;
   const caret = caretFromMouse(ev);
@@ -1646,6 +1636,153 @@ lyric.input.addEventListener('keydown', (ev) => {
   }
 });
 
+// ----- texts around the music ---------------------------------------------------
+// The title, composer, header, footer... are drawn in the score (render.js,
+// drawPageTexts). Clicking one opens a text field over it: Enter or a click
+// elsewhere writes it (one undo step), Esc leaves it as it was. The dialog
+// (Score → Titles, Header and Footer…) has every text and the page numbers.
+
+const textEdit = {
+  key: null, // the metadata field being typed
+  input: Object.assign(document.createElement('input'), {
+    className: 'lyric-input text-input', type: 'text', autocomplete: 'off', hidden: true,
+  }),
+};
+document.body.append(textEdit.input);
+
+const metadataOf = (doc) => fullMetadata(doc.score.metadata);
+
+/** Writes every text of the score at once (the backend takes them all). */
+function setMetadata(changes) {
+  const doc = active();
+  if (doc) act({ type: 'set_metadata', ...metadataOf(doc), ...changes });
+}
+
+function openTextEdit(key) {
+  const doc = active();
+  if (!doc) return;
+  if (state.lyric) closeLyric();
+  commitTextEdit();
+  textEdit.key = key;
+  textEdit.input.value = metadataOf(doc)[key];
+  textEdit.input.setAttribute('aria-label', t(`pagetext.${key}`));
+  textEdit.input.hidden = false;
+  placeTextInput();
+  textEdit.input.focus({ preventScroll: true });
+  textEdit.input.select();
+}
+
+/** Puts the field over its text (after every render and scroll), in the text's own font and size. */
+function placeTextInput() {
+  const key = textEdit.key;
+  if (!key) return;
+  const el = $('score').querySelector(`[data-text="${key}"]`);
+  const svg = el?.ownerSVGElement;
+  if (!el || !svg) { textEdit.input.style.visibility = 'hidden'; return; }
+  const box = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  const scale = box.width / vb.width;
+  const px = TEXT_SIZE[key] * scale;
+  const r = el.getBoundingClientRect();
+  const anchor = el.getAttribute('text-anchor');
+  const width = Math.max(r.width + 3 * px, 14 * px);
+  const left = anchor === 'start' ? r.left - 0.3 * px : anchor === 'end' ? r.right - width + 0.3 * px : r.left + r.width / 2 - width / 2;
+  const baseline = box.top + (Number(el.getAttribute('y')) - vb.y) * scale;
+  const style = getComputedStyle(el);
+  Object.assign(textEdit.input.style, {
+    font: `${style.fontStyle} ${style.fontWeight} ${px}px ${TEXT_FONT}`,
+    textAlign: anchor === 'start' ? 'left' : anchor === 'end' ? 'right' : 'center',
+    left: `${left}px`,
+    top: `${baseline - 1.16 * px}px`, // the text's baseline lands on the drawn one
+    width: `${width}px`,
+    height: `${1.5 * px}px`,
+    visibility: 'visible',
+  });
+}
+
+/** Leaves the field, writing what was typed unless `cancel`. */
+function commitTextEdit(cancel = false) {
+  const key = textEdit.key;
+  if (!key) return;
+  textEdit.key = null;
+  textEdit.input.hidden = true;
+  const doc = active();
+  const value = textEdit.input.value.trim();
+  if (!cancel && doc && value !== metadataOf(doc)[key]) setMetadata({ [key]: value });
+  page.focus();
+}
+
+textEdit.input.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter') { ev.preventDefault(); commitTextEdit(); }
+  else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); commitTextEdit(true); }
+});
+textEdit.input.addEventListener('blur', () => commitTextEdit());
+
+// Page number positions offered in the dialog: edge and place across.
+const PAGE_NUMBER_PLACES = ['top-left', 'top-center', 'top-right', 'top-outside', 'bottom-left', 'bottom-center', 'bottom-right', 'bottom-outside'];
+const TOKENS = ['page', 'pages', 'title', 'composer'];
+
+/** Score → Titles, Header and Footer…: every text around the music, and page numbers. */
+async function pageTextsDialog() {
+  const doc = active();
+  if (!doc) return;
+  commitTextEdit();
+  const m = metadataOf(doc);
+  const pn = m.page_numbers;
+  const field = (key, wide = false) => `<label${wide ? ' class="wide"' : ''}>${esc(t(`pagetext.${key}`))}
+      <input type="text" data-field="${key}" value="${esc(m[key])}" placeholder="${esc(t(`pagetext.${key}.example`))}" autocomplete="off"></label>`;
+  const body = `<form class="staff-form texts-form" id="texts-form">
+    <h3>${esc(t('texts.page1'))}</h3>
+    ${field('title', true)}
+    ${field('subtitle', true)}
+    <div class="row">${field('lyricist')}${field('composer')}</div>
+    <div class="row">${field('part')}${field('dedication')}</div>
+    ${field('copyright', true)}
+    <h3>${esc(t('texts.pages'))}</h3>
+    <div class="row">${field('header')}${field('footer')}</div>
+    <h3>${esc(t('texts.numbers'))}</h3>
+    <label class="check"><input type="checkbox" id="pn-show"${pn.show ? ' checked' : ''}> ${esc(t('texts.numbers.show'))}</label>
+    <div class="row">
+      <label>${esc(t('texts.numbers.place'))}
+        <select id="pn-place">${PAGE_NUMBER_PLACES.map((place) =>
+          `<option value="${place}"${place === `${pn.edge}-${pn.align}` ? ' selected' : ''}>${esc(t(`texts.place.${place}`))}</option>`).join('')}</select></label>
+      <label>${esc(t('texts.numbers.format'))}
+        <input type="text" id="pn-format" value="${esc(pn.format)}" autocomplete="off"></label>
+    </div>
+    <label class="check"><input type="checkbox" id="pn-first"${pn.first_page ? ' checked' : ''}> ${esc(t('texts.numbers.first'))}</label>
+    <div class="tokens"><span class="muted">${esc(t('texts.tokens'))}</span>${TOKENS.map((k) =>
+      `<button type="button" data-token="{${k}}" data-tip="{${k}}">${esc(t(`texts.token.${k}`))}</button>`).join('')}</div>
+    <p class="muted hint">${esc(t('texts.hint'))}</p>
+  </form>`;
+  const pending = choiceDialog(t('texts.title'), body, [
+    { spacer: true },
+    { label: t('button.cancel'), value: 'cancel' },
+    { label: t('button.ok'), value: 'ok', primary: true },
+  ]);
+  const form = $('texts-form');
+  // The token buttons type into the field last used (or the page number text).
+  let target = $('pn-format');
+  form.addEventListener('focusin', (ev) => { if (ev.target.matches('input[type="text"]')) target = ev.target; });
+  form.addEventListener('mousedown', (ev) => { if (ev.target.closest('[data-token]')) ev.preventDefault(); });
+  form.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-token]');
+    if (!b) return;
+    target.setRangeText(b.dataset.token, target.selectionStart ?? target.value.length, target.selectionEnd ?? target.value.length, 'end');
+    target.focus();
+  });
+  form.addEventListener('submit', (ev) => { ev.preventDefault(); $('dialog').querySelector('[data-answer="ok"]').click(); });
+  form.querySelector('[data-field="title"]').focus();
+  const answer = await pending;
+  if (answer !== 'ok') return;
+  const changes = {};
+  for (const input of form.querySelectorAll('[data-field]')) changes[input.dataset.field] = input.value.trim();
+  const [edge, align] = $('pn-place').value.split('-');
+  changes.page_numbers = {
+    show: $('pn-show').checked, edge, align, first_page: $('pn-first').checked, format: $('pn-format').value.trim() || '{page}',
+  };
+  setMetadata(changes);
+}
+
 // ----- dialogs ---------------------------------------------------------------
 
 /** A yes/no dialog. Resolves true when the user picks the OK button. */
@@ -2009,6 +2146,7 @@ const DYNAMICS = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'sfz', 'fp'];
 for (const [name, alter] of ACCIDENTALS) commands[`alter:${name}`] = () => act({ type: 'set_accidental', alter });
 for (const a of ARTICULATIONS) commands[`artic:${a}`] = () => act({ type: 'toggle_articulation', articulation: a });
 for (const d of DYNAMICS) commands[`dyn:${d}`] = () => act({ type: 'set_dynamic', dynamic: d });
+commands['page-texts'] = () => pageTextsDialog();
 
 /** A radio choice of a submenu: label and tooltip from `key` (and `key.desc` if there is one). */
 const choice = (key, cmd, checked) => ({
@@ -2085,6 +2223,8 @@ const MENUS = [
       ] },
   ] },
   { label: t('menu.score'), items: [
+    { label: t('menu.score.texts'), cmd: 'page-texts', enabled: hasDoc, desc: t('menu.score.texts.desc') },
+    { sep: true },
     { label: t('menu.score.measure'), enabled: hasDoc, items: [
       { label: t('menu.score.measure.add'), cmd: 'add-measure', key: 'Ctrl+Enter', desc: t('toolbar.addmeasure.desc') },
       { label: t('menu.score.measure.remove'), cmd: 'remove-measure', desc: t('toolbar.removemeasure.desc') },
@@ -2166,10 +2306,6 @@ $('time').addEventListener('keydown', (ev) => {
   act({ type: 'set_time', beats: Number(m[1]), beat_type: Number(m[2]) });
   page.focus();
 });
-for (const id of ['title', 'composer']) {
-  $(id).addEventListener('change', () => act({ type: 'set_metadata', title: $('title').value, composer: $('composer').value }));
-  $(id).addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.target.blur(); page.focus(); } });
-}
 
 $('tabs').addEventListener('click', (ev) => {
   const close = ev.target.closest('[data-close]');

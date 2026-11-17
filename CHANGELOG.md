@@ -5,10 +5,13 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 ## [Unreleased]
 
 ### Added
+- **Titles, header and footer.** Besides the title and composer, a score can have a subtitle, a lyricist or arranger, a dedication, a part name and a copyright line on page 1, a running header (from page 2) and a footer on every page. **Page numbers** can go at the top or bottom, left, centre, right or on the outside edge, and on page 1 too. Header, footer and page numbers can show the page number, the number of pages, the title and the composer. **Score → Titles, Header and Footer…** has them all, and clicking any of these texts on the page edits it there. MusicXML import and export keep the subtitle, lyricist, part and copyright.
 - **Spanish.** The whole interface is translated, including the 128 instrument sounds, error messages and the names Partita gives new documents and staves. **View → Language** chooses English, Español, or the computer's language (the default); the window reloads in the new language and open scores stay as they are.
 - **Notes → Accidentals, Articulations and Dynamics**: the palette's marks are now in the menus too, so they can be reached from the keyboard. They go on the selection, or on the note before the caret.
 
 ### Changed
+- **The title and composer are drawn on the page** like the music, so they print exactly as shown, and the music moves down to make room for the texts of page 1.
+- Files that use the new page texts are saved as file format 7, which older versions cannot open; other files are still written in the older formats. Unsaved work from Partita 0.3.0 is still recovered after updating.
 - **The menus are organized in categories, with submenus.** **Insert** is replaced by **Score** (Measure, Staff, Group Staves) and **Notes** (ties, slurs, lyrics and marks). In **View**, Layout, Zoom, Paper, Theme and Language are submenus that show their current setting. Every item fits on one line; resting the pointer on an item explains what it does.
 
 ## [0.3.0] - 2026-11-16

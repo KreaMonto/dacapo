@@ -322,16 +322,22 @@ button.on { background: var(--button-active); border-color: var(--accent); color
   padding: 28px 12px 40px;
   min-height: 300px;
 }
-.meta { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-bottom: 8px; }
-.meta input {
-  border: 1px solid transparent;
-  background: transparent;
-  text-align: center;
-  width: min(600px, 90%);
-}
-.meta input:hover, .meta input:focus { border-color: var(--chrome-border); }
-.meta .title { font-size: 24px; font-weight: 600; font-family: Georgia, "Times New Roman", serif; }
-.meta .composer { align-self: flex-end; text-align: right; width: 260px; color: var(--muted); }
+/* Texts around the music (title, header, page numbers...): drawn by
+   render.js; a click edits them. Placeholders are hints, never printed. */
+.score .ptext { fill: var(--ink); cursor: text; }
+.score .ptext:hover { fill: var(--accent); }
+.score .ptext-title { font-weight: 600; }
+.score .ptext-dedication { font-style: italic; }
+.score .ptext-composer, .score .ptext-lyricist, .score .ptext-part { fill: var(--ink); }
+.score .ptext-header, .score .ptext-footer, .score .ptext-copyright, .score .ptext-pnum { fill: var(--muted); }
+.score .ptext-pnum { cursor: pointer; }
+.score .ptext.placeholder { fill: var(--muted); opacity: 0.55; font-weight: normal; }
+.text-input { text-align: center; }
+/* Titles, Header and Footer dialog. */
+.texts-form h3 { margin: 6px 0 -4px; font-size: 13px; }
+.texts-form .check { display: flex; align-items: center; gap: 8px; font-weight: normal; }
+.texts-form .tokens { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; }
+.texts-form .tokens button { font-size: 12px; padding: 2px 8px; }
 .score { cursor: text; user-select: none; }
 .page:focus-visible .sheet { outline: 2px solid var(--accent-soft); }
 
@@ -539,12 +545,8 @@ body[data-view="page"] .score { display: flex; flex-direction: column; align-ite
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), 0 8px 28px rgba(0, 0, 0, 0.1);
 }
 .paper svg { display: block; width: 100%; height: auto; }
-.paper .meta { margin: 0; }
-.score .pnum { font: 12px Georgia, "Times New Roman", serif; fill: var(--muted); text-anchor: end; }
 /* Continuous view: one endless line; the sheet grows to the right. */
 body[data-view="continuous"] .sheet { max-width: none; width: max-content; min-width: 100%; }
-body[data-view="continuous"] .meta { align-items: flex-start; }
-body[data-view="continuous"] .meta input { width: 400px; text-align: left; }
 
 /* ----- Dialogs --------------------------------------------------------------- */
 /* Always fits the window: title and Close stay visible, the body scrolls. */
@@ -625,8 +627,8 @@ body[data-view="continuous"] .meta input { width: 400px; text-align: left; }
   body[data-view="page"] .sheet { width: auto; }
   .paper { box-shadow: none; border-radius: 0; width: 100% !important; margin: 0; break-after: page; }
   .paper:last-child { break-after: auto; }
-  .meta input { border-color: transparent !important; color: #000; }
-  .meta input:placeholder-shown { visibility: hidden; }
+  .score .ptext { fill: #000 !important; }
+  .score .ptext.placeholder, .text-input { display: none; }
   .score .caret, .score .sel, .score .ghost, .score .overfull, .score .errlabel, .score .lyric-hover, .lyric-input { display: none; }
   .score .ev, .score .ev.v1, .score .ev.v2, .score .ev.v3 { color: #000 !important; fill: #000 !important; opacity: 1 !important; }
 }

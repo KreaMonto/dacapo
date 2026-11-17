@@ -33,7 +33,10 @@ pub const FILE_EXTENSION: &str = "partita";
 ///   are written as version 5.
 /// - 6: staff instruments, short names, transpositions and brackets or
 ///   braces. Only files that use one of them are written as version 6.
-pub const FORMAT_VERSION: u32 = 6;
+/// - 7: page texts in the metadata: subtitle, dedication, lyricist, part,
+///   copyright, running header and footer, and page numbering. Only files
+///   that set one of them are written as version 7.
+pub const FORMAT_VERSION: u32 = 7;
 const FORMAT_MARKER: &str = "partita";
 /// Marker written by Da Capo (the project's former name) up to 0.2.2.
 const LEGACY_FORMAT_MARKER: &str = "dacapo";
@@ -79,7 +82,9 @@ fn required_version(score: &Score) -> u32 {
                 .any(|m| m.voices.iter().any(|v| v.iter().any(test)))
         })
     };
-    if score.staves.iter().any(|s| {
+    if score.metadata.uses_page_texts() {
+        7
+    } else if score.staves.iter().any(|s| {
         s.instrument != 0
             || !s.short_name.is_empty()
             || !s.transposition.is_none()
@@ -306,6 +311,37 @@ mod tests {
             .remove("instrument");
         let old = from_bytes(&serde_json::to_vec(&v).unwrap()).unwrap();
         assert_eq!(old.staves[0].instrument, 0);
+    }
+
+    #[test]
+    fn page_texts_need_format_7_only_when_used() {
+        let mut score = Score::new("Suite", 1);
+        score.metadata.composer = "Anon".into();
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(
+            v["format_version"], 3,
+            "title and composer are older than page texts"
+        );
+
+        score.metadata.footer = "{title} · {page}/{pages}".into();
+        score.metadata.page_numbers.edge = crate::model::PageEdge::Bottom;
+        let bytes = to_bytes(&score).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(v["format_version"], 7);
+        assert_eq!(from_bytes(&bytes).unwrap(), score);
+
+        // Files from before page texts have only a title and a composer:
+        // pages are numbered as they always were.
+        let mut v = v;
+        v["score"]["metadata"] = serde_json::json!({ "title": "Suite", "composer": "Anon" });
+        let old = from_bytes(&serde_json::to_vec(&v).unwrap()).unwrap();
+        assert_eq!(old.metadata.title, "Suite");
+        assert!(old.metadata.footer.is_empty());
+        assert_eq!(
+            old.metadata.page_numbers,
+            crate::model::PageNumbers::default()
+        );
+        assert!(!old.metadata.uses_page_texts());
     }
 
     #[test]

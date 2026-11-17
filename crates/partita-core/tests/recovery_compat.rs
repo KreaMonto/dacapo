@@ -55,3 +55,23 @@ fn reads_recovery_data_from_0_2_2() {
     assert!(loaded.document.can_undo());
     assert!(loaded.document.can_redo());
 }
+
+/// `recovery-0.3.0` is in binary format 5, the layout of Partita 0.3.0
+/// (before page texts): a snapshot of a new score, and a journal with two
+/// notes, a lyric, a dynamic, a new title and composer, a violin staff, and
+/// a note that is undone. `expected.partita` is the score that session held.
+#[test]
+fn reads_recovery_data_from_0_3_0() {
+    let dir = fixture("recovery-0.3.0");
+    let loaded = load_dir(&dir).expect("0.3.0 recovery data loads");
+    assert!(!loaded.truncated, "no record was dropped");
+    assert!(loaded.replayed > 0, "the journal was replayed");
+
+    let expected = file::load_score(&dir.join("expected.partita")).unwrap();
+    assert_eq!(loaded.document.score, expected);
+    assert_eq!(loaded.document.score.metadata.title, "Sonatina");
+    assert_eq!(loaded.document.score.metadata.composer, "Anonymous");
+    assert_eq!(loaded.document.score.staves[1].instrument, 40);
+    assert!(loaded.document.can_undo());
+    assert!(loaded.document.can_redo());
+}

@@ -61,12 +61,37 @@ pub fn export(score: &Score) -> String {
             esc(&score.metadata.composer)
         );
     }
+    if !score.metadata.lyricist.is_empty() {
+        let _ = writeln!(
+            x,
+            "    <creator type=\"lyricist\">{}</creator>",
+            esc(&score.metadata.lyricist)
+        );
+    }
+    if !score.metadata.copyright.is_empty() {
+        let _ = writeln!(x, "    <rights>{}</rights>", esc(&score.metadata.copyright));
+    }
     let _ = writeln!(
         x,
         "    <encoding><software>Partita {}</software><supports element=\"accidental\" type=\"no\"/></encoding>",
         env!("CARGO_PKG_VERSION")
     );
-    x.push_str("  </identification>\n  <part-list>\n");
+    x.push_str("  </identification>\n");
+    // Texts of page 1 that MusicXML names; the header, footer and page
+    // numbers have no equivalent and stay in .partita files.
+    for (kind, text) in [
+        ("subtitle", &score.metadata.subtitle),
+        ("part name", &score.metadata.part),
+    ] {
+        if !text.is_empty() {
+            let _ = writeln!(
+                x,
+                "  <credit page=\"1\"><credit-type>{kind}</credit-type><credit-words>{}</credit-words></credit>",
+                esc(text)
+            );
+        }
+    }
+    x.push_str("  <part-list>\n");
     let mut group_number = 0;
     for (s, staff) in score.staves.iter().enumerate() {
         let group = staff.group;
@@ -727,6 +752,46 @@ impl Importer {
                     .map(|t| t.trim().to_string())
             })
             .unwrap_or_default();
+        let creator = |kind: &str| {
+            child(root, "identification").and_then(|i| {
+                children(i, "creator")
+                    .find(|c| c.attribute("type") == Some(kind))
+                    .and_then(|c| c.text())
+                    .map(|t| t.trim().to_string())
+            })
+        };
+        let lyricist = creator("lyricist")
+            .or_else(|| creator("arranger"))
+            .unwrap_or_default();
+        let copyright = child(root, "identification")
+            .and_then(|i| text_of(i, "rights"))
+            .unwrap_or_default();
+        // Page 1 texts by their credit type; a movement title next to a
+        // work title is a subtitle ("II. Andante").
+        let credit = |kind: &str| {
+            children(root, "credit")
+                .find(|c| {
+                    children(*c, "credit-type").any(|t| t.text().map(str::trim) == Some(kind))
+                })
+                .map(|c| {
+                    children(c, "credit-words")
+                        .filter_map(|w| w.text())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                        .trim()
+                        .to_string()
+                })
+                .filter(|t| !t.is_empty())
+        };
+        let movement = text_of(root, "movement-title").filter(|m| !m.is_empty() && *m != title);
+        let subtitle = credit("subtitle")
+            .or(if child(root, "work").is_some() {
+                movement
+            } else {
+                None
+            })
+            .unwrap_or_default();
+        let part = credit("part name").unwrap_or_default();
 
         // Part names, abbreviations, instruments and groups from the part
         // list. A part keeps the innermost bracket or brace around it.
@@ -842,7 +907,15 @@ impl Importer {
         .collect();
 
         let mut score = Score {
-            metadata: Metadata { title, composer },
+            metadata: Metadata {
+                title,
+                composer,
+                subtitle,
+                lyricist,
+                part,
+                copyright,
+                ..Metadata::default()
+            },
             measures: attrs,
             staves: self.score_staves,
             next_id: self.next_id + 1,
@@ -1460,6 +1533,48 @@ mod tests {
         let (s1, m1, v1, i1) = back.score.locate(slur.start).unwrap();
         let (s2, m2, v2, i2) = back.score.locate(slur.end).unwrap();
         assert_eq!((s1, m1, v1, i1, s2, m2, v2, i2), (0, 0, 0, 0, 0, 0, 0, 2));
+    }
+
+    #[test]
+    fn page_one_texts_round_trip() {
+        let mut score = sample();
+        score.metadata.subtitle = "for clarinet & cello".into();
+        score.metadata.lyricist = "Arr. J. Doe".into();
+        score.metadata.part = "Score".into();
+        score.metadata.copyright = "© 2026 Anon".into();
+        // No MusicXML equivalent: not exported.
+        score.metadata.footer = "{page}".into();
+        let xml = export(&score);
+        assert!(xml.contains("<rights>© 2026 Anon</rights>"));
+        assert!(xml.contains("<credit-type>subtitle</credit-type><credit-words>for clarinet &amp; cello</credit-words>"));
+        let m = import(&xml, "x").unwrap().score.metadata;
+        assert_eq!(
+            (m.title.as_str(), m.subtitle.as_str(), m.composer.as_str()),
+            ("Round & Trip", "for clarinet & cello", "Anon")
+        );
+        assert_eq!(
+            (m.lyricist.as_str(), m.part.as_str()),
+            ("Arr. J. Doe", "Score")
+        );
+        assert_eq!(m.copyright, "© 2026 Anon");
+        assert!(m.footer.is_empty());
+    }
+
+    #[test]
+    fn a_movement_title_under_a_work_title_is_a_subtitle() {
+        let xml = r#"<score-partwise>
+  <work><work-title>Sonata</work-title></work><movement-title>II. Andante</movement-title>
+  <identification><creator type="arranger">Arr. X</creator></identification>
+  <part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list>
+  <part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes>
+    <note><rest/><duration>4</duration><type>whole</type></note></measure></part>
+</score-partwise>"#;
+        let m = import(xml, "x").unwrap().score.metadata;
+        assert_eq!(
+            (m.title.as_str(), m.subtitle.as_str()),
+            ("Sonata", "II. Andante")
+        );
+        assert_eq!(m.lyricist, "Arr. X");
     }
 
     #[test]
