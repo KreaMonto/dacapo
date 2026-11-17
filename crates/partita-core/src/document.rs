@@ -1313,17 +1313,41 @@ impl Document {
         props: StaffProps,
         now_ms: u64,
     ) -> Result<(), EditError> {
+        self.add_instrument(props, 1, now_ms)
+    }
+
+    /// Adds an instrument at the bottom on `staves` staves (1-4) in one
+    /// undo step. Several staves (a piano, a harp, an organ) share the
+    /// name, sound and transposition and are joined by a brace; the first
+    /// uses `props.clef`, the others the bass clef.
+    pub fn add_instrument(
+        &mut self,
+        props: StaffProps,
+        staves: usize,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let staves = staves.clamp(1, 4);
         let clip = |s: &str| -> String { s.trim().chars().take(MAX_STAFF_NAME_CHARS).collect() };
-        let mut staff = self.score.blank_staff(clip(&props.name), props.clef);
-        staff.short_name = clip(&props.short_name);
-        staff.instrument = props.instrument.min(127);
-        staff.transposition = props.transposition;
-        let op = Op::InsertStaff {
-            index: self.score.staves.len(),
-            staff,
-        };
+        let group = (staves > 1).then(|| StaffGroup {
+            id: self.score.alloc_id(),
+            kind: GroupKind::Brace,
+        });
+        let first = self.score.staves.len();
+        let mut ops = Vec::with_capacity(staves);
+        for k in 0..staves {
+            let clef = if k == 0 { props.clef } else { Clef::Bass };
+            let mut staff = self.score.blank_staff(clip(&props.name), clef);
+            staff.short_name = clip(&props.short_name);
+            staff.instrument = props.instrument.min(127);
+            staff.transposition = props.transposition;
+            staff.group = group;
+            ops.push(Op::InsertStaff {
+                index: first + k,
+                staff,
+            });
+        }
         let caret = self.caret;
-        self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
     }
 
     /// Joins staves `first..=last` with a bracket or a brace, or (`None`)
@@ -2393,6 +2417,24 @@ mod staff_properties_tests {
             doc.score.staves[0].measures[0].voices[0][0].pitches()[0].step,
             Step::C
         );
+    }
+
+    #[test]
+    fn a_piano_comes_on_two_braced_staves() {
+        let mut doc = Document::new(Score::new("Song", 2));
+        let mut piano = props("Piano", 0, Clef::Treble);
+        piano.short_name = "Pno.".into();
+        doc.add_instrument(piano, 2, 1_000).unwrap();
+        let s = &doc.score.staves;
+        assert_eq!(s.len(), 3);
+        assert_eq!((s[1].clef, s[2].clef), (Clef::Treble, Clef::Bass));
+        assert_eq!((s[1].name.as_str(), s[2].name.as_str()), ("Piano", "Piano"));
+        assert_eq!(s[1].group.map(|g| g.kind), Some(GroupKind::Brace));
+        assert_eq!(s[1].group, s[2].group);
+        assert!(s[0].group.is_none());
+        // One undo removes both.
+        doc.undo().unwrap();
+        assert_eq!(doc.score.staves.len(), 1);
     }
 
     #[test]

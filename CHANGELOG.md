@@ -14,7 +14,7 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 - **An instrument for every staff**, to write for any ensemble up to a full orchestra.
   - Each staff plays its own sound, chosen from the 128 General MIDI instruments of FluidR3 GM (strings, woodwinds, brass, percussion, keyboards, voices…). Notes you enter sound with that instrument too.
   - The staff's name is printed at its start, on the first system. Click it (or use **Insert → Staff Name, Sound and Clef…**) to change the name, the sound and the clef in one step. Picking a sound proposes its usual name and clef, for example *Violoncello* in bass clef.
-  - **Insert → Staff…** asks for the instrument of the new staff.
+  - **Insert → Staff…** asks for the instrument of the new staff. A piano, harp, harpsichord, celesta or organ comes on two braced staves (treble and bass) at once; the dialog lets you choose one or two staves.
   - **Short names** (Vln. I, Vc.) on the systems after the first. Picking a sound proposes the usual abbreviation, and *Violin II* becomes *Vln. II*.
   - **Brackets and braces**: select music across some staves and choose **Insert → Bracket Selected Staves** (an instrument family) or **Brace Selected Staves** (a piano or harp). Barlines run through the group, and a braced instrument shows its name once, in the middle.
   - **Transposing instruments**: clarinet and trumpet in B♭, horn in F, saxophones, piccolo, guitar, double bass and more are written in their own key and play at concert pitch. Picking one in the staff dialog sets its usual transposition, and changing a staff's transposition rewrites its notes so the music sounds the same.

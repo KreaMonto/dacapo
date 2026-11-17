@@ -184,6 +184,11 @@ async function staffDialog(staff) {
       <label>Transposition
         <select id="staff-trans">${transOptions}</select></label>
     </div>
+    ${adding ? `<label>Staves
+      <select id="staff-count">
+        <option value="1">One staff</option>
+        <option value="2"${instrumentByProgram(current.instrument || 0).staves === 2 ? ' selected' : ''}>Two staves, braced (treble and bass)</option>
+      </select></label>` : ''}
     <p class="muted hint">Notes are written in the instrument's key and play at concert pitch. Changing the transposition keeps the music sounding the same.</p>
   </form>`;
   const pending = choiceDialog(adding ? 'Add a staff' : 'Staff', body, [
@@ -196,6 +201,7 @@ async function staffDialog(staff) {
   const sound = $('staff-sound');
   const clef = $('staff-clef');
   const transSel = $('staff-trans');
+  const count = $('staff-count');
   const inst = () => INSTRUMENTS[Number(sound.value)];
   // Name and short name follow the sound until the user types their own.
   const startInst = instrumentByProgram(current.instrument || 0);
@@ -212,6 +218,7 @@ async function staffDialog(staff) {
     if (!shortTouched) short.value = shortNameFor(name.value, i);
     clef.value = i.clef;
     transSel.value = transpositionKey(i.transposition) || 'none';
+    if (count) count.value = String(i.staves);
   });
   $('staff-form').addEventListener('submit', (ev) => { ev.preventDefault(); $('dialog').querySelector('[data-answer="ok"]').click(); });
   name.focus();
@@ -227,7 +234,7 @@ async function staffDialog(staff) {
     clef: clef.value,
     transposition: chosen ? { diatonic: chosen.diatonic, chromatic: chosen.chromatic } : trans,
   };
-  if (adding) await act({ type: 'add_staff', ...props });
+  if (adding) await act({ type: 'add_staff', ...props, staves: Number(count.value) });
   else await act({ type: 'set_staff', staff, ...props });
 }
 

@@ -115,7 +115,10 @@ const SHORT = {
   Recorder: 'Rec.',
 };
 
-/** [{ program, label, name, short, clef, transposition, family }] in program order. */
+// Instruments usually written on two braced staves (treble and bass).
+const GRAND_STAFF = new Set([0, 1, 2, 3, 4, 5, 6, 8, 16, 17, 18, 19, 20, 46]);
+
+/** [{ program, label, name, short, clef, transposition, staves, family }] in program order. */
 export const INSTRUMENTS = FAMILIES.flatMap(([family, list], f) =>
   list.map(([label, name, clef], i) => {
     const program = f * 8 + i;
@@ -126,6 +129,7 @@ export const INSTRUMENTS = FAMILIES.flatMap(([family, list], f) =>
       short: SHORT[n] || `${n.slice(0, 3)}.`,
       clef: clef || 'treble',
       transposition: T[USUAL_TRANSPOSITION[program] || 'none'],
+      staves: GRAND_STAFF.has(program) ? 2 : 1,
     };
   }));
 
