@@ -17,8 +17,9 @@ use crate::history::{History, Transaction, TxKind};
 use crate::model::{
     is_measure_rest, Articulation, Clef, Duration, Dynamic, Event, EventId, EventKind, GroupKind,
     KeySignature, LyricJoin, MeasureAttrs, Metadata, NoteText, NoteTextKind, Pitch, Score, Slur,
-    StaffGroup, Step, Syllable, TempoMark, TimeSignature, Transposition, MAX_NOTE_TEXT_CHARS,
-    MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS, MAX_VERSES,
+    StaffGroup, Step, Syllable, TempoMark, TextBox, TextKind, TextStyle, TimeSignature,
+    Transposition, MAX_NOTE_TEXT_CHARS, MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS,
+    MAX_TEXT_BOX_CHARS, MAX_VERSES, TEXT_SIZE_RANGE,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
 
@@ -1255,6 +1256,103 @@ impl Document {
         self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
     }
 
+    /// The look of every text of a kind. A style with nothing changed goes
+    /// back to the default. One undo step.
+    pub fn set_text_style(
+        &mut self,
+        kind: TextKind,
+        mut style: TextStyle,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        style.font = style.font.trim().chars().take(60).collect();
+        if style.size != 0 {
+            style.size = style
+                .size
+                .clamp(*TEXT_SIZE_RANGE.start(), *TEXT_SIZE_RANGE.end());
+        }
+        let style = (style != TextStyle::default()).then_some(style);
+        if self.score.text_styles.get(&kind) == style.as_ref() {
+            return Ok(());
+        }
+        let caret = self.caret;
+        self.commit(
+            TxKind::Edit,
+            vec![Op::SetTextStyle { kind, style }],
+            caret,
+            now_ms,
+            false,
+        )
+    }
+
+    /// Several kinds of text at once (Score → Text Styles…): one undo step.
+    /// Kinds left out keep their style.
+    pub fn set_text_styles(
+        &mut self,
+        styles: std::collections::BTreeMap<TextKind, TextStyle>,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let ops: Vec<Op> = styles
+            .into_iter()
+            .map(|(kind, mut style)| {
+                style.font = style.font.trim().chars().take(60).collect();
+                if style.size != 0 {
+                    style.size = style
+                        .size
+                        .clamp(*TEXT_SIZE_RANGE.start(), *TEXT_SIZE_RANGE.end());
+                }
+                (kind, (style != TextStyle::default()).then_some(style))
+            })
+            .filter(|(kind, style)| self.score.text_styles.get(kind) != style.as_ref())
+            .map(|(kind, style)| Op::SetTextStyle { kind, style })
+            .collect();
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
+    }
+
+    /// Adds a text box (`id` 0 gives it a new one) or replaces the one with
+    /// its `id`. A box left without words is removed. One undo step.
+    pub fn set_text_box(&mut self, mut text_box: TextBox, now_ms: u64) -> Result<(), EditError> {
+        text_box.text = text_box
+            .text
+            .trim_end()
+            .chars()
+            .take(MAX_TEXT_BOX_CHARS)
+            .collect();
+        if text_box.style.size != 0 {
+            text_box.style.size = text_box
+                .style
+                .size
+                .clamp(*TEXT_SIZE_RANGE.start(), *TEXT_SIZE_RANGE.end());
+        }
+        if text_box.text.trim().is_empty() {
+            return self.remove_text_box(text_box.id, now_ms);
+        }
+        if text_box.id == 0 {
+            text_box.id = self.score.alloc_id();
+        }
+        if self.score.text_boxes.contains(&text_box) {
+            return Ok(());
+        }
+        let caret = self.caret;
+        let op = Op::SetTextBox {
+            id: text_box.id,
+            text_box: Some(text_box),
+        };
+        self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
+    }
+
+    pub fn remove_text_box(&mut self, id: u64, now_ms: u64) -> Result<(), EditError> {
+        if !self.score.text_boxes.iter().any(|b| b.id == id) {
+            return Ok(());
+        }
+        let caret = self.caret;
+        let op = Op::SetTextBox { id, text_box: None };
+        self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
+    }
+
     /// A rehearsal mark ("A", "B"…) at the start of `measure`, or none.
     pub fn set_rehearsal(
         &mut self,
@@ -1758,6 +1856,91 @@ mod tests {
             .iter()
             .map(|e| e.pitches().first().map(|p| p.step))
             .collect()
+    }
+
+    #[test]
+    fn text_styles_and_text_boxes() {
+        let mut doc = Document::new(Score::new("t", 1));
+        let small = TextStyle {
+            size: 85,
+            bold: Some(false),
+            ..TextStyle::default()
+        };
+        doc.set_text_style(TextKind::Tempo, small.clone(), 1_000)
+            .unwrap();
+        assert_eq!(doc.score.text_styles.get(&TextKind::Tempo), Some(&small));
+        // Sizes stay in range; a style with nothing changed is the default.
+        doc.set_text_style(
+            TextKind::Title,
+            TextStyle {
+                size: 5000,
+                ..TextStyle::default()
+            },
+            2_000,
+        )
+        .unwrap();
+        assert_eq!(doc.score.text_styles[&TextKind::Title].size, 720);
+        doc.set_text_style(TextKind::Title, TextStyle::default(), 3_000)
+            .unwrap();
+        assert!(!doc.score.text_styles.contains_key(&TextKind::Title));
+        // Several at once: one undo step.
+        let mut many = std::collections::BTreeMap::new();
+        many.insert(
+            TextKind::Lyrics,
+            TextStyle {
+                size: 100,
+                ..TextStyle::default()
+            },
+        );
+        many.insert(TextKind::Tempo, TextStyle::default());
+        doc.set_text_styles(many, 3_500).unwrap();
+        assert!(doc.score.text_styles.contains_key(&TextKind::Lyrics));
+        assert!(!doc.score.text_styles.contains_key(&TextKind::Tempo));
+        doc.undo().unwrap();
+        assert_eq!(doc.score.text_styles.get(&TextKind::Tempo), Some(&small));
+        assert!(!doc.score.text_styles.contains_key(&TextKind::Lyrics));
+
+        let note = TextBox {
+            id: 0,
+            page: 0,
+            x: 150,
+            y: 500,
+            text: "Senza pedale".into(),
+            style: TextStyle::default(),
+            align: crate::model::TextAlign::Left,
+            frame: false,
+        };
+        doc.set_text_box(note.clone(), 4_000).unwrap();
+        let id = doc.score.text_boxes[0].id;
+        assert_ne!(id, 0, "a new box gets an id");
+        doc.set_text_box(
+            TextBox {
+                id,
+                x: 300,
+                ..note.clone()
+            },
+            5_000,
+        )
+        .unwrap();
+        assert_eq!(
+            (doc.score.text_boxes.len(), doc.score.text_boxes[0].x),
+            (1, 300)
+        );
+        doc.undo().unwrap();
+        assert_eq!(doc.score.text_boxes[0].x, 150, "moving is one undo step");
+        doc.set_text_box(
+            TextBox {
+                id,
+                text: "  ".into(),
+                ..note
+            },
+            6_000,
+        )
+        .unwrap();
+        assert!(doc.score.text_boxes.is_empty(), "no words, no box");
+        doc.undo().unwrap();
+        assert_eq!(doc.score.text_boxes.len(), 1);
+        assert!(doc.score.has_markings());
     }
 
     #[test]

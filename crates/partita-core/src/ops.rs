@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::model::{
-    Clef, Event, MeasureAttrs, Metadata, Score, Slur, Staff, StaffGroup, StaffMeasure,
-    Transposition, MAX_VOICES,
+    Clef, Event, MeasureAttrs, Metadata, Score, Slur, Staff, StaffGroup, StaffMeasure, TextBox,
+    TextKind, TextStyle, Transposition, MAX_VOICES,
 };
 
 /// Address of one voice inside one measure of one staff.
@@ -100,6 +100,16 @@ pub enum Op {
     SetStaffGroup {
         staff: usize,
         group: Option<StaffGroup>,
+    },
+    /// The style of a kind of text (`None`: back to the default).
+    SetTextStyle {
+        kind: TextKind,
+        style: Option<TextStyle>,
+    },
+    /// Adds, replaces (same `id`) or removes (`None`) a text box.
+    SetTextBox {
+        id: u64,
+        text_box: Option<TextBox>,
     },
 }
 
@@ -388,6 +398,35 @@ impl Op {
                     slur,
                 })
             }
+            Op::SetTextStyle { kind, style } => {
+                let old = match style.clone().filter(|s| *s != TextStyle::default()) {
+                    Some(s) => score.text_styles.insert(*kind, s),
+                    None => score.text_styles.remove(kind),
+                };
+                Ok(Op::SetTextStyle {
+                    kind: *kind,
+                    style: old,
+                })
+            }
+            Op::SetTextBox { id, text_box } => {
+                let at = score.text_boxes.iter().position(|b| b.id == *id);
+                let old = match (at, text_box) {
+                    (Some(i), Some(b)) => {
+                        Some(std::mem::replace(&mut score.text_boxes[i], b.clone()))
+                    }
+                    (Some(i), None) => Some(score.text_boxes.remove(i)),
+                    (None, Some(b)) => {
+                        score.text_boxes.push(b.clone());
+                        score.reserve_id(b.id);
+                        None
+                    }
+                    (None, None) => None,
+                };
+                Ok(Op::SetTextBox {
+                    id: *id,
+                    text_box: old,
+                })
+            }
             Op::SetTempo { bpm } => {
                 if !crate::model::TEMPO_RANGE.contains(bpm) {
                     return Err(OpError::InvalidTempo(*bpm));
@@ -484,6 +523,28 @@ mod tests {
                     }),
                     rehearsal: Some("C".into()),
                 },
+            },
+            Op::SetTextStyle {
+                kind: TextKind::Tempo,
+                style: Some(TextStyle {
+                    font: "Garamond".into(),
+                    size: 85,
+                    bold: Some(false),
+                    italic: None,
+                }),
+            },
+            Op::SetTextBox {
+                id: 7,
+                text_box: Some(TextBox {
+                    id: 7,
+                    page: 1,
+                    x: 150,
+                    y: 400,
+                    text: "Senza pedale\nsempre".into(),
+                    style: TextStyle::default(),
+                    align: crate::model::TextAlign::Center,
+                    frame: true,
+                }),
             },
             Op::SetStaffClef {
                 staff: 0,

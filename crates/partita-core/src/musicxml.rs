@@ -1051,6 +1051,8 @@ impl Importer {
                 .tempo
                 .map(|t| t.clamp(*TEMPO_RANGE.start(), *TEMPO_RANGE.end()))
                 .unwrap_or(DEFAULT_TEMPO),
+            text_styles: Default::default(),
+            text_boxes: Vec::new(),
         };
         let mut unnamed_staves = self.unnamed;
         if score.staves.is_empty() {

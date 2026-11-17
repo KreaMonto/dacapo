@@ -17,7 +17,8 @@ use partita_core::document::{Clipboard, Document};
 use partita_core::file;
 use partita_core::model::{
     Articulation, Clef, Duration, Dynamic, GroupKind, Issue, KeySignature, LyricJoin, Metadata,
-    NoteTextKind, Score, Step, TempoMark, TimeSignature, Transposition,
+    NoteTextKind, Score, Step, TempoMark, TextBox, TextKind, TextStyle, TimeSignature,
+    Transposition,
 };
 use partita_core::musicxml;
 use partita_core::recovery::{Recoverable, RecoveryStore};
@@ -278,6 +279,22 @@ enum Action {
     /// Every text around the music (title, composer, header, footer, page
     /// numbers...). The frontend sends all of them: one left out is reset.
     SetMetadata(Metadata),
+    /// How every text of a kind looks.
+    SetTextStyle {
+        kind: TextKind,
+        style: TextStyle,
+    },
+    /// Several kinds of text at once.
+    SetTextStyles {
+        styles: std::collections::BTreeMap<TextKind, TextStyle>,
+    },
+    /// A text box (`id` 0 adds a new one; empty words remove it).
+    SetTextBox {
+        text_box: TextBox,
+    },
+    RemoveTextBox {
+        id: u64,
+    },
     /// Words on a note: an expression or a technique ("" removes it).
     SetNoteText {
         id: u64,
@@ -528,6 +545,10 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::SetTempo { bpm } => d.set_tempo(bpm, now),
             Action::SetTempoMark { measure, mark } => d.set_tempo_mark(measure, mark, now),
             Action::SetNoteText { id, kind, text } => d.set_note_text(id, kind, &text, now),
+            Action::SetTextStyle { kind, style } => d.set_text_style(kind, style, now),
+            Action::SetTextStyles { styles } => d.set_text_styles(styles, now),
+            Action::SetTextBox { text_box } => d.set_text_box(text_box, now),
+            Action::RemoveTextBox { id } => d.remove_text_box(id, now),
             Action::SetRehearsal { measure, text } => d.set_rehearsal(measure, text, now),
             Action::SetStaff {
                 staff,

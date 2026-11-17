@@ -189,6 +189,27 @@
         }
       },
       set_dynamic({ dynamic }) { const e = voiceOf(view.caret)[view.caret.index - 1]; if (e) { snapshot(); e.dynamic = e.dynamic === dynamic ? null : dynamic; } },
+      // As Document::set_text_style(s), set_text_box and remove_text_box.
+      set_text_style({ kind, style }) {
+        snapshot();
+        view.score.text_styles = { ...(view.score.text_styles || {}), [kind]: style };
+      },
+      set_text_styles({ styles }) {
+        snapshot();
+        view.score.text_styles = { ...(view.score.text_styles || {}), ...styles };
+      },
+      set_text_box({ text_box }) {
+        snapshot();
+        const boxes = (view.score.text_boxes ||= []);
+        if (!text_box.text.trim()) { view.score.text_boxes = boxes.filter((b) => b.id !== text_box.id); return; }
+        if (!text_box.id) text_box = { ...text_box, id: nextId++ };
+        const i = boxes.findIndex((b) => b.id === text_box.id);
+        if (i >= 0) boxes[i] = text_box; else boxes.push(text_box);
+      },
+      remove_text_box({ id }) {
+        snapshot();
+        view.score.text_boxes = (view.score.text_boxes || []).filter((b) => b.id !== id);
+      },
       // As Document::set_note_text: one text per kind ('' removes it).
       set_note_text({ id, kind, text }) {
         for (const st of view.score.staves) for (const cell of st.measures) for (const v of cell.voices) for (const e of v) {
