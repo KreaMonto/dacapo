@@ -19,7 +19,7 @@ const TICKS_WHOLE = 3840;
 // Each event carries one syllable per verse (`event.lyrics[verse]`). Verses
 // are lines of text under the staff; a staff gets as many lines as its
 // longest list of syllables anywhere in the score.
-export const MAX_VERSES = 8; // mirrors dacapo_core::model::MAX_VERSES
+export const MAX_VERSES = 8; // mirrors partita_core::model::MAX_VERSES
 export const LYRIC_PX = 1.7 * SP; // font size
 export const LYRIC_FONT = 'Georgia, "Times New Roman", serif';
 const LYRIC_LINE = 2.3 * SP; // from one verse's baseline to the next
@@ -150,7 +150,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 /**
  * A voice holding a single rest that fills the measure. A plain whole rest
  * means "whole measure" in any time signature. Mirrors
- * `dacapo_core::model::is_measure_rest`.
+ * `partita_core::model::is_measure_rest`.
  */
 export function isMeasureRest(events, cap) {
   if (events.length !== 1 || events[0].kind !== 'rest') return false;

@@ -1,4 +1,4 @@
-//! Tauri shell of Da Capo: exposes `dacapo-core` to the web frontend.
+//! Tauri shell of Partita: exposes `partita-core` to the web frontend.
 //!
 //! The Rust side owns every open document. The frontend only sends
 //! [`Action`]s and redraws from the [`DocView`] it gets back, so a frontend
@@ -10,15 +10,15 @@ mod updater;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use dacapo_core::cursor::{Caret, Move, SelectionRange};
-use dacapo_core::document::{Clipboard, Document};
-use dacapo_core::file;
-use dacapo_core::model::{
+use partita_core::cursor::{Caret, Move, SelectionRange};
+use partita_core::document::{Clipboard, Document};
+use partita_core::file;
+use partita_core::model::{
     Articulation, Clef, Duration, Dynamic, Issue, KeySignature, LyricJoin, Metadata, Score, Step,
     TimeSignature,
 };
-use dacapo_core::recovery::{Recoverable, RecoveryStore};
-use dacapo_core::session::{now_ms, Session};
+use partita_core::recovery::{Recoverable, RecoveryStore};
+use partita_core::session::{now_ms, Session};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, State};
 use uuid::Uuid;
@@ -97,7 +97,7 @@ struct TabInfo {
 #[derive(Deserialize)]
 struct EraseTarget {
     id: u64,
-    pitch: Option<dacapo_core::model::Pitch>,
+    pitch: Option<partita_core::model::Pitch>,
 }
 
 /// Editing commands sent by the frontend.
@@ -107,13 +107,13 @@ enum Action {
     /// Placing an accidental with the mouse (a chord tone alone when `pitch` is set).
     SetAccidentalAt {
         id: u64,
-        pitch: Option<dacapo_core::model::Pitch>,
+        pitch: Option<partita_core::model::Pitch>,
         alter: i8,
     },
     /// Dragging a notehead up or down (a chord tone alone when `pitch` is set).
     MovePitch {
         id: u64,
-        pitch: Option<dacapo_core::model::Pitch>,
+        pitch: Option<partita_core::model::Pitch>,
         steps: i32,
     },
     /// The eraser: whole events, or single chord tones when `pitch` is set.
@@ -223,7 +223,7 @@ fn start_session(state: &AppState, doc: Document) -> Result<Session, String> {
         Ok(s) => Ok(s),
         Err(e) => {
             // Better to edit unprotected than not at all; the UI shows it.
-            eprintln!("[dacapo] crash recovery unavailable: {e}");
+            eprintln!("[partita] crash recovery unavailable: {e}");
             Session::start(doc, None).map_err(|e| e.to_string())
         }
     }
@@ -423,12 +423,12 @@ fn download_soundfont(state: State<AppState>) {
 fn play(state: State<AppState>, id: String, from_start: bool) -> Result<(), String> {
     let mut inner = state.inner.lock().unwrap();
     let doc = inner.find(&id)?.doc();
-    let timeline = dacapo_core::playback::build(&doc.score);
+    let timeline = partita_core::playback::build(&doc.score);
     let from = if from_start {
         0
     } else {
         let c = doc.caret();
-        let tick = dacapo_core::cursor::tick_at(&doc.score, c.staff, c.measure, c.voice, c.index);
+        let tick = partita_core::cursor::tick_at(&doc.score, c.staff, c.measure, c.voice, c.index);
         timeline.tick_at(c.measure, tick)
     };
     state.audio.play(timeline, from)
@@ -445,7 +445,7 @@ fn pause(state: State<AppState>, id: String) -> Result<serde_json::Value, String
         let c = d.caret();
         let measure = stopped.measure.min(d.score.measures.len() - 1);
         let index =
-            dacapo_core::cursor::index_at_tick(&d.score, c.staff, measure, c.voice, stopped.tick);
+            partita_core::cursor::index_at_tick(&d.score, c.staff, measure, c.voice, stopped.tick);
         d.set_caret(
             Caret {
                 measure,
@@ -498,18 +498,18 @@ struct AboutInfo {
     credits: Vec<Credit>,
 }
 
-const REPOSITORY: &str = "https://github.com/dacapo-editor/dacapo";
+const REPOSITORY: &str = "https://github.com/partita-notation/partita";
 
 /// Everything the Help → About dialog shows: version, platform, the
-/// SoundFont downloaded by the app, and credits for what Da Capo is built on.
+/// SoundFont downloaded by the app, and credits for what Partita is built on.
 #[tauri::command]
 fn about_info(app: tauri::AppHandle, state: State<AppState>) -> AboutInfo {
     AboutInfo {
-        name: "Da Capo",
+        name: "Partita",
         version: env!("CARGO_PKG_VERSION"),
         license: "GPL-3.0-or-later",
         repository: REPOSITORY,
-        issues: "https://github.com/dacapo-editor/dacapo/issues",
+        issues: "https://github.com/partita-notation/partita/issues",
         os: std::env::consts::OS,
         arch: std::env::consts::ARCH,
         tauri: tauri::VERSION,
@@ -712,18 +712,24 @@ fn install_update(app: tauri::AppHandle, state: State<AppState>) -> Result<(), S
     app.restart()
 }
 
-/// Identifier used before the project moved to the dacapo-editor GitHub
-/// organization (versions up to 0.2.0 development builds).
-const OLD_IDENTIFIER: &str = "org.dacapo.editor";
+/// Identifiers the app had before, newest first: as Da Capo in the
+/// dacapo-editor GitHub organization (0.2.0 to 0.2.2), and before that
+/// (0.2.0 development builds).
+const OLD_IDENTIFIERS: [&str; 2] = ["io.github.dacapo-editor.dacapo", "org.dacapo.editor"];
 
 /// Moves the downloaded SoundFont and pending crash-recovery data from the
-/// old identifier's data folder, once, so nothing is lost or re-downloaded.
-/// Only folders missing in the new location are moved; failures are logged
-/// and the old data is left untouched.
-fn migrate_old_data_dir(new_dir: &std::path::Path) {
-    let Some(old_dir) = new_dir.parent().map(|p| p.join(OLD_IDENTIFIER)) else {
-        return;
-    };
+/// old identifiers' data folders, once, so nothing is lost or re-downloaded.
+/// Only folders missing in the new location are moved, so the newest old
+/// folder wins; failures are logged and the old data is left untouched.
+fn migrate_old_data_dirs(new_dir: &std::path::Path) {
+    for id in OLD_IDENTIFIERS {
+        if let Some(old_dir) = new_dir.parent().map(|p| p.join(id)) {
+            migrate_old_data_dir(&old_dir, new_dir);
+        }
+    }
+}
+
+fn migrate_old_data_dir(old_dir: &std::path::Path, new_dir: &std::path::Path) {
     if !old_dir.is_dir() || old_dir == new_dir {
         return;
     }
@@ -732,8 +738,8 @@ fn migrate_old_data_dir(new_dir: &std::path::Path) {
         if from.is_dir() && !to.exists() {
             let moved = std::fs::create_dir_all(new_dir).and_then(|_| std::fs::rename(&from, &to));
             match moved {
-                Ok(()) => eprintln!("[dacapo] moved {} to {}", from.display(), to.display()),
-                Err(e) => eprintln!("[dacapo] could not move {}: {e}", from.display()),
+                Ok(()) => eprintln!("[partita] moved {} to {}", from.display(), to.display()),
+                Err(e) => eprintln!("[partita] could not move {}: {e}", from.display()),
             }
         }
     }
@@ -745,9 +751,10 @@ mod tests {
 
     #[test]
     fn old_data_folder_is_migrated_once() {
-        let base = std::env::temp_dir().join(format!("dacapo-migrate-{}", Uuid::new_v4()));
-        let old = base.join(OLD_IDENTIFIER);
-        let new = base.join("io.github.dacapo-editor.dacapo");
+        let base = std::env::temp_dir().join(format!("partita-migrate-{}", Uuid::new_v4()));
+        let old = base.join(OLD_IDENTIFIERS[0]);
+        let older = base.join(OLD_IDENTIFIERS[1]);
+        let new = base.join("io.github.partita-notation.partita");
         std::fs::create_dir_all(old.join("soundfonts")).unwrap();
         std::fs::create_dir_all(old.join("recovery").join("abc")).unwrap();
         std::fs::write(
@@ -756,15 +763,20 @@ mod tests {
         )
         .unwrap();
 
-        migrate_old_data_dir(&new);
+        std::fs::create_dir_all(older.join("soundfonts")).unwrap();
+        std::fs::write(older.join("soundfonts").join("older.sf2"), b"x").unwrap();
+
+        migrate_old_data_dirs(&new);
         assert!(new.join("soundfonts").join("FluidR3_GM.sf2").is_file());
+        // The newest old folder wins; the older one is left alone.
+        assert!(!new.join("soundfonts").join("older.sf2").exists());
         assert!(new.join("recovery").join("abc").is_dir());
         assert!(!old.join("soundfonts").exists());
 
         // A second run (or a later old folder) never overwrites new data.
         std::fs::create_dir_all(old.join("soundfonts")).unwrap();
         std::fs::write(old.join("soundfonts").join("other.sf2"), b"x").unwrap();
-        migrate_old_data_dir(&new);
+        migrate_old_data_dirs(&new);
         assert!(!new.join("soundfonts").join("other.sf2").exists());
 
         std::fs::remove_dir_all(&base).unwrap();
@@ -779,7 +791,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             if let Ok(dir) = app.path().app_local_data_dir() {
-                migrate_old_data_dir(&dir);
+                migrate_old_data_dirs(&dir);
             }
             let store = app
                 .path()
@@ -788,7 +800,7 @@ pub fn run() {
                 .and_then(|dir| RecoveryStore::open(dir.join("recovery")).ok());
             if store.is_none() {
                 eprintln!(
-                    "[dacapo] could not open the recovery folder; documents are not protected"
+                    "[partita] could not open the recovery folder; documents are not protected"
                 );
             }
             // SoundFonts live next to the recovery data, outside the repo.
@@ -850,7 +862,7 @@ pub fn run() {
             install_update,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building Da Capo")
+        .expect("error while building Partita")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 // Clean documents are closed normally. Dirty ones keep their

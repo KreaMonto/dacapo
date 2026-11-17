@@ -1,6 +1,6 @@
 # Installation
 
-This guide explains how to set up an environment to develop and run Da Capo locally.
+This guide explains how to set up an environment to develop and run Partita locally.
 
 ## Requirements
 
@@ -15,20 +15,20 @@ This guide explains how to set up an environment to develop and run Da Capo loca
 ## Get the code
 
 ```bash
-git clone https://github.com/dacapo-editor/dacapo.git
-cd dacapo
+git clone https://github.com/partita-notation/partita.git
+cd partita
 ```
 
 ## Run the tests
 
 ```bash
-cargo test -p dacapo-core
+cargo test -p partita-core
 ```
 
 ## Run the app
 
 ```bash
-cargo run -p dacapo
+cargo run -p partita
 ```
 
 The app loads the frontend from `src/`. After changing HTML, JS or CSS, rebuild with `cargo run` to see the change.
@@ -57,7 +57,7 @@ Alternatives while it is on:
 - **Core tests in Docker** (no GUI needed):
 
   ```bash
-  docker run --rm -v "${PWD}:/work" -v dacapo-cargo:/usr/local/cargo/registry -v dacapo-target:/target -e CARGO_TARGET_DIR=/target -w /work rust:1-bookworm cargo test -p dacapo-core
+  docker run --rm -v "${PWD}:/work" -v partita-cargo:/usr/local/cargo/registry -v partita-target:/target -e CARGO_TARGET_DIR=/target -w /work rust:1-bookworm cargo test -p partita-core
   ```
 
 - **Renderer preview**: serve the repository over HTTP and open `/dev/preview.html` in a browser. For example: `docker run --rm -p 8765:80 -v "${PWD}:/usr/share/nginx/html:ro" nginx:alpine`, then open http://localhost:8765/dev/preview.html.
@@ -67,5 +67,5 @@ Running the desktop app itself inside Docker is not practical on Windows, becaus
 
 ## Where data is stored
 
-- Documents: wherever you save them (`*.dacapo`), plus a `*.dacapo.bak` copy of the previous version.
-- Crash-recovery data: `%LOCALAPPDATA%\io.github.dacapo-editor.dacapo\recovery\` on Windows (the app's local data directory on other systems). It is deleted automatically when documents are closed normally.
+- Documents: wherever you save them (`*.partita`), plus a `*.partita.bak` copy of the previous version.
+- Crash-recovery data: `%LOCALAPPDATA%\io.github.partita-notation.partita\recovery\` on Windows (the app's local data directory on other systems). It is deleted automatically when documents are closed normally.

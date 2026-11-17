@@ -2,14 +2,14 @@
 <!--
   SignPath artifact configuration "app": the program itself, signed before
   it is packed into the installers. The GitHub artifact is a zip that holds
-  only dacapo.exe. See docs/RELEASING.md.
+  only partita.exe. See docs/RELEASING.md.
 -->
 <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
   <parameters>
     <parameter name="version" required="true" />
   </parameters>
   <zip-file>
-    <pe-file path="dacapo.exe" product-name="Da Capo" product-version="${version}">
+    <pe-file path="partita.exe" product-name="Partita" product-version="${version}">
       <authenticode-sign />
     </pe-file>
   </zip-file>

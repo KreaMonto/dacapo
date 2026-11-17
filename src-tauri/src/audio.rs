@@ -13,7 +13,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use dacapo_core::playback::Timeline;
+use partita_core::playback::Timeline;
 use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 use serde::Serialize;
 
@@ -425,7 +425,7 @@ impl Engine {
 fn open_output(player: Arc<Mutex<Player>>) -> Result<u32, String> {
     let (tx, rx) = mpsc::channel();
     std::thread::Builder::new()
-        .name("dacapo-audio".into())
+        .name("partita-audio".into())
         .spawn(move || {
             let result = (|| -> Result<(cpal::Stream, u32), String> {
                 let host = cpal::default_host();
@@ -435,7 +435,7 @@ fn open_output(player: Arc<Mutex<Player>>) -> Result<u32, String> {
                 let config = device.default_output_config().map_err(|e| e.to_string())?;
                 let rate = config.sample_rate().0;
                 let channels = config.channels() as usize;
-                let err = |e| eprintln!("[dacapo] audio stream error: {e}");
+                let err = |e| eprintln!("[partita] audio stream error: {e}");
                 let stream = match config.sample_format() {
                     cpal::SampleFormat::F32 => device.build_output_stream(
                         &config.into(),

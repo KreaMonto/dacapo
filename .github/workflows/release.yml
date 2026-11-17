@@ -3,7 +3,7 @@
 # Windows builds are signed with SignPath once the SIGNPATH_* settings exist
 # (see docs/RELEASING.md); until then they are published unsigned.
 # Review the draft and click "Publish release": from then on, installed
-# copies of Da Capo offer the new version.
+# copies of Partita offer the new version.
 #
 # Start it in either of two ways (see docs/RELEASING.md):
 #   - Actions -> Release -> Run workflow (on main). The tag v<version> is
@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           version=$(cargo metadata --no-deps --format-version 1 \
-            | jq -r '.packages[] | select(.name == "dacapo") | .version')
+            | jq -r '.packages[] | select(.name == "partita") | .version')
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "App version: $version"
           if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
@@ -82,9 +82,9 @@ jobs:
 
           | System | File |
           |---|---|
-          | Windows 10 and 11 | \`Da.Capo_${VERSION}_x64-setup.exe\` (or the \`.msi\`) |
-          | macOS, Apple silicon (M1 and later) | \`Da.Capo_${VERSION}_aarch64.dmg\` |
-          | macOS, Intel | \`Da.Capo_${VERSION}_x64.dmg\` |
+          | Windows 10 and 11 | \`Partita_${VERSION}_x64-setup.exe\` (or the \`.msi\`) |
+          | macOS, Apple silicon (M1 and later) | \`Partita_${VERSION}_aarch64.dmg\` |
+          | macOS, Intel | \`Partita_${VERSION}_x64.dmg\` |
           | Linux | \`.AppImage\` (any distribution), \`.deb\` (Debian, Ubuntu) or \`.rpm\` (Fedora, openSUSE) |
 
           $WINDOWS_NOTE
@@ -100,7 +100,7 @@ jobs:
             id=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
               -f tag_name="$tag" \
               -f target_commitish="$GITHUB_SHA" \
-              -f name="Da Capo $VERSION" \
+              -f name="Partita $VERSION" \
               -F body=@notes.md \
               -F draft=true \
               --jq .id)
@@ -115,7 +115,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p dacapo-core --locked
+      - run: cargo test -p partita-core --locked
 
   # macOS and Linux. Windows has its own job below, because its files are
   # signed between building and publishing.
@@ -206,7 +206,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: unsigned-app
-          path: target/release/dacapo.exe
+          path: target/release/partita.exe
           if-no-files-found: error
 
       - name: Sign the program (SignPath)
@@ -215,7 +215,7 @@ jobs:
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'dacapo' }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'partita' }}
           signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
           artifact-configuration-slug: app
           github-artifact-id: ${{ steps.unsigned-app.outputs.artifact-id }}
@@ -227,7 +227,7 @@ jobs:
 
       - name: Put the signed program in place
         if: env.SIGN == 'true'
-        run: cp signed-app/dacapo.exe target/release/dacapo.exe
+        run: cp signed-app/partita.exe target/release/partita.exe
 
       - name: Build the installers
         env:
@@ -260,7 +260,7 @@ jobs:
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'dacapo' }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'partita' }}
           signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
           artifact-configuration-slug: installers
           github-artifact-id: ${{ steps.unsigned-installers.outputs.artifact-id }}
@@ -330,8 +330,8 @@ jobs:
           fi
 
           base="https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
-          nsis="Da.Capo_${VERSION}_x64-setup.exe"
-          msi="Da.Capo_${VERSION}_x64_en-US.msi"
+          nsis="Partita_${VERSION}_x64-setup.exe"
+          msi="Partita_${VERSION}_x64_en-US.msi"
           # Plain "windows-x86_64" points at the .exe (NSIS), the installer
           # the download page recommends.
           jq --arg nsis_url "$base/$nsis" --arg nsis_sig "$(download "$nsis.sig")" \

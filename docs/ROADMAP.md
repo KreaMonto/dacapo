@@ -1,4 +1,4 @@
-# Da Capo Roadmap
+# Partita Roadmap
 
 This document tracks the development goals and major stages toward a complete open source notation editor.
 
@@ -9,7 +9,7 @@ This document tracks the development goals and major stages toward a complete op
 - [x] Word-processor caret and selection, including multi-staff selection.
 - [x] Undo/redo with Word-style grouping.
 - [x] Several documents open at once, in tabs.
-- [x] `.dacapo` file format with atomic saving and a `.bak` copy.
+- [x] `.partita` file format with atomic saving and a `.bak` copy.
 - [x] Crash recovery: CRC-checked binary journal, snapshots, recovery on start-up.
 - [x] Basic SVG rendering: clefs, key and time signatures, notes, rests, accidentals, ledger lines.
 - [x] Keyboard note entry and editing shortcuts.
@@ -53,7 +53,7 @@ This document tracks the development goals and major stages toward a complete op
 - [ ] MusicXML import.
 - [ ] PDF export with page layout.
 - [ ] Print.
-- [ ] Recent files list and file association for `.dacapo`.
+- [ ] Recent files list and file association for `.partita`.
 
 ## Phase 4: Audio and playback
 

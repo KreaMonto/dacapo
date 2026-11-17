@@ -2151,7 +2151,7 @@ mod tests {
         assert!(!doc.is_dirty());
         type_notes(&mut doc, &[C], 0);
         assert!(doc.is_dirty());
-        doc.mark_saved("x.dacapo".into());
+        doc.mark_saved("x.partita".into());
         assert!(!doc.is_dirty());
         assert_eq!(doc.display_name(), "x");
     }

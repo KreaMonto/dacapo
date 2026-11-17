@@ -1,11 +1,11 @@
-# Using Da Capo
+# Using Partita
 
-Da Capo is designed to feel like a word processor whose "text" is music. A blinking caret marks where the next note goes. You can select with Shift or the mouse, cut, copy and paste, and undo with Ctrl+Z.
+Partita is designed to feel like a word processor whose "text" is music. A blinking caret marks where the next note goes. You can select with Shift or the mouse, cut, copy and paste, and undo with Ctrl+Z.
 
 ## Documents
 
 - **New** (Ctrl+N) opens a new tab with an empty 8-measure score.
-- **Open** (Ctrl+O) loads a `.dacapo` file.
+- **Open** (Ctrl+O) loads a `.partita` file.
 - **Save** (Ctrl+S) saves the document. **Save As** is Ctrl+Shift+S.
 - **Close tab** is Ctrl+W, and **next/previous tab** is Ctrl+Tab and Ctrl+Shift+Tab.
 - Edit the **title** and **composer** directly on the page.
@@ -19,12 +19,12 @@ The menu bar has **File**, **Edit**, **View**, **Insert**, **Play** and **Help**
 **Help** contains:
 - **Keyboard Shortcuts** (F1).
 - **What's New**, which opens the changelog.
-- **Report a Problem…**, **Source Code on GitHub** and **Support Da Capo…**, which open in your browser.
+- **Report a Problem…**, **Source Code on GitHub** and **Support Partita…**, which open in your browser.
 - **Check for Updates…** and **Automatic Updates** (see [Updates](#updates)).
-- **Credits and Licenses** and **About Da Capo**. They show:
+- **Credits and Licenses** and **About Partita**. They show:
   - the version and platform;
-  - the components Da Capo downloaded, such as FluidR3 GM: its version, whether it is installed, and where;
-  - credits for every project Da Capo is built on, with licenses and links.
+  - the components Partita downloaded, such as FluidR3 GM: its version, whether it is installed, and where;
+  - credits for every project Partita is built on, with licenses and links.
 
   **Copy version info** puts a short summary on the clipboard to paste into a bug report.
 
@@ -56,9 +56,9 @@ All views edit the same way. Clicking, selecting and the pointer figure work ide
 - **View → Fit Page Width** sizes the page to the window. Page view starts that way the first time.
 - The zoom is shown at the right of the status bar. Click it to go back to 100%.
 
-**Print** (Ctrl+P) prints the page view in black on white, one sheet per page. Editing aids such as the caret, the selection and the error marks are left out. From another view, Da Capo switches to page view for the print and back afterwards.
+**Print** (Ctrl+P) prints the page view in black on white, one sheet per page. Editing aids such as the caret, the selection and the error marks are left out. From another view, Partita switches to page view for the print and back afterwards.
 
-**Theme:** **System** (default) follows your computer's light or dark setting. **Light** or **Dark** fix it for Da Capo only.
+**Theme:** **System** (default) follows your computer's light or dark setting. **Light** or **Dark** fix it for Partita only.
 
 ## Entering music with the mouse
 
@@ -75,7 +75,7 @@ With the **Select** tool, point at a notehead: the pointer becomes a vertical do
 
 ## The palette
 
-The palette is grouped into collapsible categories. Click a heading to open or close it; Da Capo remembers your choice. Hover any button, or reach it with Tab, to see a tooltip with its name, what it does, and its keyboard shortcut.
+The palette is grouped into collapsible categories. Click a heading to open or close it; Partita remembers your choice. Hover any button, or reach it with Tab, to see a tooltip with its name, what it does, and its keyboard shortcut.
 
 **Accidentals, articulations and dynamics** can be placed with the mouse: click the mark in the palette (it stays highlighted and follows the pointer), then click each note it goes on; the note under the pointer lights up first. An accidental clicked on a chord changes only that tone. **Esc**, a right-click or clicking the mark again puts it down. With a selection, clicking a mark applies it to every note in the selection at once. From the keyboard, marks apply to **the note just before the caret**.
 
@@ -103,7 +103,7 @@ The palette is grouped into collapsible categories. Click a heading to open or c
 
 A green line follows the music, and the view scrolls to keep it in sight. Notes also **sound while you write them**: placing a note, adding to a chord, or changing a pitch or accidental plays it.
 
-**Sounds.** Playback uses **FluidR3 GM**, a free set of recorded instruments by Frank Wen (MIT license). The first time you press Play, Da Capo asks before downloading it (148 MB, once). Progress shows in the status bar, and playback starts by itself when it is ready. The file is kept in the app's data folder (`%LOCALAPPDATA%\io.github.dacapo-editor.dacapo\soundfonts\` on Windows).
+**Sounds.** Playback uses **FluidR3 GM**, a free set of recorded instruments by Frank Wen (MIT license). The first time you press Play, Partita asks before downloading it (148 MB, once). Progress shows in the status bar, and playback starts by itself when it is ready. The file is kept in the app's data folder (`%LOCALAPPDATA%\io.github.partita-notation.partita\soundfonts\` on Windows).
 
 How the score is played:
 - **Ties** sustain the note, including across barlines.
@@ -218,12 +218,12 @@ The status bar shows **● Recovery on** when protection is active.
 
 ## Updates
 
-Da Capo looks for a new version on GitHub a few seconds after it starts, at most once a day. When there is one, it tells you which version it is and links to what's new:
+Partita looks for a new version on GitHub a few seconds after it starts, at most once a day. When there is one, it tells you which version it is and links to what's new:
 
 - **Download and Install** downloads it in the background while you keep working. Progress shows in the status bar.
 - **Later** asks again the next day.
 - **Skip This Version** stays quiet until a newer version appears.
 
-When the download is ready (and verified against the project's signing key), Da Capo asks to restart. **Restart Now** installs the update and opens the new version. Unsaved changes are kept: they are offered back when Da Capo starts again, as after a crash. If you choose **Later**, click **⟳ Restart to update** in the status bar whenever you are ready.
+When the download is ready (and verified against the project's signing key), Partita asks to restart. **Restart Now** installs the update and opens the new version. Unsaved changes are kept: they are offered back when Partita starts again, as after a crash. If you choose **Later**, click **⟳ Restart to update** in the status bar whenever you are ready.
 
-**Help → Check for Updates…** checks right away. Turn off **Help → Automatic Updates** if you prefer Da Capo never to contact GitHub on its own.
+**Help → Check for Updates…** checks right away. Turn off **Help → Automatic Updates** if you prefer Partita never to contact GitHub on its own.

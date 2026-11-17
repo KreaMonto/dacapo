@@ -2,14 +2,14 @@
 
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
-The Windows installers (`.exe` and `.msi`) and the `dacapo.exe` program inside them are signed. They are built from this repository by GitHub Actions ([`.github/workflows/release.yml`](../.github/workflows/release.yml)) and published on the [Releases page](https://github.com/dacapo-editor/dacapo/releases). Nothing built outside that workflow is signed.
+The Windows installers (`.exe` and `.msi`) and the `partita.exe` program inside them are signed. They are built from this repository by GitHub Actions ([`.github/workflows/release.yml`](../.github/workflows/release.yml)) and published on the [Releases page](https://github.com/partita-notation/partita/releases). Nothing built outside that workflow is signed.
 
 ## Team roles
 
 | Role | Members |
 |---|---|
-| Committers and reviewers | [Members of the dacapo-editor organization](https://github.com/orgs/dacapo-editor/people) |
-| Approvers | [Owners of the dacapo-editor organization](https://github.com/orgs/dacapo-editor/people?query=role%3Aowner) |
+| Committers and reviewers | [Members of the partita-notation organization](https://github.com/orgs/partita-notation/people) |
+| Approvers | [Owners of the partita-notation organization](https://github.com/orgs/partita-notation/people?query=role%3Aowner) |
 
 - Every change reaches `main` through a reviewed pull request.
 - Every signing request is approved by hand by an approver in SignPath, once per release.
@@ -17,13 +17,13 @@ The Windows installers (`.exe` and `.msi`) and the `dacapo.exe` program inside t
 
 ## Privacy policy
 
-Da Capo does not collect, store or send personal data or usage statistics. Your scores stay on your computer.
+Partita does not collect, store or send personal data or usage statistics. Your scores stay on your computer.
 
 The program connects to the internet only in these cases:
 
 | When | Where | Why | How to turn it off |
 |---|---|---|---|
-| Once a day, at startup | `github.com` (the Da Capo Releases page) | To check whether a newer version exists. If there is one, Da Capo asks you before downloading it. | **Help → Automatic Updates** (untick). **Help → Check for Updates…** still works when you ask. |
+| Once a day, at startup | `github.com` (the Partita Releases page) | To check whether a newer version exists. If there is one, Partita asks you before downloading it. | **Help → Automatic Updates** (untick). **Help → Check for Updates…** still works when you ask. |
 | When you choose to download the SoundFont for playback | `github.com` (the FluidR3 GM SoundFont release) | To download the sounds used for playback. It happens once, after you confirm. | Do not download it; everything except playback works without it. |
 | When you click a link (for example in the About dialog) | The site of that link, in your web browser | — | Do not click it. |
 

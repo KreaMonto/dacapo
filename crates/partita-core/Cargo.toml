@@ -1,6 +1,6 @@
 [package]
-name = "dacapo-core"
-description = "Musical model, editing engine and crash-safe persistence for Da Capo."
+name = "partita-core"
+description = "Musical model, editing engine and crash-safe persistence for Partita."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

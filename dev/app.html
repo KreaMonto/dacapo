@@ -39,7 +39,7 @@
     }
     // `?theme=light|dark` forces the theme (for screenshots).
     const forcedTheme = new URLSearchParams(location.search).get('theme');
-    if (forcedTheme) try { localStorage.setItem('dacapo.theme', JSON.stringify(forcedTheme)); } catch {}
+    if (forcedTheme) try { localStorage.setItem('partita.theme', JSON.stringify(forcedTheme)); } catch {}
     // `?demo`: a short piano piece instead, for screenshots of the app.
     if (new URLSearchParams(location.search).has('demo')) {
       const n = (s, base, extra = {}) => {
@@ -66,7 +66,7 @@
         [n('G2,D3,G3', W)],
       ];
       view.name = 'Morning Song';
-      view.score.metadata = { title: 'Morning Song', composer: 'Da Capo demo' };
+      view.score.metadata = { title: 'Morning Song', composer: 'Partita demo' };
       view.score.measures = rh.map(() => ({ time: { beats: 4, beat_type: 4 }, key: { fifths: 1 } }));
       view.score.staves[0].measures = rh.map(cell);
       view.score.staves[1].measures = lh.map(cell);
@@ -237,14 +237,14 @@
       stop_playback() { sound.playing = false; },
       about_info() {
         return {
-          name: 'Da Capo', version: '0.2.0', license: 'GPL-3.0-or-later',
-          repository: 'https://github.com/dacapo-editor/dacapo', issues: 'https://github.com/dacapo-editor/dacapo/issues',
+          name: 'Partita', version: '0.2.0', license: 'GPL-3.0-or-later',
+          repository: 'https://github.com/partita-notation/partita', issues: 'https://github.com/partita-notation/partita/issues',
           os: 'windows', arch: 'x86_64', tauri: '2.x (fake)', file_format: 3,
-          data_dir: 'C:\\Users\\you\\AppData\\Local\\io.github.dacapo-editor.dacapo',
+          data_dir: 'C:\\Users\\you\\AppData\\Local\\io.github.partita-notation.partita',
           soundfont: {
             name: 'FluidR3 GM', version: '3.1', author: 'Frank Wen', license: 'MIT',
             homepage: 'https://github.com/pianobooster/fluid-soundfont', source_url: '',
-            installed: sound.state === 'ready', path: 'C:\\Users\\you\\AppData\\Local\\io.github.dacapo-editor.dacapo\\soundfonts\\FluidR3_GM.sf2',
+            installed: sound.state === 'ready', path: 'C:\\Users\\you\\AppData\\Local\\io.github.partita-notation.partita\\soundfonts\\FluidR3_GM.sf2',
             size_bytes: sound.state === 'ready' ? 148398306 : 0, status: audio.audio_status(),
           },
           credits: [
@@ -280,7 +280,7 @@
       },
       install_update() { location.reload(); },
     };
-    try { localStorage.removeItem('dacapo.updates.lastCheck'); } catch {}
+    try { localStorage.removeItem('partita.updates.lastCheck'); } catch {}
     window.__TAURI__ = {
       core: {
         async invoke(cmd, args) {

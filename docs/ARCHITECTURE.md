@@ -1,6 +1,6 @@
-# Da Capo Architecture
+# Partita Architecture
 
-This document describes the technical design of Da Capo and the reasons behind its key decisions.
+This document describes the technical design of Partita and the reasons behind its key decisions.
 
 ## Overview
 
@@ -13,14 +13,14 @@ This document describes the technical design of Da Capo and the reasons behind i
 │  Tauri shell  (src-tauri/)   │  owns the open Sessions, dialogs, window events
 └──────────────┬───────────────┘
 ┌──────────────▼───────────────┐
-│  dacapo-core  (crates/)      │  model · ops · cursor · history · document
-│                              │  file (.dacapo) · recovery (journal) · session
+│  partita-core  (crates/)      │  model · ops · cursor · history · document
+│                              │  file (.partita) · recovery (journal) · session
 └──────────────────────────────┘
 ```
 
 **Rust is the single source of truth.** The frontend holds no musical state of its own. It sends an `Action`, receives the complete view of the document, and redraws. A crash or reload of the web view therefore cannot lose work, and everything that needs protecting lives in one place.
 
-`dacapo-core` has no UI or Tauri dependency, so it can be tested with plain `cargo test`. It could also power other front ends later, such as a CLI converter or a WebAssembly build.
+`partita-core` has no UI or Tauri dependency, so it can be tested with plain `cargo test`. It could also power other front ends later, such as a CLI converter or a WebAssembly build.
 
 ## Musical model (`model.rs`)
 
@@ -70,18 +70,18 @@ The history is capped at 1,000 steps.
 
 ## Saving files (`file.rs`)
 
-`.dacapo` files are pretty-printed JSON:
+`.partita` files are pretty-printed JSON:
 
 ```json
-{ "format": "dacapo", "format_version": 1, "score": { … } }
+{ "format": "partita", "format_version": 1, "score": { … } }
 ```
 
 Saving is **atomic**:
 
-1. Copy the existing file to `name.dacapo.bak`.
-2. Write the new content to `name.dacapo.tmp`.
+1. Copy the existing file to `name.partita.bak`.
+2. Write the new content to `name.partita.tmp`.
 3. Flush it to the physical disk (`fsync`).
-4. Rename it over `name.dacapo`.
+4. Rename it over `name.partita`.
 
 A crash at any moment leaves either the complete old file or the complete new one, never a half-written file. Loading checks the format marker, refuses files from newer versions, and validates the structure.
 
@@ -89,7 +89,7 @@ A crash at any moment leaves either the complete old file or the complete new on
 
 Goal: **if the computer loses power, at most about half a second of work is lost.** This applies to untitled documents too.
 
-Each open document has a folder under the app's local data directory (on Windows, `%LOCALAPPDATA%\io.github.dacapo-editor.dacapo\recovery\<session-uuid>\`):
+Each open document has a folder under the app's local data directory (on Windows, `%LOCALAPPDATA%\io.github.partita-notation.partita\recovery\<session-uuid>\`):
 
 | File | Content |
 |---|---|
