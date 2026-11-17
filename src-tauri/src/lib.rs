@@ -17,7 +17,7 @@ use partita_core::document::{Clipboard, Document};
 use partita_core::file;
 use partita_core::model::{
     Articulation, Clef, Duration, Dynamic, GroupKind, Issue, KeySignature, LyricJoin, Metadata,
-    Score, Step, TempoMark, TimeSignature, Transposition,
+    NoteTextKind, Score, Step, TempoMark, TimeSignature, Transposition,
 };
 use partita_core::musicxml;
 use partita_core::recovery::{Recoverable, RecoveryStore};
@@ -278,6 +278,17 @@ enum Action {
     /// Every text around the music (title, composer, header, footer, page
     /// numbers...). The frontend sends all of them: one left out is reset.
     SetMetadata(Metadata),
+    /// Words on a note: an expression or a technique ("" removes it).
+    SetNoteText {
+        id: u64,
+        kind: NoteTextKind,
+        text: String,
+    },
+    /// A rehearsal mark at the start of a measure (`None` removes it).
+    SetRehearsal {
+        measure: usize,
+        text: Option<String>,
+    },
     /// A tempo marking at the start of a measure (`None` removes it).
     SetTempoMark {
         measure: usize,
@@ -287,10 +298,14 @@ enum Action {
         bpm: u16,
     },
     /// Name, playback instrument (General MIDI program) and clef of a staff.
+    /// The staff dialog: an instrument's name, sound, clef and transposition
+    /// (all its braced staves), and `staves` to make a lone staff a grand staff.
     SetStaff {
         staff: usize,
         #[serde(flatten)]
         props: StaffProps,
+        #[serde(default = "one")]
+        staves: usize,
     },
     /// Joins staves `first..=last` with a bracket or brace (`None` ungroups).
     GroupStaves {
@@ -512,7 +527,13 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::SetMetadata(metadata) => d.set_metadata(metadata, now),
             Action::SetTempo { bpm } => d.set_tempo(bpm, now),
             Action::SetTempoMark { measure, mark } => d.set_tempo_mark(measure, mark, now),
-            Action::SetStaff { staff, props } => d.set_staff_properties(staff, props, now),
+            Action::SetNoteText { id, kind, text } => d.set_note_text(id, kind, &text, now),
+            Action::SetRehearsal { measure, text } => d.set_rehearsal(measure, text, now),
+            Action::SetStaff {
+                staff,
+                props,
+                staves,
+            } => d.set_instrument(staff, props, staves, now),
             Action::GroupStaves { first, last, kind } => d.group_staves(first, last, kind, now),
         };
         r.map_err(UiError::from)

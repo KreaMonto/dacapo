@@ -156,6 +156,18 @@
         </div>
       </details>
 
+      <!-- Words around the notes: tempo, expression, technique, rehearsal
+           marks. They go on the caret's measure or the note before it. -->
+      <details data-section="markings" open>
+        <summary data-i18n="palette.markings"></summary>
+        <div class="grid2 markings">
+          <button data-cmd="tempo-mark" class="text-btn" data-i18n-tip="palette.tempo" data-i18n-desc="palette.tempo.desc" data-i18n-aria="palette.tempo"><span class="m">&#xECA5;</span>&#8202;=</button>
+          <button data-cmd="note-text:expression" class="text-btn" data-i18n-tip="palette.expression" data-i18n-desc="palette.expression.desc" data-i18n-aria="palette.expression" data-key="Ctrl+E"><i>dolce</i></button>
+          <button data-cmd="note-text:technique" class="text-btn" data-i18n-tip="palette.technique" data-i18n-desc="palette.technique.desc" data-i18n-aria="palette.technique">pizz.</button>
+          <button data-cmd="rehearsal" class="text-btn" data-i18n-tip="palette.rehearsal" data-i18n-desc="palette.rehearsal.desc" data-i18n-aria="palette.rehearsal"><span class="boxed">A</span></button>
+        </div>
+      </details>
+
       <details data-section="voice" open>
         <summary data-i18n="palette.voice"></summary>
         <div class="voices" id="voices" data-i18n-aria="palette.voice"></div>

@@ -372,6 +372,7 @@ export function layout(view, width, opts = {}) {
       m, mEnd: m, attrs, cap, restOnly,
       tempo: attrs.tempo || null,
       tempoShown: tempoShown(attrs.tempo, m, score),
+      rehearsal: attrs.rehearsal || null,
       overfull,
       content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP, Math.min(lyricW, 80 * SP) + 2.6 * SP),
       timeChange: !prev || prev.time.beats !== attrs.time.beats || prev.time.beat_type !== attrs.time.beat_type,
@@ -386,7 +387,7 @@ export function layout(view, width, opts = {}) {
     let j = i;
     if (opts.multiRest && single[i].restOnly) {
       // A tempo marking (even a hidden one) starts a new run: it may change the tempo.
-      while (j + 1 < single.length && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo) j++;
+      while (j + 1 < single.length && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo && !single[j + 1].rehearsal) j++;
     }
     if (j > i) {
       measures.push({ ...single[i], mEnd: single[j].m, multi: j - i + 1, content: 13 * SP });
@@ -501,7 +502,7 @@ export function layout(view, width, opts = {}) {
   let y = heading.top + heading.height + MARGIN_TOP;
   systems.forEach((s, i) => {
     // Room above for a tempo marking.
-    const above = s.measures.some((ms) => ms.tempoShown) ? TEMPO_ROOM : 0;
+    const above = s.measures.some((ms) => ms.tempoShown || ms.rehearsal) ? TEMPO_ROOM : 0;
     if (geo && i > 0 && y + above + s.height + 2 * SP > pageTop(page) + geo.h - geo.margin) {
       page++;
       y = pageTop(page) + geo.margin + MARGIN_TOP;
@@ -613,14 +614,24 @@ function drawTempoMarks(lay, score, push, onPage) {
   let system = null;
   let right = -Infinity; // where the previous marking of this system ends
   for (const ms of lay.measures) {
-    if (!ms.tempoShown) continue;
+    if (!ms.tempoShown && !ms.rehearsal) continue;
     onPage(ms.system.page);
     if (ms.system !== system) { system = ms.system; right = -Infinity; }
+    const y = lay.staffTop(ms, 0) - 3.2 * SP;
+    // A rehearsal mark sits in a box on the barline (over the clef at the
+    // start of a system); the tempo marking follows it.
+    if (ms.rehearsal) {
+      const w = tempoTextWidth(ms.rehearsal, true) + 1.2 * SP;
+      const bx = Math.max(ms.systemStart ? ms.system.x0 : ms.x - w / 2, right + 1.2 * SP);
+      push(`<g class="rehearsal" data-rehearsal="${ms.m}"><rect x="${bx}" y="${y - 2.1 * SP}" width="${w}" height="${2.8 * SP}" rx="2"/>`
+        + `<text font-family='${TEXT_FONT}' font-size="${TEMPO_SIZE}" text-anchor="middle" x="${bx + w / 2}" y="${y}">${esc(ms.rehearsal)}</text></g>`);
+      right = bx + w;
+    }
+    if (!ms.tempoShown) continue;
     const mark = ms.tempo;
     // At the start of the measure, unless the previous marking still runs
     // there (narrow measures): then right after it.
     const x = Math.max(ms.systemStart ? ms.system.x0 : ms.x + 0.6 * SP, right + 1.2 * SP);
-    const y = lay.staffTop(ms, 0) - 3.2 * SP;
     const parts = [];
     let width = 0;
     if (mark.show_text && mark.text) {
@@ -702,6 +713,7 @@ function drawPageTexts(lay, push, onPage, opts) {
  * coordinates through its viewBox), otherwise a single SVG (`svg`).
  */
 export function renderScore(view, width, opts = {}) {
+  noteTextEdit = opts.noteTextEdit || null;
   const lay = layout(view, width, opts);
   const score = view.score;
   // Markup per page; `onPage` selects where the next pushes go.
@@ -1320,11 +1332,19 @@ const onStaffLine = (y, top) => {
   return k > -0.01 && k < 4.01 && Math.abs(k - Math.round(k)) < 0.01;
 };
 
-/** Articulations, fermata and dynamic of one drawn event. */
+// The note text being typed (app.js): drawn as a hint until it has words.
+let noteTextEdit = null;
+
+/** Articulations, fermata, dynamic and texts of one drawn event. */
 function drawAttachments(push, info) {
   const { e, top, x } = info;
   const arts = e.articulations || [];
-  if (arts.length || e.dynamic) push(`<g class="${info.cls}">`);
+  const texts = [...(e.texts || [])];
+  if (noteTextEdit && noteTextEdit.id === e.id && !texts.some((nt) => nt.kind === noteTextEdit.kind)) {
+    texts.push({ kind: noteTextEdit.kind, text: noteTextEdit.hint, hint: true });
+  }
+  const open = arts.length || e.dynamic || texts.length;
+  if (open) push(`<g class="${info.cls}">`);
 
   // Articulations go on the notehead side (away from the stem), stacked
   // outward, starting in the nearest staff space.
@@ -1346,15 +1366,27 @@ function drawAttachments(push, info) {
     const fy = Math.min(top - 0.6 * SP, info.hi - 0.6 * SP, below ? Infinity : y - 0.8 * SP);
     push(`<text class="m mark" x="${x}" y="${fy}">${FERMATA}</text>`);
   }
-  if (e.dynamic) {
-    // Below the staff; above it when the staff has lyrics, as in vocal music.
-    const dy = info.sung
-      ? Math.min(top - 1.6 * SP, info.hi - 1.4 * SP, below ? Infinity : y - 1.6 * SP)
-      : Math.max(top + 6.6 * SP, info.lo + 2.2 * SP, below ? y + 2 * SP : -Infinity);
-    push(`<text class="m mark" x="${x}" y="${dy}">${DYNAMIC[e.dynamic]}</text>`);
+  // Below the staff; above it when the staff has lyrics, as in vocal music.
+  const dy = info.sung
+    ? Math.min(top - 1.6 * SP, info.hi - 1.4 * SP, below ? Infinity : y - 1.6 * SP)
+    : Math.max(top + 6.6 * SP, info.lo + 2.2 * SP, below ? y + 2 * SP : -Infinity);
+  if (e.dynamic) push(`<text class="m mark" x="${x}" y="${dy}">${DYNAMIC[e.dynamic]}</text>`);
+  for (const nt of texts) {
+    const cls = `ntext ntext-${nt.kind}${nt.hint ? ' placeholder' : ''}`;
+    const attrs = `class="${cls}" data-ntext="${e.id}:${nt.kind}" font-family='${TEXT_FONT}' font-size="${NOTE_TEXT_SIZE}"`;
+    if (nt.kind === 'expression') {
+      // Italic, where the dynamic goes (after it, when there is one).
+      const after = e.dynamic ? 1.4 * SP * e.dynamic.length + 0.6 * SP : -0.5 * SP;
+      push(`<text ${attrs} x="${x + after}" y="${dy}">${esc(nt.text)}</text>`);
+    } else {
+      // Over the staff and above the highest ink (fermata included).
+      const ty = Math.min(top - 1.4 * SP, info.hi - 1.3 * SP, below ? Infinity : y - 1.4 * SP) - (arts.includes('fermata') ? 2 * SP : 0);
+      push(`<text ${attrs} x="${x - 0.5 * SP}" y="${ty}">${esc(nt.text)}</text>`);
+    }
   }
-  if (arts.length || e.dynamic) push('</g>');
+  if (open) push('</g>');
 }
+const NOTE_TEXT_SIZE = 1.7 * SP;
 
 /**
  * A tie or slur: a filled crescent from (x1,y1) to (x2,y2) that bulges by

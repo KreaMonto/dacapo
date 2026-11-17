@@ -482,6 +482,7 @@ mod tests {
                         bpm: Some(50),
                         ..Default::default()
                     }),
+                    rehearsal: Some("C".into()),
                 },
             },
             Op::SetStaffClef {

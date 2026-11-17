@@ -66,6 +66,19 @@ All views edit the same way. Clicking, selecting and the pointer figure work ide
 
 **Language:** Partita speaks English and Spanish. **View → Language → System** (default) follows your computer's language; choosing **English** or **Español** fixes it for Partita only. The window reloads in the new language; open scores and their undo history stay as they are.
 
+## Words in the music
+
+The **Indications** section of the palette (also in the Notes and Score menus):
+
+| Button | What it adds |
+|---|---|
+| **♩=** | A tempo marking at the start of the caret's measure (see [Tempo markings](#tempo-markings)). |
+| ***dolce*** | An **expression** under the staff, in italics, on the note before the caret (**Ctrl+E**): *dolce*, *espressivo*, *cresc.* |
+| **pizz.** | A **technique** over the staff on the note before the caret: *pizz.*, *arco*, *con sord.* |
+| **A** | A **rehearsal mark** in a box at the start of the caret's measure: the next letter after the last one (A, B, C…). |
+
+A grey hint shows where the words go; type over it and press **Enter** (**Esc** leaves nothing). Words on a note move, copy and delete with it. Click any of them in the score to change them; leave the text empty to remove them. MusicXML keeps them (words from other programs become expressions when they are in italics or below the staff, techniques otherwise).
+
 ## Titles, header and footer
 
 The texts around the music are part of the score and print as shown.
@@ -123,9 +136,11 @@ The palette is grouped into collapsible categories. Click a heading to open or c
 
 ### Tempo markings
 
-**Score → Tempo Marking…** puts a marking at the start of the caret's measure, such as **Andante con moto ♩ = 76**: the words (suggestions such as *Allegro* or *a tempo* appear as you type), and a metronome mark counting quarter notes, eighths, halves or dotted values (♩. = 60 in 6/8 is the same speed as ♩ = 90). Click a printed marking to change or remove it.
+The **Indications** section of the palette has the tempo marking, expression, technique and rehearsal mark buttons (see [Words in the music](#words-in-the-music)).
 
-- **What prints and what plays are separate.** Untick *Print the words* or *Print the metronome mark* to hide them; a hidden marking still sets the tempo. In the first measure, the metronome value is the opening tempo, the same as in the toolbar.
+**Score → Tempo Marking…** (or the ♩= button) puts a marking at the start of the caret's measure, such as **Andante con moto ♩ = 76**: the words (suggestions such as *Allegro* or *a tempo* appear as you type), and a metronome mark counting quarter notes, eighths, halves or dotted values (♩. = 60 in 6/8 is the same speed as ♩ = 90). Click a printed marking to change or remove it.
+
+- **What prints and what plays are separate.** *Printed* chooses words and metronome mark, words only, metronome mark only, or nothing; a hidden marking still sets the tempo. In the first measure, the metronome value is the opening tempo, the same as in the toolbar.
 - **Tempo changes.** A marking later in the piece with *Changes the tempo from this measure* plays at its new tempo from there on (no gradual *rit.* or *accel.* yet). Without it, the words alone are printed (*dolce*, *a tempo*) and the tempo stays as it was.
 - The marking belongs to its measure: inserting or deleting measures before it moves it along, and deleting its measure removes it.
 - MusicXML keeps the words, the metronome mark (hidden ones too) and the tempo.
@@ -245,6 +260,7 @@ Every staff has a **name**, a **sound** and a **clef**:
 - The name is printed at the start of the staff, on the first system (for example *Flute*, *Violin I*, *Piano*). A score with a single staff that is still called "Staff 1" shows no name.
 - **Click the name** on the page, or use **Score → Staff → Name, Sound and Clef…** for the staff with the caret, to change all three at once (one undo step).
 - **Sound** is one of the 128 General MIDI instruments, grouped by family. Picking one proposes its usual name and clef (Viola → alto clef, Violoncello → bass clef); a name you typed yourself is kept.
+- **To make a staff a piano** (or a harp or organ), open it (click its name) and choose the sound: *Staves* proposes **two staves, braced**, and the bass staff is added below it. Name, sound and transposition then apply to both staves; each keeps its clef. To have one staff again, delete the other.
 - **Score → Staff → Add…** adds a staff at the bottom and asks for its instrument first. Keyboards, the harp and the organ come on **two braced staves** (treble and bass) in one step; the *Staves* field lets you choose one or two. Repeat it to build an ensemble, up to a full orchestra.
 - **Short name**: shown on the systems after the first (*Vln. I*, *Vc.*). It follows the name and the sound until you type your own; leave it empty for no name on later systems.
 - **Transposition**: for instruments that sound in another key than written. A clarinet in B♭ is written a major second higher than it sounds, so in a concert C major score its staff shows D major. Notes are entered and shown as written, and played at concert pitch. Picking a sound sets its usual transposition (B♭ clarinet and trumpet, F horn, E♭ alto saxophone, piccolo an octave up, guitar and double bass an octave down…). Changing it rewrites the staff's notes so the music keeps sounding the same.

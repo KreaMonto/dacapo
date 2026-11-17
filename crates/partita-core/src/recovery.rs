@@ -43,14 +43,15 @@ pub const DEFAULT_SYNC_INTERVAL: Duration = Duration::from_millis(500);
 //
 // Version 4 added lyrics to events, version 5 an instrument to staves,
 // version 6 the page texts (subtitle, header, footer, page numbers...) to
-// the score's metadata, version 7 tempo markings to measures. Older data
-// (version 3: Da Capo 0.2.0 and 0.2.1; version 4: Da Capo 0.2.2; version 5:
-// Partita 0.3.0; version 6: development builds before 0.4.0) is still read:
+// the score's metadata, version 7 tempo markings to measures, version 8
+// texts to events and rehearsal marks to measures. Older data (version 3:
+// Da Capo 0.2.0 and 0.2.1; version 4: Da Capo 0.2.2; version 5: Partita
+// 0.3.0; versions 6 and 7: development builds before 0.4.0) is still read:
 // updating the program must not lose the unsaved work it promises to give
 // back after the restart. It is never written.
 // (The "DC" in the magic bytes is from the project's former name.)
-const FORMAT_VERSION: u32 = 7;
-const READABLE_VERSIONS: [u32; 5] = [7, 6, 5, 4, 3];
+const FORMAT_VERSION: u32 = 8;
+const READABLE_VERSIONS: [u32; 6] = [8, 7, 6, 5, 4, 3];
 
 fn journal_magic(version: u32) -> [u8; 4] {
     [b'D', b'C', b'J', version as u8]
