@@ -177,6 +177,8 @@ It also returns the position of every notehead and rest (`hits`), which the eras
 
 Everything is laid out in one shared coordinate space. Each page is emitted as its own SVG whose `viewBox` shows its slice of that space, so the same layout serves hit-testing on any page (`clientToLayout`) and printing (one SVG per sheet, scaled by CSS).
 
+**Texts around the music.** The title, composer, subtitle, header, footer, copyright and page numbers live in `Score.metadata` (`Metadata` in `model.rs`, changed with one undoable `SetMetadata` op). `render.js` lays out the headings of page 1 (`headingLayout`: the music starts below them) and draws every text in the SVG (`drawPageTexts`), filling `{page}`, `{pages}`, `{title}` and `{composer}` per page. Each text carries `data-text`; a click opens a text field over it (`openTextEdit` in `app.js`), and the frontend always sends the whole metadata back.
+
 **Chrome.** The menu bar (`src/menu.js`) and tooltips (`src/tooltip.js`) are small dependency-free modules. Every menu, toolbar and palette action goes through one `commands` map in `app.js`.
 
 **Languages.** Every text the user reads goes through `t('key')` in `src/i18n.js`. The texts live in `src/locales/<lang>.js`, one flat object per language. English (`en.js`) is the reference: a key missing from another language falls back to English. Static HTML is tagged with `data-i18n` attributes instead of carrying text. The language is View → Language, or the system's; it is read once at start-up, so changing it reloads the page (documents live in Rust, so nothing is lost).

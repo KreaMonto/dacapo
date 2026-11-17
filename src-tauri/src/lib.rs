@@ -275,10 +275,9 @@ enum Action {
     SetKey {
         fifths: i8,
     },
-    SetMetadata {
-        title: String,
-        composer: String,
-    },
+    /// Every text around the music (title, composer, header, footer, page
+    /// numbers...). The frontend sends all of them: one left out is reset.
+    SetMetadata(Metadata),
     SetTempo {
         bpm: u16,
     },
@@ -505,9 +504,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
                 },
                 now,
             ),
-            Action::SetMetadata { title, composer } => {
-                d.set_metadata(Metadata { title, composer }, now)
-            }
+            Action::SetMetadata(metadata) => d.set_metadata(metadata, now),
             Action::SetTempo { bpm } => d.set_tempo(bpm, now),
             Action::SetStaff { staff, props } => d.set_staff_properties(staff, props, now),
             Action::GroupStaves { first, last, kind } => d.group_staves(first, last, kind, now),
@@ -899,6 +896,24 @@ fn migrate_old_data_dir(old_dir: &std::path::Path, new_dir: &std::path::Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn set_metadata_takes_every_text_from_the_frontend() {
+        let action: Action = serde_json::from_value(serde_json::json!({
+            "type": "set_metadata",
+            "title": "Lied",
+            "composer": "Anon",
+            "footer": "{page}",
+            "page_numbers": { "show": true, "edge": "bottom", "align": "center", "first_page": true, "format": "– {page} –" },
+        }))
+        .unwrap();
+        let Action::SetMetadata(m) = action else {
+            panic!("not set_metadata")
+        };
+        assert_eq!((m.title.as_str(), m.footer.as_str()), ("Lied", "{page}"));
+        assert_eq!(m.page_numbers.edge, partita_core::model::PageEdge::Bottom);
+        assert!(m.subtitle.is_empty(), "a text left out is empty");
+    }
 
     #[test]
     fn old_data_folder_is_migrated_once() {

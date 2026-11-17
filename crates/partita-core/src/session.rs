@@ -210,6 +210,22 @@ mod tests {
     }
 
     #[test]
+    fn page_texts_survive_a_crash() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = store(tmp.path());
+        let mut s = Session::start(Document::new(Score::new("Lied", 1)), Some(&store)).unwrap();
+        let mut metadata = s.doc().score.metadata.clone();
+        metadata.subtitle = "Op. 3".into();
+        metadata.footer = "{title} · {page}/{pages}".into();
+        metadata.page_numbers.first_page = true;
+        s.edit(|d| d.set_metadata(metadata.clone(), 1_000).unwrap());
+        crash(s);
+        let found = store.scan();
+        let loaded = store.load(found[0].session_id).unwrap();
+        assert_eq!(loaded.document.score.metadata, metadata);
+    }
+
+    #[test]
     fn snapshots_truncate_journal_and_recovery_still_works() {
         let tmp = tempfile::tempdir().unwrap();
         let store = store(tmp.path());

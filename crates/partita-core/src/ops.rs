@@ -486,6 +486,8 @@ mod tests {
                 metadata: Metadata {
                     title: "x".into(),
                     composer: "y".into(),
+                    footer: "{title} · {page}".into(),
+                    ..Metadata::default()
                 },
             },
             Op::RemoveMeasure { index: 2 },

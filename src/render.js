@@ -105,7 +105,60 @@ const syllableAt = (e, verse) => (e.lyrics && e.lyrics[verse] && e.lyrics[verse]
 export const PAPER = { a4: { w: 210, h: 297 }, letter: { w: 215.9, h: 279.4 } };
 const MM_PER_SP = 1.75;
 const PAGE_MARGIN_MM = 15;
-export const TITLE_BLOCK = 8 * SP; // room for title and composer on page 1
+
+// ----- texts around the music ------------------------------------------------
+// The headings of page 1 (title, composer...), the running header and footer
+// and the page numbers, all from the score's metadata (see Metadata in
+// model.rs). Drawn in the SVG so they print exactly as shown; clicking one
+// edits it (app.js), which `data-text` names.
+
+/** Font size of each text, in layout units. */
+export const TEXT_SIZE = {
+  part: 1.6 * SP, dedication: 1.6 * SP, title: 4.2 * SP, subtitle: 2.3 * SP, composer: 1.8 * SP,
+  lyricist: 1.8 * SP, header: 1.5 * SP, footer: 1.5 * SP, copyright: 1.4 * SP, pnum: 1.5 * SP,
+};
+export const TEXT_FONT = 'Georgia, "Times New Roman", serif';
+
+const PAGE_NUMBERS = { show: true, edge: 'top', align: 'right', first_page: false, format: '{page}' };
+
+/** The metadata with every field, also for a view from an older backend. */
+export function fullMetadata(m = {}) {
+  return {
+    title: '', composer: '', subtitle: '', dedication: '', lyricist: '', part: '', copyright: '', header: '', footer: '',
+    ...m,
+    page_numbers: { ...PAGE_NUMBERS, ...(m.page_numbers || {}) },
+  };
+}
+
+/** A text with its {page}, {pages}, {title} and {composer} filled in. */
+export function fillTokens(text, vars) {
+  return String(text).replace(/\{(page|pages|title|composer)\}/g, (_, k) => String(vars[k] ?? ''));
+}
+
+/**
+ * The headings of page 1, top to bottom: where each sits (`y` is its
+ * baseline below the top of the block) and the height of the block. The
+ * title and composer keep their place even when empty, so they can be
+ * clicked to type them; the other lines take room only when they have text.
+ */
+function headingLayout(meta) {
+  const lines = [];
+  let y = 0;
+  if (meta.part || meta.dedication) {
+    y += 1.6 * SP;
+    lines.push({ key: 'part', align: 'left', y }, { key: 'dedication', align: 'center', y });
+    y += 0.9 * SP;
+  }
+  y += 0.85 * TEXT_SIZE.title;
+  lines.push({ key: 'title', align: 'center', y });
+  if (meta.subtitle) {
+    y += 0.5 * SP + 0.9 * TEXT_SIZE.subtitle;
+    lines.push({ key: 'subtitle', align: 'center', y });
+  }
+  y += 0.6 * SP + TEXT_SIZE.composer;
+  lines.push({ key: 'lyricist', align: 'left', y }, { key: 'composer', align: 'right', y });
+  return { lines, height: y + 1.4 * SP };
+}
 
 /** Page size and margin in layout units for a paper name. */
 export function pageGeometry(paper) {
@@ -221,6 +274,13 @@ export function layout(view, width, opts = {}) {
   const mode = opts.view || 'wrap';
   const geo = mode === 'page' ? pageGeometry(opts.paper) : null;
   const marginX = geo ? geo.margin : MARGIN_X;
+  const meta = fullMetadata(score.metadata);
+  // Page 1 headings: across the page, or across the window in the other
+  // views (in continuous view the music may be far wider than the window).
+  const heading = headingLayout(meta);
+  heading.top = geo ? geo.margin : MARGIN_TOP;
+  heading.left = marginX;
+  heading.right = (geo ? geo.w : Math.max(300, width)) - marginX;
   const avail = geo ? geo.w - 2 * geo.margin
     : mode === 'continuous' ? Infinity
       : Math.max(300, width - 2 * MARGIN_X);
@@ -405,7 +465,7 @@ export function layout(view, width, opts = {}) {
   // stack them on one endless sheet.
   const pageTop = (p) => (geo ? p * geo.h : 0);
   let page = 0;
-  let y = geo ? geo.margin + TITLE_BLOCK + MARGIN_TOP : MARGIN_TOP;
+  let y = heading.top + heading.height + MARGIN_TOP;
   systems.forEach((s, i) => {
     if (geo && i > 0 && y + s.height + 2 * SP > pageTop(page) + geo.h - geo.margin) {
       page++;
@@ -443,7 +503,7 @@ export function layout(view, width, opts = {}) {
     : [{ index: 0, x: 0, y: 0, w: totalWidth, h: totalHeight }];
 
   return {
-    systems, measures, byMeasure, nStaves, pages, mode, geo, marginX, verses, names, shortNames, groups, groupIndent,
+    systems, measures, byMeasure, nStaves, pages, mode, geo, marginX, verses, names, shortNames, groups, groupIndent, meta, heading,
     width: totalWidth,
     height: totalHeight,
     staffTop: (ms, staff) => ms.system.y + ms.system.staffY[staff],
@@ -507,6 +567,51 @@ export function hitTest(lay, view, x, y, voice) {
   const events = view.score.staves[staff].measures[ms.m].voices[voice];
   const index = eventXs(lay, ms, events).filter((ex) => x > ex + 0.2 * SP).length;
   return { staff, measure: ms.m, voice, index };
+}
+
+/**
+ * Draws the texts around the music: the headings of page 1 (in every view)
+ * and, in page view, the running header, the footer, the copyright and the
+ * page numbers. With `opts.placeholders`, an empty title or composer shows
+ * a grey hint to click (not printed).
+ */
+function drawPageTexts(lay, push, onPage, opts) {
+  const meta = lay.meta;
+  const h = lay.heading;
+  const anchorOf = { left: 'start', center: 'middle', right: 'end' };
+  const xOf = (align, left, right) => (align === 'left' ? left : align === 'right' ? right : (left + right) / 2);
+  const text = (key, value, x, y, align, extra = '') => push(
+    `<text class="ptext ptext-${key}${extra}" data-text="${key}" font-family='${TEXT_FONT}' font-size="${TEXT_SIZE[key]}" `
+    + `text-anchor="${anchorOf[align]}" x="${x}" y="${y}">${esc(value)}</text>`);
+  onPage(0);
+  for (const line of h.lines) {
+    const value = meta[line.key];
+    const x = xOf(line.align, h.left, h.right);
+    if (value) text(line.key, value, x, h.top + line.y, line.align);
+    else if (opts.placeholders && (line.key === 'title' || line.key === 'composer')) {
+      text(line.key, opts.placeholders[line.key], x, h.top + line.y, line.align, ' placeholder');
+    }
+  }
+  if (!lay.geo) return;
+  const g = lay.geo;
+  const vars = { pages: lay.pages.length, title: meta.title, composer: meta.composer };
+  const pn = meta.page_numbers;
+  for (const p of lay.pages) {
+    onPage(p.index);
+    const v = { ...vars, page: p.index + 1 };
+    const top = p.y + g.margin * 0.55;
+    const bottom = p.y + p.h - g.margin * 0.4;
+    if (p.index > 0 && meta.header) text('header', fillTokens(meta.header, v), p.w / 2, top, 'center');
+    if (meta.footer) text('footer', fillTokens(meta.footer, v), p.w / 2, bottom, 'center');
+    if (p.index === 0 && meta.copyright) {
+      text('copyright', meta.copyright, p.w / 2, meta.footer ? bottom - 1.9 * SP : bottom, 'center');
+    }
+    if (pn.show && (p.index > 0 || pn.first_page)) {
+      // Outside: right on odd pages, left on even ones, as in a bound book.
+      const align = pn.align === 'outside' ? (p.index % 2 === 0 ? 'right' : 'left') : pn.align;
+      text('pnum', fillTokens(pn.format, v), xOf(align, g.margin, p.w - g.margin), pn.edge === 'bottom' ? bottom : top, align);
+    }
+  }
 }
 
 /**
@@ -587,13 +692,7 @@ export function renderScore(view, width, opts = {}) {
       }
     }
   }
-  // Page numbers from page 2 on, as in printed music.
-  if (lay.geo) {
-    for (const p of lay.pages.slice(1)) {
-      onPage(p.index);
-      push(`<text class="pnum" x="${p.w - lay.geo.margin}" y="${p.y + lay.geo.margin * 0.6}">${p.index + 1}</text>`);
-    }
-  }
+  drawPageTexts(lay, push, onPage, opts);
 
   // Drawn events, for ties and slurs: per staff+voice in score order, and by id.
   const seqs = new Map();

@@ -1,0 +1,145 @@
+{
+  "format": "partita",
+  "format_version": 6,
+  "score": {
+    "metadata": {
+      "title": "Sonatina",
+      "composer": "Anonymous"
+    },
+    "measures": [
+      {
+        "time": {
+          "beats": 4,
+          "beat_type": 4
+        },
+        "key": {
+          "fifths": 0
+        }
+      },
+      {
+        "time": {
+          "beats": 4,
+          "beat_type": 4
+        },
+        "key": {
+          "fifths": 0
+        }
+      }
+    ],
+    "staves": [
+      {
+        "id": 1,
+        "name": "Staff 1",
+        "short_name": "",
+        "clef": "treble",
+        "instrument": 0,
+        "transposition": {
+          "diatonic": 0,
+          "chromatic": 0
+        },
+        "group": null,
+        "measures": [
+          {
+            "voices": [
+              [
+                {
+                  "id": 2,
+                  "duration": {
+                    "base": "Quarter",
+                    "dots": 0
+                  },
+                  "kind": {
+                    "chord": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "alter": 0,
+                          "octave": 5
+                        }
+                      ]
+                    }
+                  },
+                  "tie": false,
+                  "articulations": [],
+                  "dynamic": "mf",
+                  "lyrics": [
+                    {
+                      "text": "La",
+                      "join": "hyphen"
+                    }
+                  ]
+                },
+                {
+                  "id": 3,
+                  "duration": {
+                    "base": "Quarter",
+                    "dots": 0
+                  },
+                  "kind": {
+                    "chord": {
+                      "pitches": [
+                        {
+                          "step": "E",
+                          "alter": 0,
+                          "octave": 5
+                        }
+                      ]
+                    }
+                  },
+                  "tie": false,
+                  "articulations": [],
+                  "dynamic": null,
+                  "lyrics": []
+                }
+              ],
+              [],
+              [],
+              []
+            ]
+          },
+          {
+            "voices": [
+              [],
+              [],
+              [],
+              []
+            ]
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "name": "Violin",
+        "short_name": "Vln.",
+        "clef": "treble",
+        "instrument": 40,
+        "transposition": {
+          "diatonic": 0,
+          "chromatic": 0
+        },
+        "group": null,
+        "measures": [
+          {
+            "voices": [
+              [],
+              [],
+              [],
+              []
+            ]
+          },
+          {
+            "voices": [
+              [],
+              [],
+              [],
+              []
+            ]
+          }
+        ]
+      }
+    ],
+    "next_id": 6,
+    "slurs": [],
+    "tempo": 100
+  }
+}

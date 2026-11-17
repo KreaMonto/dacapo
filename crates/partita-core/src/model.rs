@@ -325,7 +325,8 @@ thread_local! {
 
 /// Runs `f` with the document types read in the binary layout of recovery
 /// format `version`: 3 (Da Capo 0.2.0 and 0.2.1: no lyrics, no staff
-/// instruments) or 4 (Da Capo 0.2.2: no staff instruments).
+/// instruments, no page texts), 4 (Da Capo 0.2.2: no staff instruments, no
+/// page texts) or 5 (Partita 0.3.0: no page texts).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
@@ -675,11 +676,170 @@ impl<'de> Deserialize<'de> for Staff {
     }
 }
 
-/// Score-level metadata.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// The texts around the music: the headings of page 1, the running header
+/// and footer of the printed pages, and how pages are numbered. A text left
+/// empty is not printed. `header`, `footer` and the page number `format`
+/// may contain `{page}`, `{pages}`, `{title}` and `{composer}`.
+///
+/// Everything after `composer` exists since file format 7 (recovery
+/// format 6); older files get the defaults.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Metadata {
     pub title: String,
     pub composer: String,
+    /// Under the title.
+    pub subtitle: String,
+    /// Above the title, in small italics ("To my teacher").
+    pub dedication: String,
+    /// Left of page 1, across from the composer: the lyricist or the
+    /// arranger, as the user writes it ("Words: …", "Arr. …").
+    pub lyricist: String,
+    /// Top left of page 1: the part, in a set of parts ("Violin I").
+    pub part: String,
+    /// Bottom of page 1.
+    pub copyright: String,
+    /// Top of every page but the first (which has the title).
+    pub header: String,
+    /// Bottom of every page.
+    pub footer: String,
+    pub page_numbers: PageNumbers,
+}
+
+/// Where and how page numbers are printed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PageNumbers {
+    pub show: bool,
+    pub edge: PageEdge,
+    pub align: PageAlign,
+    /// Also on page 1 (usually not: it has the title).
+    pub first_page: bool,
+    /// The text, with `{page}` (and `{pages}`) for the numbers.
+    pub format: String,
+}
+
+/// The top or the bottom margin of a page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PageEdge {
+    Top,
+    Bottom,
+}
+
+/// Where across a page: `Outside` is right on odd pages and left on even
+/// ones, as in a bound book.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PageAlign {
+    Left,
+    Center,
+    Right,
+    Outside,
+}
+
+/// As Partita always numbered pages: top right, from page 2 on.
+impl Default for PageNumbers {
+    fn default() -> Self {
+        PageNumbers {
+            show: true,
+            edge: PageEdge::Top,
+            align: PageAlign::Right,
+            first_page: false,
+            format: "{page}".to_string(),
+        }
+    }
+}
+
+impl Metadata {
+    /// Whether anything beyond the title and composer is set (which needs
+    /// file format 7).
+    pub fn uses_page_texts(&self) -> bool {
+        let Metadata {
+            title: _,
+            composer: _,
+            subtitle,
+            dedication,
+            lyricist,
+            part,
+            copyright,
+            header,
+            footer,
+            page_numbers,
+        } = self;
+        [
+            subtitle, dedication, lyricist, part, copyright, header, footer,
+        ]
+        .iter()
+        .any(|s| !s.is_empty())
+            || *page_numbers != PageNumbers::default()
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+struct MetadataFields {
+    title: String,
+    composer: String,
+    subtitle: String,
+    dedication: String,
+    lyricist: String,
+    part: String,
+    copyright: String,
+    header: String,
+    footer: String,
+    page_numbers: PageNumbers,
+}
+
+impl Default for MetadataFields {
+    fn default() -> Self {
+        let m = Metadata::default();
+        MetadataFields {
+            title: m.title,
+            composer: m.composer,
+            subtitle: m.subtitle,
+            dedication: m.dedication,
+            lyricist: m.lyricist,
+            part: m.part,
+            copyright: m.copyright,
+            header: m.header,
+            footer: m.footer,
+            page_numbers: m.page_numbers,
+        }
+    }
+}
+
+/// [`Metadata`] as written to recovery data before page texts (Partita
+/// 0.3.0 and older).
+#[derive(Deserialize)]
+struct MetadataPrePageTexts {
+    title: String,
+    composer: String,
+}
+
+impl<'de> Deserialize<'de> for Metadata {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        if matches!(legacy_format(), 3..=5) {
+            let m = MetadataPrePageTexts::deserialize(deserializer)?;
+            return Ok(Metadata {
+                title: m.title,
+                composer: m.composer,
+                ..Metadata::default()
+            });
+        }
+        let m = MetadataFields::deserialize(deserializer)?;
+        Ok(Metadata {
+            title: m.title,
+            composer: m.composer,
+            subtitle: m.subtitle,
+            dedication: m.dedication,
+            lyricist: m.lyricist,
+            part: m.part,
+            copyright: m.copyright,
+            header: m.header,
+            footer: m.footer,
+            page_numbers: m.page_numbers,
+        })
+    }
 }
 
 /// Problems detected by [`Score::validate`].
@@ -754,7 +914,7 @@ impl Score {
         let mut score = Score {
             metadata: Metadata {
                 title: title.into(),
-                composer: String::new(),
+                ..Metadata::default()
             },
             measures: vec![MeasureAttrs::default(); measures],
             staves: Vec::new(),
