@@ -578,6 +578,8 @@ export default {
   'status.rests': 'Colocando silencios de {value}',
   'status.rests.help': '— clic para colocar · Esc para terminar',
   'status.erase': 'Borrador',
+  'status.text': 'Cuadro de texto',
+  'status.text.help': '— haz clic en una página para escribir ahí · Esc para terminar',
   'status.erase.help': '— clic en una nota, o arrastra un recuadro · Esc para terminar',
   'status.mark': 'Colocando: {name}',
   'status.mark.help': '— clic en una nota · Esc para terminar',
