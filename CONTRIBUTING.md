@@ -1,20 +1,20 @@
-# Contributing to Da Capo
+# Contributing to Partita
 
-Thank you for your interest in Da Capo! This document explains how to collaborate effectively on this Rust + Tauri project.
+Thank you for your interest in Partita! This document explains how to collaborate effectively on this Rust + Tauri project.
 
 ## Good practices
 
 - Open an issue before starting significant changes, so the design can be discussed first.
 - Use descriptive branch names, for example `feature/multi-staff-paste` or `fix/corrupt-measure`.
 - Keep commits small and focused.
-- Add tests whenever you change core logic (`crates/dacapo-core`).
+- Add tests whenever you change core logic (`crates/partita-core`).
 
 ## Reporting a bug
 
 1. Describe the expected behavior.
 2. Describe the actual behavior.
 3. List the steps to reproduce it.
-4. Attach screenshots or a `.dacapo` file when possible.
+4. Attach screenshots or a `.partita` file when possible.
 
 ## Proposing an improvement
 
@@ -34,7 +34,7 @@ Thank you for your interest in Da Capo! This document explains how to collaborat
 
 These rules protect the editor's reliability:
 
-- **Every change to a score goes through an `Op`** (`crates/dacapo-core/src/ops.rs`). Never mutate the `Score` directly from a command; otherwise undo and crash recovery break.
+- **Every change to a score goes through an `Op`** (`crates/partita-core/src/ops.rs`). Never mutate the `Score` directly from a command; otherwise undo and crash recovery break.
 - **Ops must be deterministic.** Anything random or time-based (ids, timestamps) is decided *before* the op is created and stored inside it.
 - **New ops need a round-trip test** proving that applying an op and then its inverse restores the original score.
 - **File format changes** bump `FORMAT_VERSION` in `file.rs` and must keep loading older files.
@@ -52,7 +52,7 @@ These rules protect the editor's reliability:
 
 ## License of contributions
 
-Da Capo is licensed under GPL-3.0-or-later. By submitting a contribution, you agree that it is licensed under the same terms.
+Partita is licensed under GPL-3.0-or-later. By submitting a contribution, you agree that it is licensed under the same terms.
 
 When you add a dependency, check that its license is compatible with GPL-3.0. MIT, Apache-2.0, BSD, MPL-2.0 and LGPL are fine. Proprietary licenses and "non-commercial" licenses are not. This also applies to assets such as fonts and SoundFonts.
 

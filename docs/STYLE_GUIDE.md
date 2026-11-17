@@ -1,6 +1,6 @@
-# Da Capo Style Guide
+# Partita Style Guide
 
-This guide summarizes the style rules and conventions for contributing to Da Capo.
+This guide summarizes the style rules and conventions for contributing to Partita.
 
 ## Rust style
 

@@ -252,7 +252,7 @@ mod tests {
     fn clean_orphans_are_removed_silently() {
         let tmp = tempfile::tempdir().unwrap();
         let store = store(tmp.path());
-        let file = tmp.path().join("piece.dacapo");
+        let file = tmp.path().join("piece.partita");
         let mut s = Session::start(Document::new(Score::new("Piece", 1)), Some(&store)).unwrap();
         s.edit(|d| d.insert_note(Step::A, Q, 0).unwrap());
         s.save(&file).unwrap();
@@ -264,7 +264,7 @@ mod tests {
     fn save_then_more_edits_recovers_path_and_dirty_state() {
         let tmp = tempfile::tempdir().unwrap();
         let store = store(tmp.path());
-        let file = tmp.path().join("piece.dacapo");
+        let file = tmp.path().join("piece.partita");
         let mut s = Session::start(Document::new(Score::new("Piece", 1)), Some(&store)).unwrap();
         s.edit(|d| d.insert_note(Step::A, Q, 0).unwrap());
         s.save(&file).unwrap();

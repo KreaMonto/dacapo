@@ -263,7 +263,7 @@ pub const MAX_SYLLABLE_CHARS: usize = 48;
 /// One rhythmic event inside a voice.
 ///
 /// Fields added after format version 1 use `#[serde(default)]` so older
-/// `.dacapo` files still load. (`skip_serializing_if` must not be used: the
+/// `.partita` files still load. (`skip_serializing_if` must not be used: the
 /// binary recovery format needs every field to be written.)
 ///
 /// `Deserialize` is written by hand below, so that recovery data written

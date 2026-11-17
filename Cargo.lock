@@ -832,37 +832,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dacapo"
-version = "0.2.2"
-dependencies = [
- "cpal",
- "dacapo-core",
- "rustysynth",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-plugin-updater",
- "ureq",
- "uuid",
-]
-
-[[package]]
-name = "dacapo-core"
-version = "0.2.2"
-dependencies = [
- "crc32fast",
- "postcard",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.21",
- "uuid",
-]
-
-[[package]]
 name = "darling"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2975,6 +2944,37 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "windows-link",
+]
+
+[[package]]
+name = "partita"
+version = "0.2.2"
+dependencies = [
+ "cpal",
+ "partita-core",
+ "rustysynth",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tauri-plugin-updater",
+ "ureq",
+ "uuid",
+]
+
+[[package]]
+name = "partita-core"
+version = "0.2.2"
+dependencies = [
+ "crc32fast",
+ "postcard",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "uuid",
 ]
 
 [[package]]

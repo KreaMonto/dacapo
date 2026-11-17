@@ -1,10 +1,13 @@
-//! The `.dacapo` document format and crash-safe file writing.
+//! The `.partita` document format and crash-safe file writing.
 //!
-//! A `.dacapo` file is UTF-8 JSON with a format marker and version so future
+//! Until 0.2.2 the project was called Da Capo and its files were `.dacapo`
+//! with the marker `"dacapo"`. They are the same format and still load.
+//!
+//! A `.partita` file is UTF-8 JSON with a format marker and version so future
 //! releases can migrate old files:
 //!
 //! ```json
-//! { "format": "dacapo", "format_version": 1, "score": { ... } }
+//! { "format": "partita", "format_version": 1, "score": { ... } }
 //! ```
 
 use std::fs::{self, File};
@@ -16,8 +19,8 @@ use thiserror::Error;
 
 use crate::model::{Issue, Score};
 
-/// File extension of Da Capo documents (without the dot).
-pub const FILE_EXTENSION: &str = "dacapo";
+/// File extension of Partita documents (without the dot).
+pub const FILE_EXTENSION: &str = "partita";
 /// Version written by this build.
 /// History:
 /// - 1: initial format.
@@ -29,7 +32,9 @@ pub const FILE_EXTENSION: &str = "dacapo";
 /// - 5: lyrics on events. As with version 4, only files that have lyrics
 ///   are written as version 5.
 pub const FORMAT_VERSION: u32 = 5;
-const FORMAT_MARKER: &str = "dacapo";
+const FORMAT_MARKER: &str = "partita";
+/// Marker written by Da Capo (the project's former name) up to 0.2.2.
+const LEGACY_FORMAT_MARKER: &str = "dacapo";
 
 #[derive(Serialize, Deserialize)]
 struct Envelope {
@@ -42,17 +47,17 @@ struct Envelope {
 pub enum FileError {
     #[error("i/o error: {0}")]
     Io(#[from] io::Error),
-    #[error("not a valid Da Capo file: {0}")]
+    #[error("not a valid Partita file: {0}")]
     Parse(#[from] serde_json::Error),
-    #[error("not a Da Capo file")]
+    #[error("not a Partita file")]
     WrongFormat,
-    #[error("file was written by a newer version of Da Capo (format {0})")]
+    #[error("file was written by a newer version of Partita (format {0})")]
     TooNew(u32),
     #[error("file is damaged: {0}")]
     Corrupt(String),
 }
 
-/// Serializes a score into the `.dacapo` format.
+/// Serializes a score into the `.partita` format.
 pub fn to_bytes(score: &Score) -> Result<Vec<u8>, FileError> {
     let envelope = Envelope {
         format: FORMAT_MARKER.to_string(),
@@ -81,10 +86,10 @@ fn required_version(score: &Score) -> u32 {
     }
 }
 
-/// Parses and validates a `.dacapo` document.
+/// Parses and validates a `.partita` document.
 pub fn from_bytes(bytes: &[u8]) -> Result<Score, FileError> {
     let envelope: Envelope = serde_json::from_slice(bytes)?;
-    if envelope.format != FORMAT_MARKER {
+    if envelope.format != FORMAT_MARKER && envelope.format != LEGACY_FORMAT_MARKER {
         return Err(FileError::WrongFormat);
     }
     if envelope.format_version > FORMAT_VERSION {
@@ -166,7 +171,7 @@ mod tests {
     #[test]
     fn save_and_load_round_trip() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("song.dacapo");
+        let path = dir.path().join("song.partita");
         let score = Score::new("Song", 3);
         save_score(&path, &score).unwrap();
         assert_eq!(load_score(&path).unwrap(), score);
@@ -174,6 +179,16 @@ mod tests {
         save_score(&path, &score).unwrap();
         assert!(sibling(&path, ".bak").exists());
         assert!(!sibling(&path, ".tmp").exists());
+    }
+
+    #[test]
+    fn loads_files_saved_as_da_capo() {
+        let score = Score::new("Old name", 2);
+        let mut v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format"], "partita");
+        v["format"] = "dacapo".into();
+        let bytes = serde_json::to_vec(&v).unwrap();
+        assert_eq!(from_bytes(&bytes).unwrap(), score);
     }
 
     #[test]

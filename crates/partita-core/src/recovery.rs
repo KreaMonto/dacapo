@@ -306,7 +306,7 @@ impl RecoveryStore {
         let worker_dir = dir.clone();
         let interval = self.sync_interval;
         let handle = std::thread::Builder::new()
-            .name(format!("dacapo-recovery-{id}"))
+            .name(format!("partita-recovery-{id}"))
             .spawn(move || worker(worker_dir, journal, rx, interval))?;
         Ok(RecoveryWriter {
             id,
@@ -498,7 +498,7 @@ fn worker(dir: PathBuf, mut journal: File, rx: mpsc::Receiver<Msg>, interval: Du
 
     let note = |r: io::Result<()>, error: &mut Option<io::Error>| {
         if let Err(e) = r {
-            eprintln!("[dacapo] recovery write failed in {}: {e}", dir.display());
+            eprintln!("[partita] recovery write failed in {}: {e}", dir.display());
             error.get_or_insert(e);
         }
     };

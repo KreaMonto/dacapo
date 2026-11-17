@@ -4,8 +4,8 @@
 
 use std::path::{Path, PathBuf};
 
-use dacapo_core::file;
-use dacapo_core::recovery::load_dir;
+use partita_core::file;
+use partita_core::recovery::load_dir;
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

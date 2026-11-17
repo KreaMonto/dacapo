@@ -25,10 +25,10 @@ If a build fails, fix it and run the workflow again: it reuses the existing draf
 
 ## In-app updates
 
-Installed copies of Da Capo look for a new version once a day (and from **Help → Check for Updates…**). They read `latest.json` from the latest published release:
+Installed copies of Partita look for a new version once a day (and from **Help → Check for Updates…**). They read `latest.json` from the latest published release:
 
 ```
-https://github.com/dacapo-editor/dacapo/releases/latest/download/latest.json
+https://github.com/partita-notation/partita/releases/latest/download/latest.json
 ```
 
 The workflow generates that file and a signature for every update package. The app only installs packages signed with the project's **updater key**, whose public half is `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`.
@@ -50,13 +50,13 @@ Windows files are signed with a certificate from the [SignPath Foundation](https
 
 The `windows` job of the release workflow signs in two rounds, because the installers contain the program:
 
-1. It builds `dacapo.exe` (`tauri build --no-bundle`) and sends it to SignPath with the artifact configuration **`app`**.
+1. It builds `partita.exe` (`tauri build --no-bundle`) and sends it to SignPath with the artifact configuration **`app`**.
 2. It builds the `.exe` setup and the `.msi` around the signed program (`tauri bundle`) and sends both to SignPath with the artifact configuration **`installers`**.
 3. It makes the updater signatures (`.sig`) from the signed files. They must come last: Authenticode signing changes the files.
 
 Each round waits until an approver approves the request on [app.signpath.io](https://app.signpath.io) (up to an hour). Approve both when you start a release.
 
-The artifact configurations live in [`.signpath/artifact-configurations/`](../.signpath/artifact-configurations). SignPath does not read them from the repository: paste each one into the SignPath project under the same slug when it changes. They check that the product name is "Da Capo" and the version is the one being released.
+The artifact configurations live in [`.signpath/artifact-configurations/`](../.signpath/artifact-configurations). SignPath does not read them from the repository: paste each one into the SignPath project under the same slug when it changes. They check that the product name is "Partita" and the version is the one being released.
 
 Signing is switched on by these repository settings (**Settings → Secrets and variables → Actions**). Without `SIGNPATH_ORGANIZATION_ID`, the workflow publishes unsigned Windows installers, as before.
 
@@ -64,7 +64,7 @@ Signing is switched on by these repository settings (**Settings → Secrets and 
 |---|---|---|
 | Variable | `SIGNPATH_ORGANIZATION_ID` | The organization ID shown in SignPath |
 | Secret | `SIGNPATH_API_TOKEN` | API token of a SignPath CI user with *submitter* rights on the project |
-| Variable (optional) | `SIGNPATH_PROJECT_SLUG` | Default `dacapo` |
+| Variable (optional) | `SIGNPATH_PROJECT_SLUG` | Default `partita` |
 | Variable (optional) | `SIGNPATH_SIGNING_POLICY_SLUG` | Default `release-signing` |
 
 In SignPath, the project must use the GitHub trusted build system, so only builds from this repository's workflow are signed.

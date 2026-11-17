@@ -1,4 +1,4 @@
-// Da Capo frontend. Owns no musical state: every edit is sent to Rust,
+// Partita frontend. Owns no musical state: every edit is sent to Rust,
 // which answers with the full document view to redraw.
 
 import {
@@ -12,7 +12,9 @@ const tauri = window.__TAURI__;
 const invoke = tauri.core.invoke;
 const dialog = tauri.dialog;
 
-const FILTERS = [{ name: 'Da Capo score', extensions: ['dacapo'] }];
+const FILTERS = [{ name: 'Partita score', extensions: ['partita'] }];
+// Opening also accepts scores saved under the project's former name, Da Capo.
+const OPEN_FILTERS = [{ name: 'Partita score', extensions: ['partita', 'dacapo'] }];
 const KEY_NAMES = ['C♭', 'G♭', 'D♭', 'A♭', 'E♭', 'B♭', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F♯', 'C♯'];
 const DURATION_KEYS = { 1: 'SixtyFourth', 2: 'ThirtySecond', 3: 'Sixteenth', 4: 'Eighth', 5: 'Quarter', 6: 'Half', 7: 'Whole' };
 // Only with View → Breve and 128th Notes on.
@@ -23,14 +25,14 @@ const VALUE_NAMES = { Breve: 'breve', HundredTwentyEighth: '128th', SixtyFourth:
 // to defaults silently.
 function loadPref(name, fallback) {
   try {
-    const v = localStorage.getItem(`dacapo.${name}`);
+    const v = localStorage.getItem(`partita.${name}`);
     return v === null ? fallback : JSON.parse(v);
   } catch {
     return fallback;
   }
 }
 function savePref(name, value) {
-  try { localStorage.setItem(`dacapo.${name}`, JSON.stringify(value)); } catch { /* ignore */ }
+  try { localStorage.setItem(`partita.${name}`, JSON.stringify(value)); } catch { /* ignore */ }
 }
 
 const state = {
@@ -100,7 +102,7 @@ async function newDocument() {
 }
 
 async function openDocument() {
-  const path = await dialog.open({ multiple: false, filters: FILTERS });
+  const path = await dialog.open({ multiple: false, filters: OPEN_FILTERS });
   if (!path) return;
   const v = adopt(await invoke('open_document', { path }));
   state.active = v.id;
@@ -112,7 +114,7 @@ async function saveDocument(saveAs = false) {
   if (!doc) return false;
   let path = null;
   if (saveAs || !doc.path) {
-    path = await dialog.save({ filters: FILTERS, defaultPath: `${doc.name}.dacapo` });
+    path = await dialog.save({ filters: FILTERS, defaultPath: `${doc.name}.partita` });
     if (!path) return false;
   }
   adopt(await invoke('save_document', { id: doc.id, path }));
@@ -128,13 +130,13 @@ async function closeDocument(id) {
     state.active = id;
     render();
     const save = await dialog.ask(`Save changes to “${doc.name}” before closing?`, {
-      title: 'Da Capo', kind: 'warning', okLabel: 'Save', cancelLabel: 'Don’t save',
+      title: 'Partita', kind: 'warning', okLabel: 'Save', cancelLabel: 'Don’t save',
     });
     if (save) {
       if (!(await saveDocument())) return;
     } else {
       const sure = await dialog.ask(`Close “${doc.name}” and lose the unsaved changes?`, {
-        title: 'Da Capo', kind: 'warning', okLabel: 'Discard changes', cancelLabel: 'Keep editing',
+        title: 'Partita', kind: 'warning', okLabel: 'Discard changes', cancelLabel: 'Keep editing',
       });
       if (!sure) return;
       discard = true;
@@ -166,7 +168,7 @@ async function checkRecovery() {
     return;
   }
   box.hidden = false;
-  box.innerHTML = '<strong>Da Capo closed unexpectedly.</strong> Unsaved work was recovered:' +
+  box.innerHTML = '<strong>Partita closed unexpectedly.</strong> Unsaved work was recovered:' +
     items.map((r) => {
       const m = r.manifest;
       const name = m ? m.display_name : 'Unknown document';
@@ -185,7 +187,7 @@ async function checkRecovery() {
       item.remove();
     } else if (ev.target.matches('[data-discard]')) {
       const sure = await dialog.ask('Delete this recovered work permanently?', {
-        title: 'Da Capo', kind: 'warning', okLabel: 'Delete', cancelLabel: 'Keep',
+        title: 'Partita', kind: 'warning', okLabel: 'Delete', cancelLabel: 'Keep',
       });
       if (!sure) return;
       await invoke('discard_recoverable', { sessionId: sid });
@@ -1018,10 +1020,10 @@ const commands = {
   shortcuts: () => showDialog('shortcuts'),
   about: () => showDialog('about'),
   credits: () => showDialog('credits'),
-  'open-repo': () => openExternal('https://github.com/dacapo-editor/dacapo'),
-  support: () => openExternal('https://dacapo-editor.github.io/support/'),
-  'report-problem': () => openExternal('https://github.com/dacapo-editor/dacapo/issues'),
-  changelog: () => openExternal('https://github.com/dacapo-editor/dacapo/blob/main/CHANGELOG.md'),
+  'open-repo': () => openExternal('https://github.com/partita-notation/partita'),
+  support: () => openExternal('https://partita-notation.github.io/support/'),
+  'report-problem': () => openExternal('https://github.com/partita-notation/partita/issues'),
+  changelog: () => openExternal('https://github.com/partita-notation/partita/blob/main/CHANGELOG.md'),
   'check-updates': () => serial(() => checkForUpdates(true)),
   'auto-updates': () => { savePref('updates.auto', !loadPref('updates.auto', true)); },
 };
@@ -1083,7 +1085,7 @@ async function ensureSound() {
   if (s.state === 'missing' || s.state === 'error') {
     const detail = s.state === 'error' ? `<p class="warn">The last attempt failed: ${esc(s.message)}</p>` : '';
     const ok = await askDialog('Download the sounds?',
-      `<p>To play music, Da Capo uses <b>FluidR3 GM</b>, a free collection of recorded instruments by Frank Wen (MIT license).</p>
+      `<p>To play music, Partita uses <b>FluidR3 GM</b>, a free collection of recorded instruments by Frank Wen (MIT license).</p>
        <p>It is a one-time download of <b>148 MB</b>, kept on this computer for future sessions.</p>${detail}`,
       'Download');
     if (!ok) return false;
@@ -1569,18 +1571,18 @@ const updates = {
   polling: false,
 };
 const DAY_MS = 24 * 60 * 60 * 1000;
-const releaseUrl = (v) => `https://github.com/dacapo-editor/dacapo/releases/tag/v${v}`;
+const releaseUrl = (v) => `https://github.com/partita-notation/partita/releases/tag/v${v}`;
 
 /** Status bar text while an update downloads or waits for a restart. */
 function updatePart() {
   const u = updates.status;
   if (u?.state === 'downloading') {
     const pct = u.total ? Math.min(100, Math.floor((u.received / u.total) * 100)) : 0;
-    return `<span class="download" role="status" data-tip="Downloading Da Capo ${esc(u.version)}" data-desc="You can keep working. Da Capo asks before restarting.">`
+    return `<span class="download" role="status" data-tip="Downloading Partita ${esc(u.version)}" data-desc="You can keep working. Partita asks before restarting.">`
       + `Downloading update <progress max="100" value="${pct}" aria-label="Update download progress"></progress> <b>${pct}%</b></span>`;
   }
   if (u?.state === 'ready') {
-    return `<span class="update" data-update data-tip="Da Capo ${esc(u.version)} is ready" data-desc="Click to restart and install it. Unsaved changes are kept.">⟳ Restart to update</span>`;
+    return `<span class="update" data-update data-tip="Partita ${esc(u.version)} is ready" data-desc="Click to restart and install it. Unsaved changes are kept.">⟳ Restart to update</span>`;
   }
   return '';
 }
@@ -1631,22 +1633,22 @@ async function checkForUpdates(manual) {
     if (!manual && loadPref('updates.skip', null) === s.version) return;
     await offerUpdate(s);
   } else if (manual && s.state === 'up_to_date') {
-    await choiceDialog('Da Capo is up to date', `<p>You have the latest version, <b>${esc(s.current)}</b>.</p>`,
+    await choiceDialog('Partita is up to date', `<p>You have the latest version, <b>${esc(s.current)}</b>.</p>`,
       [{ label: 'OK', value: 'ok', primary: true }]);
   } else if (manual && s.state === 'error') {
     await choiceDialog('Could not check for updates',
-      `<p>Da Capo could not reach GitHub to look for a new version. Check your internet connection and try again.</p><p class="muted">${esc(s.message)}</p>`,
+      `<p>Partita could not reach GitHub to look for a new version. Check your internet connection and try again.</p><p class="muted">${esc(s.message)}</p>`,
       [{ label: 'OK', value: 'ok', primary: true }]);
   } else if (s.state === 'error') {
-    console.warn('[dacapo] update check failed:', s.message);
+    console.warn('[partita] update check failed:', s.message);
   }
 }
 
 async function offerUpdate(info) {
   const date = info.date ? ` It was published on ${esc(info.date)}.` : '';
-  const answer = await choiceDialog(`Da Capo ${info.version} is available`,
+  const answer = await choiceDialog(`Partita ${info.version} is available`,
     `<p>You have version ${esc(info.current)}.${date} ${link(releaseUrl(info.version), 'See what’s new')}</p>
-     <p>The update downloads in the background while you keep working. Da Capo asks before restarting, and unsaved changes are kept.</p>`,
+     <p>The update downloads in the background while you keep working. Partita asks before restarting, and unsaved changes are kept.</p>`,
     [
       { label: 'Skip This Version', value: 'skip' },
       { spacer: true },
@@ -1682,8 +1684,8 @@ async function offerRestart() {
   const u = updates.status;
   if (u?.state !== 'ready') return;
   const dirty = [...state.docs.values()].some((d) => d.dirty);
-  const keep = dirty ? '<p>Your unsaved changes are kept: Da Capo offers them back when it starts again.</p>' : '';
-  const answer = await choiceDialog(`Restart to install Da Capo ${u.version}?`,
+  const keep = dirty ? '<p>Your unsaved changes are kept: Partita offers them back when it starts again.</p>' : '';
+  const answer = await choiceDialog(`Restart to install Partita ${u.version}?`,
     `<p>The update has been downloaded and verified.</p>${keep}`,
     [{ label: 'Later', value: 'later' }, { label: 'Restart Now', value: 'restart', primary: true }]);
   if (answer !== 'restart') return;
@@ -1707,7 +1709,7 @@ async function showAbout(scrollToCredits = false) {
   const platform = `${OS_NAMES[a.os] || a.os} ${a.arch}`;
   // Plain-text summary for bug reports.
   const summary = [
-    `Da Capo ${a.version} (${platform})`,
+    `Partita ${a.version} (${platform})`,
     `Tauri ${a.tauri} · file format ${a.file_format}`,
     `SoundFont: ${sf.name} ${sf.version} ${sf.installed ? `installed (${MB(sf.size_bytes)} MB)` : 'not downloaded'}`,
   ].join('\n');
@@ -1718,16 +1720,16 @@ async function showAbout(scrollToCredits = false) {
       : '<span class="muted">Not downloaded yet — it is offered the first time you press Play.</span>';
   const body = `
     <div class="about-head">
-      <img src="dacapo-icon.png" alt="" width="56" height="56">
+      <img src="app-icon.png" alt="" width="56" height="56">
       <div>
-        <div class="about-name">Da Capo <span class="about-version">${esc(a.version)}</span></div>
+        <div class="about-name">Partita <span class="about-version">${esc(a.version)}</span></div>
         <div class="muted">Open source music notation editor · ${esc(platform)}</div>
         <div class="muted">Free software under the ${link('https://www.gnu.org/licenses/gpl-3.0.html', 'GNU GPL v3.0 or later')}.</div>
       </div>
     </div>
     <p class="about-links">${link(a.repository, 'Source code')} · ${link(a.issues, 'Report a problem')} · ${link(`${a.repository}/blob/main/CHANGELOG.md`, 'What’s new')}</p>
 
-    <h3>Downloaded by Da Capo</h3>
+    <h3>Downloaded by Partita</h3>
     <table class="about-table">
       <tr><th>${esc(sf.name)} ${esc(sf.version)}</th><td>${sfState}</td></tr>
       <tr><td colspan="2" class="muted">Instrument sounds by ${esc(sf.author)} · ${esc(sf.license)} license · ${link(sf.homepage, 'more information')}</td></tr>
@@ -1735,7 +1737,7 @@ async function showAbout(scrollToCredits = false) {
     </table>
 
     <h3 id="about-credits">Credits</h3>
-    <p class="muted">Da Capo is built on the work of these projects. Thank you!</p>
+    <p class="muted">Partita is built on the work of these projects. Thank you!</p>
     <table class="about-table credits">
       ${a.credits.map((c) => `<tr>
         <th>${link(c.url, c.name)} <span class="muted">${esc(c.version)}</span></th>
@@ -1747,10 +1749,10 @@ async function showAbout(scrollToCredits = false) {
     <table class="about-table">
       <tr><th>Version</th><td>${esc(a.version)}</td></tr>
       <tr><th>Platform</th><td>${esc(platform)} · Tauri ${esc(a.tauri)}</td></tr>
-      <tr><th>File format</th><td>.dacapo version ${a.file_format}</td></tr>
+      <tr><th>File format</th><td>.partita version ${a.file_format}</td></tr>
       <tr><th>Data folder</th><td class="path" title="${esc(a.data_dir)}">${esc(a.data_dir)}</td></tr>
     </table>`;
-  openDialog('About Da Capo', body,
+  openDialog('About Partita', body,
     `<button type="button" data-copy>Copy version info</button>${sf.installed ? '<button type="button" data-reveal>Show SoundFont file</button>' : ''}`);
   const dlg = $('dialog');
   dlg.dataset.summary = summary;
@@ -1859,13 +1861,13 @@ const MENUS = [
     { label: 'What’s New', cmd: 'changelog' },
     { label: 'Report a Problem…', cmd: 'report-problem' },
     { label: 'Source Code on GitHub', cmd: 'open-repo' },
-    { label: 'Support Da Capo…', cmd: 'support' },
+    { label: 'Support Partita…', cmd: 'support' },
     { sep: true },
     { label: 'Check for Updates…', cmd: 'check-updates' },
     { label: 'Automatic Updates', cmd: 'auto-updates', checked: () => loadPref('updates.auto', true) },
     { sep: true },
     { label: 'Credits and Licenses', cmd: 'credits' },
-    { label: 'About Da Capo', cmd: 'about' },
+    { label: 'About Partita', cmd: 'about' },
   ] },
 ];
 installMenuBar($('menubar'), MENUS, runCommand, () => page.focus());
@@ -1916,7 +1918,7 @@ window.addEventListener('resize', () => render());
 tauri.event.listen('close-requested', async ({ payload }) => {
   const names = payload.map((n) => `“${n}”`).join(', ');
   const quit = await dialog.ask(`You have unsaved changes in ${names}.\n\nQuit and discard them?`, {
-    title: 'Da Capo', kind: 'warning', okLabel: 'Quit without saving', cancelLabel: 'Cancel',
+    title: 'Partita', kind: 'warning', okLabel: 'Quit without saving', cancelLabel: 'Cancel',
   });
   if (quit) await invoke('quit');
 });

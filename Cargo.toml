@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/dacapo-core", "src-tauri"]
+members = ["crates/partita-core", "src-tauri"]
 
 [workspace.package]
 # The single source of the app version: Tauri reads it from here (there is
