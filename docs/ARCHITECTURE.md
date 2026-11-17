@@ -177,6 +177,8 @@ It also returns the position of every notehead and rest (`hits`), which the eras
 
 Everything is laid out in one shared coordinate space. Each page is emitted as its own SVG whose `viewBox` shows its slice of that space, so the same layout serves hit-testing on any page (`clientToLayout`) and printing (one SVG per sheet, scaled by CSS).
 
+**Tempo markings.** A measure's `MeasureAttrs.tempo` (a `TempoMark`: words, an optional tempo in quarter notes per minute, the beat unit shown, and whether words and metronome mark print) travels with its measure, so inserting, deleting and undoing need no extra ops. The first measure's value is `Score::tempo` (the toolbar's), never stored in the marking. `Score::tempo_at` gives the tempo in force; the playback `Timeline` keeps the changes (`tempos`) and converts between ticks and seconds piece by piece (`seconds_at`, `tick_at_seconds`), which the audio engine uses to schedule notes and follow the playhead.
+
 **Texts around the music.** The title, composer, subtitle, header, footer, copyright and page numbers live in `Score.metadata` (`Metadata` in `model.rs`, changed with one undoable `SetMetadata` op). `render.js` lays out the headings of page 1 (`headingLayout`: the music starts below them) and draws every text in the SVG (`drawPageTexts`), filling `{page}`, `{pages}`, `{title}` and `{composer}` per page. Each text carries `data-text`; a click opens a text field over it (`openTextEdit` in `app.js`), and the frontend always sends the whole metadata back.
 
 **Chrome.** The menu bar (`src/menu.js`) and tooltips (`src/tooltip.js`) are small dependency-free modules. Every menu, toolbar and palette action goes through one `commands` map in `app.js`.

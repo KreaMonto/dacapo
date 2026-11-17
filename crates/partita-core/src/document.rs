@@ -16,8 +16,9 @@ use crate::cursor::{self, Caret, Move, SelectionRange};
 use crate::history::{History, Transaction, TxKind};
 use crate::model::{
     is_measure_rest, Articulation, Clef, Duration, Dynamic, Event, EventId, EventKind, GroupKind,
-    KeySignature, LyricJoin, Metadata, Pitch, Score, Slur, StaffGroup, Step, Syllable,
-    TimeSignature, Transposition, MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS, MAX_VERSES,
+    KeySignature, LyricJoin, MeasureAttrs, Metadata, Pitch, Score, Slur, StaffGroup, Step,
+    Syllable, TempoMark, TimeSignature, Transposition, MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS,
+    MAX_VERSES,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
 
@@ -1181,6 +1182,43 @@ impl Document {
         )
     }
 
+    /// Puts a tempo marking at the start of `measure`, or removes it with
+    /// `None`. In the first measure the metronome value is the opening tempo
+    /// (the toolbar's): `mark.bpm` becomes [`Score::tempo`] and is not kept
+    /// in the marking. One undo step.
+    pub fn set_tempo_mark(
+        &mut self,
+        measure: usize,
+        mut mark: Option<TempoMark>,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let Some(current) = self.score.measures.get(measure).cloned() else {
+            return Err(crate::ops::OpError::MeasureIndex(measure).into());
+        };
+        let mut ops = Vec::new();
+        if measure == 0 {
+            if let Some(bpm) = mark.as_mut().and_then(|m| m.bpm.take()) {
+                if bpm != self.score.tempo {
+                    ops.push(Op::SetTempo { bpm });
+                }
+            }
+        }
+        if current.tempo != mark {
+            ops.push(Op::SetMeasureAttrs {
+                index: measure,
+                attrs: MeasureAttrs {
+                    tempo: mark,
+                    ..current
+                },
+            });
+        }
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
+    }
+
     // ----- clipboard -----------------------------------------------------
 
     pub fn copy(&self) -> Option<Clipboard> {
@@ -1266,7 +1304,13 @@ impl Document {
     /// Adds an empty measure at `index` (copying the attributes in force).
     pub fn insert_measure(&mut self, index: usize, now_ms: u64) -> Result<(), EditError> {
         let index = index.min(self.score.measures.len());
-        let attrs = self.score.measures[index.saturating_sub(1).min(self.score.measures.len() - 1)];
+        // The time and key in force, without the tempo marking (which belongs
+        // to its own measure).
+        let attrs = MeasureAttrs {
+            tempo: None,
+            ..self.score.measures[index.saturating_sub(1).min(self.score.measures.len() - 1)]
+                .clone()
+        };
         let op = Op::InsertMeasure {
             index,
             attrs,
@@ -1509,7 +1553,7 @@ impl Document {
             .take_while(|(_, a)| a.time == old)
             .map(|(i, a)| Op::SetMeasureAttrs {
                 index: from + i,
-                attrs: crate::model::MeasureAttrs { time, ..*a },
+                attrs: MeasureAttrs { time, ..a.clone() },
             })
             .collect();
         let caret = self.caret;
@@ -1527,7 +1571,7 @@ impl Document {
             .take_while(|(_, a)| a.key == old)
             .map(|(i, a)| Op::SetMeasureAttrs {
                 index: from + i,
-                attrs: crate::model::MeasureAttrs { key, ..*a },
+                attrs: MeasureAttrs { key, ..a.clone() },
             })
             .collect();
         let caret = self.caret;
@@ -1588,6 +1632,57 @@ mod tests {
             .iter()
             .map(|e| e.pitches().first().map(|p| p.step))
             .collect()
+    }
+
+    #[test]
+    fn tempo_markings_are_one_undo_step_and_stay_in_their_measure() {
+        let mut doc = Document::new(Score::new("t", 3));
+        let andante = TempoMark {
+            text: "Andante con moto".into(),
+            bpm: Some(76),
+            ..TempoMark::default()
+        };
+        // First measure: the value is the opening tempo, not kept twice.
+        doc.set_tempo_mark(0, Some(andante.clone()), 1_000).unwrap();
+        assert_eq!(doc.score.tempo, 76);
+        let kept = doc.score.measures[0].tempo.clone().unwrap();
+        assert_eq!((kept.text.as_str(), kept.bpm), ("Andante con moto", None));
+        doc.undo().unwrap();
+        assert_eq!(doc.score.tempo, crate::model::DEFAULT_TEMPO);
+        assert!(doc.score.measures[0].tempo.is_none());
+        doc.redo().unwrap();
+
+        // Later measures keep their value; a new measure does not copy it.
+        doc.set_tempo_mark(
+            1,
+            Some(TempoMark {
+                text: "Più mosso".into(),
+                bpm: Some(96),
+                ..TempoMark::default()
+            }),
+            2_000,
+        )
+        .unwrap();
+        doc.insert_measure(2, 3_000).unwrap();
+        assert_eq!(doc.score.measures[1].tempo.as_ref().unwrap().bpm, Some(96));
+        assert!(doc.score.measures[2].tempo.is_none());
+        // Out of range is refused.
+        assert!(doc
+            .set_tempo_mark(
+                1,
+                Some(TempoMark {
+                    bpm: Some(999),
+                    ..TempoMark::default()
+                }),
+                4_000
+            )
+            .is_err());
+        doc.set_tempo_mark(1, None, 5_000).unwrap();
+        assert!(doc.score.measures[1].tempo.is_none());
+        assert!(
+            doc.score.measures[0].tempo.is_some(),
+            "the opening marking stays"
+        );
     }
 
     fn at(staff: usize, measure: usize, index: usize) -> Caret {

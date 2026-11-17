@@ -119,7 +119,16 @@ The palette is grouped into collapsible categories. Click a heading to open or c
 | **Space** or ▶ | Play from the caret. Press again to pause: the caret moves to where the music stopped, so the next Play continues from there. |
 | **Shift + Space** or ⏮ | Play from the beginning |
 | **Esc** or ⏹ | Stop without moving the caret |
-| **♩ = 100** in the toolbar | Tempo in quarter notes per minute (20–400). Type a value and press Enter. It is saved with the score. |
+| **♩ = 100** in the toolbar | The opening tempo in quarter notes per minute (20–400). Type a value and press Enter. It is saved with the score. |
+
+### Tempo markings
+
+**Score → Tempo Marking…** puts a marking at the start of the caret's measure, such as **Andante con moto ♩ = 76**: the words (suggestions such as *Allegro* or *a tempo* appear as you type), and a metronome mark counting quarter notes, eighths, halves or dotted values (♩. = 60 in 6/8 is the same speed as ♩ = 90). Click a printed marking to change or remove it.
+
+- **What prints and what plays are separate.** Untick *Print the words* or *Print the metronome mark* to hide them; a hidden marking still sets the tempo. In the first measure, the metronome value is the opening tempo, the same as in the toolbar.
+- **Tempo changes.** A marking later in the piece with *Changes the tempo from this measure* plays at its new tempo from there on (no gradual *rit.* or *accel.* yet). Without it, the words alone are printed (*dolce*, *a tempo*) and the tempo stays as it was.
+- The marking belongs to its measure: inserting or deleting measures before it moves it along, and deleting its measure removes it.
+- MusicXML keeps the words, the metronome mark (hidden ones too) and the tempo.
 
 A green line follows the music, and the view scrolls to keep it in sight. Notes also **sound while you write them**: placing a note, adding to a chord, or changing a pitch or accidental plays it.
 

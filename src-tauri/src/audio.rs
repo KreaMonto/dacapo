@@ -105,7 +105,8 @@ struct Player {
     end: u64,
     timeline: Timeline,
     origin_tick: u64,
-    samples_per_tick: f64,
+    /// Seconds from the start of the score to `origin_tick`.
+    origin_seconds: f64,
     // Note previews while editing: independent of playback.
     clock: u64,
     preview_offs: Vec<(u64, i32, i32)>,
@@ -209,7 +210,11 @@ impl Player {
     }
 
     fn state(&self) -> PlaybackState {
-        let tick = self.origin_tick + (self.pos as f64 / self.samples_per_tick.max(1e-9)) as u64;
+        let elapsed = self.pos as f64 / self.sample_rate.max(1) as f64;
+        let tick = self
+            .timeline
+            .tick_at_seconds(self.origin_seconds + elapsed)
+            .max(self.origin_tick);
         let (measure, tick) = self.timeline.position(tick.min(self.timeline.end));
         PlaybackState {
             playing: self.playing,
@@ -241,7 +246,7 @@ impl Engine {
             end: 0,
             timeline: Timeline::default(),
             origin_tick: 0,
-            samples_per_tick: 1.0,
+            origin_seconds: 0.0,
             clock: 0,
             preview_offs: Vec::new(),
             left: vec![0.0; 4096],
@@ -358,8 +363,11 @@ impl Engine {
         if !matches!(self.status(), SoundStatus::Ready) {
             return Err("the SoundFont is not loaded yet".into());
         }
-        let samples_per_tick = timeline.seconds_per_tick() * self.sample_rate as f64;
-        let at = |tick: u64| ((tick.saturating_sub(from_tick)) as f64 * samples_per_tick) as u64;
+        // Samples from the start of playback; the tempo may change on the way.
+        let origin_seconds = timeline.seconds_at(from_tick);
+        let rate = self.sample_rate as f64;
+        let at =
+            |tick: u64| ((timeline.seconds_at(tick.max(from_tick)) - origin_seconds) * rate) as u64;
         let mut queue = Vec::with_capacity(timeline.notes.len() * 2);
         for n in timeline.notes.iter().filter(|n| n.start >= from_tick) {
             let channel = channel_for(n.staff);
@@ -393,7 +401,7 @@ impl Engine {
         p.pos = 0;
         p.end = end;
         p.origin_tick = from_tick;
-        p.samples_per_tick = samples_per_tick;
+        p.origin_seconds = origin_seconds;
         p.timeline = timeline;
         p.playing = true;
         Ok(())

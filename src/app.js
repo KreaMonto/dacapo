@@ -3,7 +3,7 @@
 
 import {
   SP, renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, playheadMarkup, esc, eraserTarget, eventsInBox,
-  lyricTarget, LYRIC_PX, LYRIC_FONT, MAX_VERSES, fullMetadata, TEXT_FONT, TEXT_SIZE,
+  lyricTarget, LYRIC_PX, LYRIC_FONT, MAX_VERSES, fullMetadata, TEXT_FONT, TEXT_SIZE, BEATS, perMinute, toQuarterBpm,
 } from './render.js';
 import { installTooltips } from './tooltip.js';
 import { installMenuBar } from './menu.js';
@@ -819,6 +819,13 @@ $('score').addEventListener('mousedown', (ev) => {
   if (ev.button !== 0) return;
   // Texts around the music (title, header, footer...): a click edits the
   // text there; the page number opens the dialog with all of them.
+  // A tempo marking opens its dialog.
+  const tempo = ev.target.closest?.('[data-tempo]');
+  if (tempo) {
+    ev.preventDefault();
+    tempoDialog(Number(tempo.dataset.tempo));
+    return;
+  }
   const ptext = ev.target.closest?.('[data-text]');
   if (ptext) {
     ev.preventDefault();
@@ -1783,6 +1790,97 @@ async function pageTextsDialog() {
   setMetadata(changes);
 }
 
+// ----- tempo markings --------------------------------------------------------------
+// Words and a metronome mark at the start of a measure (TempoMark in
+// model.rs). Score → Tempo Marking… opens it for the caret's measure, and
+// clicking a printed marking opens that one. In the first measure the
+// metronome value is the opening tempo, the toolbar's.
+
+// Usual tempo words, offered as suggestions (the same in every language).
+const TEMPO_WORDS = ['Grave', 'Largo', 'Lento', 'Adagio', 'Andante', 'Andante con moto', 'Andantino', 'Moderato',
+  'Allegretto', 'Allegro', 'Allegro moderato', 'Allegro vivace', 'Vivace', 'Presto', 'Prestissimo', 'a tempo',
+  'Tempo I', 'rit.', 'rall.', 'accel.', 'Più mosso', 'Meno mosso'];
+
+/** Playback tempo in force in measure `m` (quarter notes per minute). */
+function tempoAt(score, m) {
+  let bpm = score.tempo ?? 100;
+  for (let i = 1; i <= m; i++) if (score.measures[i]?.tempo?.bpm) bpm = score.measures[i].tempo.bpm;
+  return bpm;
+}
+
+async function tempoDialog(measure) {
+  const doc = active();
+  if (!doc) return;
+  const score = doc.score;
+  const first = measure === 0;
+  const current = score.measures[measure]?.tempo || null;
+  const mark = current || { text: '', bpm: null, beat: 'quarter', show_text: true, show_metronome: true };
+  const beat = BEATS[mark.beat] ? mark.beat : 'quarter';
+  // The value shown: this marking's, or the tempo already in force here.
+  const quarter = first ? score.tempo ?? 100 : mark.bpm ?? tempoAt(score, measure);
+  const changes = first || mark.bpm != null || !current;
+  const body = `<form class="staff-form tempo-form" id="tempo-form">
+    <label>${esc(t('tempo.text'))}
+      <input type="text" id="tempo-text" list="tempo-words" value="${esc(mark.text)}" placeholder="${esc(t('tempo.text.example'))}" autocomplete="off"></label>
+    <datalist id="tempo-words">${TEMPO_WORDS.map((w) => `<option value="${esc(w)}">`).join('')}</datalist>
+    <label class="check"><input type="checkbox" id="tempo-show-text"${mark.show_text ? ' checked' : ''}> ${esc(t('tempo.show_text'))}</label>
+    ${first ? '' : `<label class="check"><input type="checkbox" id="tempo-changes"${changes ? ' checked' : ''}> ${esc(t('tempo.changes'))}</label>`}
+    <div class="row" id="tempo-metronome">
+      <label>${esc(t('tempo.beat'))}
+        <select id="tempo-beat">${Object.keys(BEATS).map((b) =>
+          `<option value="${b}"${b === beat ? ' selected' : ''}>${esc(t(`tempo.beat.${b}`))}</option>`).join('')}</select></label>
+      <label>${esc(t('tempo.per_minute'))}
+        <input type="number" id="tempo-number" min="5" max="999" value="${perMinute(quarter, beat)}"></label>
+    </div>
+    <label class="check"><input type="checkbox" id="tempo-show-metronome"${mark.show_metronome ? ' checked' : ''}> ${esc(t('tempo.show_metronome'))}</label>
+    <p class="muted hint">${esc(t(first ? 'tempo.hint.first' : 'tempo.hint'))}</p>
+  </form>`;
+  const pending = choiceDialog(t('tempo.title', { n: measure + 1 }), body, [
+    ...(current ? [{ label: t('tempo.remove'), value: 'remove' }] : []),
+    { spacer: true },
+    { label: t('button.cancel'), value: 'cancel' },
+    { label: t('button.ok'), value: 'ok', primary: true },
+  ]);
+  const number = $('tempo-number');
+  const beatSel = $('tempo-beat');
+  const changesBox = $('tempo-changes');
+  // Keep the same speed when the beat unit changes (♩ = 90 is ♩. = 60).
+  let lastBeat = beat;
+  beatSel.addEventListener('change', () => {
+    const q = toQuarterBpm(Number(number.value) || 0, lastBeat);
+    lastBeat = beatSel.value;
+    if (q) number.value = perMinute(q, lastBeat);
+  });
+  // Words alone ("dolce", "a tempo") need no metronome value.
+  const syncChanges = () => {
+    const on = !changesBox || changesBox.checked;
+    $('tempo-metronome').classList.toggle('disabled', !on);
+    number.disabled = beatSel.disabled = !on;
+    $('tempo-show-metronome').disabled = !on;
+  };
+  changesBox?.addEventListener('change', syncChanges);
+  syncChanges();
+  $('tempo-form').addEventListener('submit', (ev) => { ev.preventDefault(); $('dialog').querySelector('[data-answer="ok"]').click(); });
+  $('tempo-text').focus();
+  const answer = await pending;
+  if (answer === 'remove') { act({ type: 'set_tempo_mark', measure, mark: null }); return; }
+  if (answer !== 'ok') return;
+  const text = $('tempo-text').value.trim();
+  const withValue = !changesBox || changesBox.checked;
+  const q = toQuarterBpm(Number(number.value) || 0, beatSel.value);
+  if (withValue && (q < 20 || q > 400)) { showError(t('error.tempo')); return; }
+  const next = {
+    text,
+    bpm: withValue ? q : null,
+    beat: beatSel.value,
+    show_text: $('tempo-show-text').checked,
+    show_metronome: withValue && $('tempo-show-metronome').checked,
+  };
+  // Nothing to print and no tempo to set: no marking.
+  if (!first && !text && !withValue) { act({ type: 'set_tempo_mark', measure, mark: null }); return; }
+  act({ type: 'set_tempo_mark', measure, mark: next });
+}
+
 // ----- dialogs ---------------------------------------------------------------
 
 /** A yes/no dialog. Resolves true when the user picks the OK button. */
@@ -2147,6 +2245,7 @@ for (const [name, alter] of ACCIDENTALS) commands[`alter:${name}`] = () => act({
 for (const a of ARTICULATIONS) commands[`artic:${a}`] = () => act({ type: 'toggle_articulation', articulation: a });
 for (const d of DYNAMICS) commands[`dyn:${d}`] = () => act({ type: 'set_dynamic', dynamic: d });
 commands['page-texts'] = () => pageTextsDialog();
+commands['tempo-mark'] = () => { const doc = active(); if (doc) tempoDialog(doc.caret.measure); };
 
 /** A radio choice of a submenu: label and tooltip from `key` (and `key.desc` if there is one). */
 const choice = (key, cmd, checked) => ({
@@ -2224,6 +2323,7 @@ const MENUS = [
   ] },
   { label: t('menu.score'), items: [
     { label: t('menu.score.texts'), cmd: 'page-texts', enabled: hasDoc, desc: t('menu.score.texts.desc') },
+    { label: t('menu.score.tempo'), cmd: 'tempo-mark', enabled: hasDoc, desc: t('menu.score.tempo.desc') },
     { sep: true },
     { label: t('menu.score.measure'), enabled: hasDoc, items: [
       { label: t('menu.score.measure.add'), cmd: 'add-measure', key: 'Ctrl+Enter', desc: t('toolbar.addmeasure.desc') },

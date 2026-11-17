@@ -38,6 +38,57 @@ pub enum MusicXmlError {
 
 // ---------------------------------------------------------------- export
 
+const BEAT_UNITS: [(BeatUnit, &str, bool); 5] = [
+    (BeatUnit::Eighth, "eighth", false),
+    (BeatUnit::Quarter, "quarter", false),
+    (BeatUnit::DottedQuarter, "quarter", true),
+    (BeatUnit::Half, "half", false),
+    (BeatUnit::DottedHalf, "half", true),
+];
+
+/// The `<direction>` for the tempo at the start of measure `m`: its words
+/// and metronome mark (hidden ones with `print-object="no"`) and the
+/// playback tempo. The first measure always has one, for the opening tempo.
+fn tempo_direction(score: &Score, m: usize) -> Option<String> {
+    let mark = score.measures[m].tempo.as_ref();
+    let bpm = if m == 0 {
+        Some(score.tempo)
+    } else {
+        mark.and_then(|t| t.bpm)
+    };
+    if mark.is_none() && m > 0 {
+        return None;
+    }
+    let hidden = |shown: bool| if shown { "" } else { " print-object=\"no\"" };
+    let mut x = String::from("      <direction placement=\"above\">");
+    if let Some(t) = mark.filter(|t| !t.text.is_empty()) {
+        let _ = write!(
+            x,
+            "<direction-type><words font-weight=\"bold\"{}>{}</words></direction-type>",
+            hidden(t.show_text),
+            esc(&t.text)
+        );
+    }
+    if let Some(bpm) = bpm {
+        // Without a marking (older scores), the opening tempo plays but is not printed.
+        let (beat, shown) = mark.map_or((BeatUnit::Quarter, false), |t| (t.beat, t.show_metronome));
+        let (_, unit, dot) = BEAT_UNITS
+            .iter()
+            .find(|(b, _, _)| *b == beat)
+            .copied()
+            .unwrap_or(BEAT_UNITS[1]);
+        let _ = write!(
+            x,
+            "<direction-type><metronome{}><beat-unit>{unit}</beat-unit>{}<per-minute>{}</per-minute></metronome></direction-type><sound tempo=\"{bpm}\"/>",
+            hidden(shown),
+            if dot { "<beat-unit-dot/>" } else { "" },
+            beat.per_minute(bpm)
+        );
+    }
+    x.push_str("</direction>\n");
+    Some(x)
+}
+
 /// Writes `score` as MusicXML text.
 pub fn export(score: &Score) -> String {
     let divisions = divisions_for(score);
@@ -151,10 +202,10 @@ pub fn export(score: &Score) -> String {
         // Whether the last syllable of each voice and verse asked for a hyphen.
         let mut hyphen_open = [[false; MAX_VERSES]; MAX_VOICES];
         for (m, cell) in staff.measures.iter().enumerate() {
-            let attrs = score.measures[m];
+            let attrs = &score.measures[m];
             let capacity = attrs.time.measure_ticks();
             let _ = writeln!(x, "    <measure number=\"{}\">", m + 1);
-            let prev_attrs = m.checked_sub(1).map(|p| score.measures[p]);
+            let prev_attrs = m.checked_sub(1).map(|p| &score.measures[p]);
             // Transposing staves show their written key.
             let key = score.written_key(s, m);
             let prev_key = m.checked_sub(1).map(|p| score.written_key(s, p));
@@ -199,12 +250,10 @@ pub fn export(score: &Score) -> String {
                 }
                 x.push_str("      </attributes>\n");
             }
-            if m == 0 && s == 0 {
-                let _ = writeln!(
-                    x,
-                    "      <direction placement=\"above\"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>{0}</per-minute></metronome></direction-type><sound tempo=\"{0}\"/></direction>",
-                    score.tempo
-                );
+            if s == 0 {
+                if let Some(direction) = tempo_direction(score, m) {
+                    x.push_str(&direction);
+                }
             }
 
             // Voices one after another, rewinding with <backup> in between.
@@ -674,6 +723,57 @@ pub fn import(text: &str, fallback_title: &str) -> Result<Import, MusicXmlError>
     Importer::default().run(root, fallback_title)
 }
 
+/// A direction's metronome mark: its beat unit (if Partita has it), the
+/// number per minute, and whether it is printed.
+fn metronome_of(direction: roxmltree::Node) -> Option<(Option<BeatUnit>, Option<u16>, bool)> {
+    let mt = direction
+        .descendants()
+        .find(|n| n.has_tag_name("metronome"))?;
+    let unit = text_of(mt, "beat-unit");
+    let dot = child(mt, "beat-unit-dot").is_some();
+    let beat = BEAT_UNITS
+        .iter()
+        .find(|(_, u, d)| unit.as_deref() == Some(*u) && *d == dot)
+        .map(|(b, _, _)| *b);
+    let per_minute = text_of(mt, "per-minute")
+        .and_then(|t| t.parse::<f64>().ok())
+        .map(|n| n.round() as u16);
+    Some((beat, per_minute, mt.attribute("print-object") != Some("no")))
+}
+
+/// A tempo marking from a `<direction>` with a metronome mark or a playback
+/// tempo (words alone are not tempo markings). In the first measure the
+/// value is the opening tempo, so a direction there with nothing printed
+/// adds no marking.
+fn tempo_mark_of(direction: roxmltree::Node, m: usize, bpm: Option<u16>) -> Option<TempoMark> {
+    let printed = |n: roxmltree::Node| n.attribute("print-object") != Some("no");
+    let bpm = bpm?;
+    let metronome = direction
+        .descendants()
+        .find(|n| n.has_tag_name("metronome"));
+    let beat = metronome_of(direction).and_then(|(b, _, _)| b);
+    let words: Vec<roxmltree::Node> = direction
+        .descendants()
+        .filter(|n| n.has_tag_name("words"))
+        .collect();
+    let text = words
+        .iter()
+        .filter_map(|w| w.text())
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mark = TempoMark {
+        show_text: words.iter().any(|w| printed(*w)),
+        show_metronome: metronome.is_some_and(printed) && beat.is_some(),
+        text,
+        bpm: (m > 0).then_some(bpm.clamp(*TEMPO_RANGE.start(), *TEMPO_RANGE.end())),
+        beat: beat.unwrap_or_default(),
+    };
+    let printed_anything = (mark.show_text && !mark.text.is_empty()) || mark.show_metronome;
+    (m > 0 || printed_anything).then_some(mark)
+}
+
 fn child<'a, 'i>(n: roxmltree::Node<'a, 'i>, name: &str) -> Option<roxmltree::Node<'a, 'i>> {
     n.children().find(|c| c.has_tag_name(name))
 }
@@ -730,6 +830,8 @@ struct Importer {
     overlaps: usize,
     /// Staves named "Staff N" because the file gave them no name.
     unnamed: Vec<usize>,
+    /// Tempo markings by measure, from the first part's directions.
+    tempo_marks: HashMap<usize, TempoMark>,
 }
 
 impl Importer {
@@ -886,9 +988,12 @@ impl Importer {
         let mut last = MeasureAttrs::default();
         for m in 0..count {
             if let Some(Some(a)) = self.measures.get(m) {
-                last = *a;
+                last = a.clone();
             }
-            attrs.push(last);
+            attrs.push(MeasureAttrs {
+                tempo: self.tempo_marks.remove(&m),
+                ..last.clone()
+            });
         }
         for staff in &mut self.score_staves {
             staff.measures.resize_with(count, StaffMeasure::default);
@@ -1105,14 +1210,23 @@ impl Importer {
                                 pending_dynamic.insert(staff_no, dynamic);
                             }
                         }
+                        let sound_tempo = el
+                            .descendants()
+                            .find(|n| n.has_tag_name("sound"))
+                            .and_then(|s| s.attribute("tempo"))
+                            .and_then(|t| t.parse::<f64>().ok())
+                            .map(|t| t.round() as u16);
+                        // The tempo it sets: the playback tempo, or else
+                        // what the metronome mark says.
+                        let bpm = sound_tempo.or_else(|| {
+                            metronome_of(el).and_then(|(b, n, _)| Some(b?.to_quarter_bpm(n?)))
+                        });
                         if self.tempo.is_none() {
-                            if let Some(t) = el
-                                .descendants()
-                                .find(|n| n.has_tag_name("sound"))
-                                .and_then(|s| s.attribute("tempo"))
-                                .and_then(|t| t.parse::<f64>().ok())
-                            {
-                                self.tempo = Some(t.round() as u16);
+                            self.tempo = bpm;
+                        }
+                        if first_part {
+                            if let Some(mark) = tempo_mark_of(el, m, bpm) {
+                                self.tempo_marks.entry(m).or_insert(mark);
                             }
                         }
                     }
@@ -1355,7 +1469,7 @@ impl Importer {
                 if self.measures.len() <= m {
                     self.measures.resize(m + 1, None);
                 }
-                self.measures[m] = Some(current_attrs);
+                self.measures[m] = Some(current_attrs.clone());
             }
         }
     }
@@ -1558,6 +1672,70 @@ mod tests {
         );
         assert_eq!(m.copyright, "© 2026 Anon");
         assert!(m.footer.is_empty());
+    }
+
+    #[test]
+    fn tempo_markings_round_trip() {
+        let mut score = sample();
+        score.tempo = 76;
+        score.measures[0].tempo = Some(TempoMark {
+            text: "Andante con moto".into(),
+            ..TempoMark::default()
+        });
+        score.measures[1].tempo = Some(TempoMark {
+            text: "Più mosso".into(),
+            bpm: Some(90),
+            beat: BeatUnit::DottedQuarter,
+            show_text: true,
+            show_metronome: false,
+        });
+        let xml = export(&score);
+        assert!(xml.contains("<words font-weight=\"bold\">Andante con moto</words>"));
+        assert!(xml.contains("<metronome print-object=\"no\"><beat-unit>quarter</beat-unit><beat-unit-dot/><per-minute>60</per-minute></metronome></direction-type><sound tempo=\"90\"/>"));
+        let back = import(&xml, "x").unwrap().score;
+        assert_eq!(back.tempo, 76);
+        assert_eq!(back.measures[0].tempo, score.measures[0].tempo);
+        assert_eq!(back.measures[1].tempo, score.measures[1].tempo);
+    }
+
+    #[test]
+    fn scores_without_markings_export_a_hidden_opening_tempo() {
+        let score = sample();
+        let xml = export(&score);
+        assert!(xml.contains("<metronome print-object=\"no\">"));
+        let back = import(&xml, "x").unwrap().score;
+        assert_eq!(back.tempo, score.tempo);
+        assert!(!back.has_tempo_marks(), "nothing printed, nothing added");
+    }
+
+    #[test]
+    fn imports_words_and_a_dotted_beat_from_other_programs() {
+        let xml = r#"<score-partwise>
+  <part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1"><attributes><divisions>2</divisions><time><beats>6</beats><beat-type>8</beat-type></time></attributes>
+      <direction placement="above"><direction-type><words>Allegretto</words></direction-type>
+        <direction-type><metronome><beat-unit>quarter</beat-unit><beat-unit-dot/><per-minute>60</per-minute></metronome></direction-type></direction>
+      <note><rest/><duration>6</duration></note></measure>
+    <measure number="2">
+      <direction><direction-type><words>dolce</words></direction-type></direction>
+      <direction><direction-type><words>rit.</words></direction-type><sound tempo="72"/></direction>
+      <note><rest/><duration>6</duration></note></measure>
+  </part>
+</score-partwise>"#;
+        let s = import(xml, "x").unwrap().score;
+        assert_eq!(s.tempo, 90, "♩. = 60 is ♩ = 90");
+        let first = s.measures[0].tempo.clone().unwrap();
+        assert_eq!(
+            (first.text.as_str(), first.beat, first.show_metronome),
+            ("Allegretto", BeatUnit::DottedQuarter, true)
+        );
+        // Words alone are not tempo markings; with a playback tempo they are.
+        let second = s.measures[1].tempo.clone().unwrap();
+        assert_eq!(
+            (second.text.as_str(), second.bpm, second.show_metronome),
+            ("rit.", Some(72), false)
+        );
     }
 
     #[test]

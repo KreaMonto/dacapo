@@ -17,7 +17,7 @@ use partita_core::document::{Clipboard, Document};
 use partita_core::file;
 use partita_core::model::{
     Articulation, Clef, Duration, Dynamic, GroupKind, Issue, KeySignature, LyricJoin, Metadata,
-    Score, Step, TimeSignature, Transposition,
+    Score, Step, TempoMark, TimeSignature, Transposition,
 };
 use partita_core::musicxml;
 use partita_core::recovery::{Recoverable, RecoveryStore};
@@ -278,6 +278,11 @@ enum Action {
     /// Every text around the music (title, composer, header, footer, page
     /// numbers...). The frontend sends all of them: one left out is reset.
     SetMetadata(Metadata),
+    /// A tempo marking at the start of a measure (`None` removes it).
+    SetTempoMark {
+        measure: usize,
+        mark: Option<TempoMark>,
+    },
     SetTempo {
         bpm: u16,
     },
@@ -506,6 +511,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             ),
             Action::SetMetadata(metadata) => d.set_metadata(metadata, now),
             Action::SetTempo { bpm } => d.set_tempo(bpm, now),
+            Action::SetTempoMark { measure, mark } => d.set_tempo_mark(measure, mark, now),
             Action::SetStaff { staff, props } => d.set_staff_properties(staff, props, now),
             Action::GroupStaves { first, last, kind } => d.group_staves(first, last, kind, now),
         };

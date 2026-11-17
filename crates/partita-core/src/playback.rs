@@ -14,6 +14,8 @@
 //!   Accents and marcato add emphasis to their note.
 //! - Measures take their time signature's length, or longer if they are
 //!   overfull, so no written note is cut. Measure rests are silence.
+//! - Tempo markings with a metronome value change the tempo from their
+//!   measure on (no gradual changes yet).
 //! - Fermatas do not change timing yet.
 
 use std::collections::{HashMap, HashSet};
@@ -44,8 +46,11 @@ pub struct Timeline {
     pub measure_starts: Vec<u64>,
     /// Absolute tick of the end of the last measure.
     pub end: u64,
-    /// Quarter notes per minute.
+    /// Quarter notes per minute at the start.
     pub tempo: u16,
+    /// Where the tempo changes: (absolute tick, quarter notes per minute),
+    /// from tick 0, in order.
+    pub tempos: Vec<(u64, u16)>,
     /// General MIDI program of each staff.
     pub instruments: Vec<u8>,
 }
@@ -70,9 +75,42 @@ impl Timeline {
         (m, abs.saturating_sub(start) as u32)
     }
 
-    /// Seconds per tick at this tempo.
-    pub fn seconds_per_tick(&self) -> f64 {
-        60.0 / (self.tempo.max(1) as f64 * TICKS_PER_QUARTER as f64)
+    /// The tempo segments: (first tick, seconds per tick).
+    fn segments(&self) -> impl Iterator<Item = (u64, f64)> + '_ {
+        let opening = std::iter::once((0, self.tempo))
+            .filter(|_| self.tempos.first().is_none_or(|&(t, _)| t > 0));
+        opening
+            .chain(self.tempos.iter().copied())
+            .map(|(t, bpm)| (t, 60.0 / (bpm.max(1) as f64 * TICKS_PER_QUARTER as f64)))
+    }
+
+    /// Seconds from the start of the score to an absolute tick.
+    pub fn seconds_at(&self, tick: u64) -> f64 {
+        let segs: Vec<(u64, f64)> = self.segments().collect();
+        let mut secs = 0.0;
+        for (i, &(start, per_tick)) in segs.iter().enumerate() {
+            if start >= tick {
+                break;
+            }
+            let end = segs.get(i + 1).map_or(tick, |&(next, _)| next.min(tick));
+            secs += (end - start) as f64 * per_tick;
+        }
+        secs
+    }
+
+    /// Inverse of [`Timeline::seconds_at`]: the tick reached after `secs`.
+    pub fn tick_at_seconds(&self, secs: f64) -> u64 {
+        let segs: Vec<(u64, f64)> = self.segments().collect();
+        let mut left = secs.max(0.0);
+        for (i, &(start, per_tick)) in segs.iter().enumerate() {
+            match segs.get(i + 1) {
+                Some(&(next, _)) if left >= (next - start) as f64 * per_tick => {
+                    left -= (next - start) as f64 * per_tick;
+                }
+                _ => return start + (left / per_tick) as u64,
+            }
+        }
+        0
     }
 }
 
@@ -236,11 +274,20 @@ pub fn build(score: &Score) -> Timeline {
     }
 
     notes.sort_by_key(|n| (n.start, n.key, n.staff));
+    // Tempo changes at the measures whose tempo differs from the one before.
+    let mut tempos: Vec<(u64, u16)> = Vec::new();
+    for (m, &start) in measure_starts.iter().enumerate() {
+        let bpm = score.tempo_at(m);
+        if tempos.last().is_none_or(|&(_, last)| last != bpm) {
+            tempos.push((start, bpm));
+        }
+    }
     Timeline {
         notes,
         measure_starts,
         end: t,
         tempo: score.tempo,
+        tempos,
         instruments: score.staves.iter().map(|s| s.instrument).collect(),
     }
 }
@@ -265,6 +312,37 @@ mod tests {
         s.staves[0].measures[0].voices[0] = m0;
         s.staves[0].measures[1].voices[0] = m1;
         s
+    }
+
+    #[test]
+    fn tempo_markings_change_the_tempo_from_their_measure() {
+        let mut s = Score::new("t", 3);
+        s.tempo = 60; // one quarter per second
+        s.measures[1].tempo = Some(TempoMark {
+            text: "Allegro".into(),
+            bpm: Some(120),
+            ..TempoMark::default()
+        });
+        // Words alone keep the tempo.
+        s.measures[2].tempo = Some(TempoMark {
+            text: "dolce".into(),
+            ..TempoMark::default()
+        });
+        let t = build(&s);
+        let (bar2, bar3) = (t.measure_starts[1], t.measure_starts[2]);
+        assert_eq!(t.tempos, vec![(0, 60), (bar2, 120)]);
+        // 4/4: the first measure lasts 4 s, the others 2 s each.
+        assert!((t.seconds_at(bar2) - 4.0).abs() < 1e-9);
+        assert!((t.seconds_at(bar3) - 6.0).abs() < 1e-9);
+        assert!((t.seconds_at(t.end) - 8.0).abs() < 1e-9);
+        assert_eq!(t.tick_at_seconds(5.0), bar2 + 2 * TICKS_PER_QUARTER as u64);
+        assert_eq!(t.tick_at_seconds(2.0), 2 * TICKS_PER_QUARTER as u64);
+        // In the first measure the opening tempo rules.
+        s.measures[0].tempo = Some(TempoMark {
+            bpm: Some(200),
+            ..TempoMark::default()
+        });
+        assert_eq!(build(&s).tempos[0], (0, 60));
     }
 
     #[test]
