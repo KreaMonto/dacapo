@@ -80,7 +80,7 @@ This document tracks the development goals and major stages toward a complete op
 - [ ] Option to switch music font (Leland, Petaluma for a handwritten/jazz look).
 - [ ] Light/dark theme switch (currently follows the system).
 - [ ] Customizable keyboard shortcuts.
-- [ ] Localization of the application (English first; Spanish next).
+- [x] Localization of the application: English and Spanish, chosen in View → Language.
 - [ ] Complete user documentation.
 
 ## Planned: version history

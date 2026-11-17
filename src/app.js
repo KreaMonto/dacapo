@@ -84,8 +84,20 @@ function serial(fn) {
   return queue;
 }
 
+/**
+ * The text for an error. Rust sends `{ code, args, message }`: the code is
+ * translated (error.<code>), and `message` is the English fallback for codes
+ * the locale does not know (and the text of code "other").
+ */
+function errorText(e) {
+  if (e && typeof e === 'object' && e.code) {
+    return has(`error.${e.code}`) ? t(`error.${e.code}`, e.args) : String(e.message);
+  }
+  return String(e?.message ?? e);
+}
+
 function showError(e) {
-  state.error = String(e);
+  state.error = errorText(e);
   renderStatus();
   console.error(e);
 }
@@ -132,7 +144,7 @@ async function importMusicXml(path) {
   const notes = v.import_notes || [];
   if (notes.length) {
     await choiceDialog(t('import.title'),
-      `<p>${esc(t('import.body'))}</p><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`,
+      `<p>${esc(t('import.body'))}</p><ul>${notes.map((n) => `<li>${esc(tn(`import.note.${n.kind}`, n.count))}</li>`).join('')}</ul>`,
       [{ spacer: true }, { label: t('button.ok'), value: 'ok', primary: true }]);
   }
 }
@@ -149,6 +161,15 @@ async function exportMusicXml() {
   const path = await dialog.save({ filters: MUSICXML_FILTERS, defaultPath: `${doc.name}.musicxml` });
   if (!path) return;
   await invoke('export_musicxml', { id: doc.id, path });
+}
+
+/** Whether a staff still has the name it got by default ("Staff 2", in any language Partita speaks). */
+function isDefaultStaffName(name) {
+  return [t('default.staff'), 'Staff {n}'].some((template) => {
+    const [before, after = ''] = template.split('{n}');
+    const middle = name.slice(before.length, name.length - after.length);
+    return name.startsWith(before) && name.endsWith(after) && /^\d+$/.test(middle);
+  });
 }
 
 const CLEF_LABELS = Object.fromEntries(['treble', 'bass', 'alto', 'tenor'].map((c) => [c, t(`clef.${c}`)]));
@@ -208,7 +229,7 @@ async function staffDialog(staff) {
   const inst = () => INSTRUMENTS[Number(sound.value)];
   // Name and short name follow the sound until the user types their own.
   const startInst = instrumentByProgram(current.instrument || 0);
-  let nameTouched = !adding && current.name !== startInst.name && !/^Staff \d+$/.test(current.name);
+  let nameTouched = !adding && current.name !== startInst.name && !isDefaultStaffName(current.name);
   let shortTouched = !adding && !!current.short_name && current.short_name !== shortNameFor(current.name, startInst);
   name.addEventListener('input', () => {
     nameTouched = name.value.trim() !== '';
@@ -648,7 +669,7 @@ function renderStatus() {
     if (errors.length) {
       parts.push(`<span class="errors" data-jump data-tip="${esc(t('status.errors.tip'))}" data-desc="${esc(t('status.errors.desc'))}">${esc(tn('status.errors', errors.length))}</span>`);
     }
-    if (doc.warning) parts.push(`<span class="warn">${esc(doc.warning)}</span>`);
+    if (doc.warning) parts.push(`<span class="warn">${esc(t('warning.recovery', { detail: doc.warning }))}</span>`);
     const s = playback.sound;
     if (s?.state === 'downloading') {
       const pct = s.total ? Math.min(100, Math.floor((s.received / s.total) * 100)) : 0;
@@ -1876,9 +1897,9 @@ async function offerRestart() {
   try {
     await invoke('install_update');
   } catch (e) {
-    updates.status = { state: 'error', message: String(e) };
+    updates.status = { state: 'error', message: errorText(e) };
     renderStatus();
-    showError(t('error.update.install', { message: e }));
+    showError(t('error.update.install', { message: errorText(e) }));
   }
 }
 
@@ -1924,7 +1945,7 @@ async function showAbout(scrollToCredits = false) {
     <table class="about-table credits">
       ${a.credits.map((c) => `<tr>
         <th>${link(c.url, c.name)} <span class="muted">${esc(c.version)}</span></th>
-        <td>${esc(c.role)}<div class="muted">${esc(c.author)} · ${esc(c.license)}</div></td>
+        <td>${esc(has(`about.role.${c.id}`) ? t(`about.role.${c.id}`) : c.role)}<div class="muted">${esc(c.author)} · ${esc(c.license)}</div></td>
       </tr>`).join('')}
     </table>
 
@@ -2131,6 +2152,8 @@ serial(async () => {
   // fallback glyphs in the wrong places.
   try { await document.fonts.load('40px Bravura', ''); } catch { /* render anyway */ }
   await checkRecovery();
+  // The names Rust gives new documents and staves, in this language.
+  await invoke('set_default_names', { untitled: t('default.untitled'), nameless: t('default.nameless'), staff: t('default.staff') });
   for (const tab of await invoke('list_documents')) adopt(await invoke('get_document', { id: tab.id }));
   // After View → Language the page reloads: go back to the tab that was open.
   let previous = null;

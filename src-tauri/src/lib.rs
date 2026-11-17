@@ -5,10 +5,11 @@
 //! crash can never lose work.
 
 mod audio;
+mod ui_error;
 mod updater;
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use partita_core::cursor::{Caret, Move, SelectionRange};
 use partita_core::document::StaffProps;
@@ -23,6 +24,7 @@ use partita_core::recovery::{Recoverable, RecoveryStore};
 use partita_core::session::{now_ms, Session};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, State};
+use ui_error::UiError;
 use uuid::Uuid;
 
 /// Everything the Rust side keeps between calls.
@@ -43,12 +45,62 @@ struct Inner {
 }
 
 impl Inner {
-    fn find(&mut self, id: &str) -> Result<&mut Session, String> {
+    fn find(&mut self, id: &str) -> Result<&mut Session, UiError> {
         self.sessions
             .iter_mut()
             .find(|s| s.id().to_string() == id)
-            .ok_or_else(|| format!("document {id} is not open"))
+            .ok_or_else(|| UiError::internal(format!("document {id} is not open")))
     }
+}
+
+/// The names Partita gives things, in the interface language. The frontend
+/// sends them at start-up (`set_default_names`); `{n}` stands for a number.
+struct DefaultNames {
+    /// A new document: "Untitled {n}".
+    untitled: String,
+    /// A document with no file and an empty title.
+    nameless: String,
+    /// A staff added or imported without a name: "Staff {n}".
+    staff: String,
+}
+
+static NAMES: RwLock<Option<DefaultNames>> = RwLock::new(None);
+
+fn numbered(template: &str, n: usize) -> String {
+    template.replace("{n}", &n.to_string())
+}
+
+fn untitled_name(n: usize) -> String {
+    match &*NAMES.read().unwrap() {
+        Some(names) => numbered(&names.untitled, n),
+        None => format!("Untitled {n}"),
+    }
+}
+
+fn staff_name(n: usize) -> String {
+    match &*NAMES.read().unwrap() {
+        Some(names) => numbered(&names.staff, n),
+        None => format!("Staff {n}"),
+    }
+}
+
+/// The name shown on a document's tab.
+fn doc_name(doc: &Document) -> String {
+    if doc.path.is_none() && doc.score.metadata.title.trim().is_empty() {
+        if let Some(names) = &*NAMES.read().unwrap() {
+            return names.nameless.clone();
+        }
+    }
+    doc.display_name()
+}
+
+#[tauri::command]
+fn set_default_names(untitled: String, nameless: String, staff: String) {
+    *NAMES.write().unwrap() = Some(DefaultNames {
+        untitled,
+        nameless,
+        staff,
+    });
 }
 
 /// What the frontend needs to draw a document.
@@ -74,7 +126,7 @@ fn view(session: &mut Session) -> serde_json::Value {
     let doc = session.doc();
     let v = DocView {
         id: session.id().to_string(),
-        name: doc.display_name(),
+        name: doc_name(doc),
         path: doc.path.as_ref().map(|p| p.display().to_string()),
         dirty: doc.is_dirty(),
         can_undo: doc.can_undo(),
@@ -248,13 +300,13 @@ fn one() -> usize {
     1
 }
 
-fn start_session(state: &AppState, doc: Document) -> Result<Session, String> {
+fn start_session(state: &AppState, doc: Document) -> Result<Session, UiError> {
     match Session::start(doc.clone(), state.store.as_ref()) {
         Ok(s) => Ok(s),
         Err(e) => {
             // Better to edit unprotected than not at all; the UI shows it.
             eprintln!("[partita] crash recovery unavailable: {e}");
-            Session::start(doc, None).map_err(|e| e.to_string())
+            Ok(Session::start(doc, None)?)
         }
     }
 }
@@ -267,25 +319,28 @@ fn list_documents(state: State<AppState>) -> Vec<TabInfo> {
         .iter()
         .map(|s| TabInfo {
             id: s.id().to_string(),
-            name: s.doc().display_name(),
+            name: doc_name(s.doc()),
             dirty: s.doc().is_dirty(),
         })
         .collect()
 }
 
 #[tauri::command]
-fn new_document(state: State<AppState>) -> Result<serde_json::Value, String> {
+fn new_document(state: State<AppState>) -> Result<serde_json::Value, UiError> {
     let mut inner = state.inner.lock().unwrap();
     inner.untitled_counter += 1;
-    let title = format!("Untitled {}", inner.untitled_counter);
-    let mut session = start_session(&state, Document::new(Score::new(title, 8)))?;
+    let mut score = Score::new(untitled_name(inner.untitled_counter as usize), 8);
+    for (i, staff) in score.staves.iter_mut().enumerate() {
+        staff.name = staff_name(i + 1);
+    }
+    let mut session = start_session(&state, Document::new(score))?;
     let v = view(&mut session);
     inner.sessions.push(session);
     Ok(v)
 }
 
 #[tauri::command]
-fn open_document(state: State<AppState>, path: String) -> Result<serde_json::Value, String> {
+fn open_document(state: State<AppState>, path: String) -> Result<serde_json::Value, UiError> {
     let path = PathBuf::from(path);
     let mut inner = state.inner.lock().unwrap();
     if let Some(s) = inner
@@ -295,7 +350,7 @@ fn open_document(state: State<AppState>, path: String) -> Result<serde_json::Val
     {
         return Ok(view(s));
     }
-    let score = file::load_score(&path).map_err(|e| e.to_string())?;
+    let score = file::load_score(&path)?;
     let mut session = start_session(&state, Document::opened(score, path))?;
     let v = view(&mut session);
     inner.sessions.push(session);
@@ -303,10 +358,14 @@ fn open_document(state: State<AppState>, path: String) -> Result<serde_json::Val
 }
 
 /// Opens a MusicXML file as a new, unsaved document. Returns the view
-/// plus `import_notes`: what had to be simplified, for the user to read.
+/// plus `import_notes`: what had to be simplified (`{ kind, count }`, worded
+/// by the frontend).
 #[tauri::command]
-fn import_musicxml(state: State<AppState>, path: String) -> Result<serde_json::Value, String> {
-    let imported = musicxml::import_file(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+fn import_musicxml(state: State<AppState>, path: String) -> Result<serde_json::Value, UiError> {
+    let mut imported = musicxml::import_file(std::path::Path::new(&path))?;
+    for &i in &imported.unnamed_staves {
+        imported.score.staves[i].name = staff_name(i + 1);
+    }
     let mut inner = state.inner.lock().unwrap();
     let mut session = start_session(&state, Document::new(imported.score))?;
     let mut v = view(&mut session);
@@ -317,24 +376,24 @@ fn import_musicxml(state: State<AppState>, path: String) -> Result<serde_json::V
 
 /// Writes the document as MusicXML for other notation programs.
 #[tauri::command]
-fn export_musicxml(state: State<AppState>, id: String, path: String) -> Result<(), String> {
+fn export_musicxml(state: State<AppState>, id: String, path: String) -> Result<(), UiError> {
     let mut path = PathBuf::from(path);
     if path.extension().is_none() {
         path.set_extension("musicxml");
     }
     let mut inner = state.inner.lock().unwrap();
     let doc = inner.find(&id)?.doc();
-    musicxml::export_to(&path, &doc.score).map_err(|e| e.to_string())
+    Ok(musicxml::export_to(&path, &doc.score)?)
 }
 
 #[tauri::command]
-fn get_document(state: State<AppState>, id: String) -> Result<serde_json::Value, String> {
+fn get_document(state: State<AppState>, id: String) -> Result<serde_json::Value, UiError> {
     let mut inner = state.inner.lock().unwrap();
     Ok(view(inner.find(&id)?))
 }
 
 #[tauri::command]
-fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json::Value, String> {
+fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json::Value, UiError> {
     let mut inner = state.inner.lock().unwrap();
     let clipboard = inner.clipboard.clone();
     let now = now_ms();
@@ -353,7 +412,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             | Action::Accidental { .. }
             | Action::SetAccidental { .. }
     );
-    let result = session.edit(|d| -> Result<(), String> {
+    let result = session.edit(|d| -> Result<(), UiError> {
         let r = match action {
             Action::InsertNote { step, duration } => d.insert_note(step, duration, now),
             Action::InsertRest { duration } => d.insert_rest(duration, now),
@@ -425,7 +484,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             } => {
                 let name = name
                     .filter(|n| !n.trim().is_empty())
-                    .unwrap_or_else(|| format!("Staff {}", d.score.staves.len() + 1));
+                    .unwrap_or_else(|| staff_name(d.score.staves.len() + 1));
                 let props = StaffProps {
                     name,
                     short_name,
@@ -453,7 +512,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::SetStaff { staff, props } => d.set_staff_properties(staff, props, now),
             Action::GroupStaves { first, last, kind } => d.group_staves(first, last, kind, now),
         };
-        r.map_err(|e| e.to_string())
+        r.map_err(UiError::from)
     });
     if result.is_ok() && preview {
         let d = session.doc();
@@ -498,7 +557,7 @@ fn download_soundfont(state: State<AppState>) {
 
 /// Plays the document from the caret (or from the beginning).
 #[tauri::command]
-fn play(state: State<AppState>, id: String, from_start: bool) -> Result<(), String> {
+fn play(state: State<AppState>, id: String, from_start: bool) -> Result<(), UiError> {
     let mut inner = state.inner.lock().unwrap();
     let doc = inner.find(&id)?.doc();
     let timeline = partita_core::playback::build(&doc.score);
@@ -509,13 +568,13 @@ fn play(state: State<AppState>, id: String, from_start: bool) -> Result<(), Stri
         let tick = partita_core::cursor::tick_at(&doc.score, c.staff, c.measure, c.voice, c.index);
         timeline.tick_at(c.measure, tick)
     };
-    state.audio.play(timeline, from)
+    Ok(state.audio.play(timeline, from)?)
 }
 
 /// Pauses and moves the caret to where the music stopped, so pressing play
 /// again continues from there (like a word processor's read-aloud).
 #[tauri::command]
-fn pause(state: State<AppState>, id: String) -> Result<serde_json::Value, String> {
+fn pause(state: State<AppState>, id: String) -> Result<serde_json::Value, UiError> {
     let stopped = state.audio.stop();
     let mut inner = state.inner.lock().unwrap();
     let session = inner.find(&id)?;
@@ -552,6 +611,8 @@ fn playback_state(state: State<AppState>) -> audio::PlaybackState {
 /// A third-party component credited in the About dialog.
 #[derive(Serialize)]
 struct Credit {
+    /// For the frontend to translate `role` (about.role.<id>).
+    id: &'static str,
     name: &'static str,
     version: &'static str,
     author: &'static str,
@@ -600,6 +661,7 @@ fn about_info(app: tauri::AppHandle, state: State<AppState>) -> AboutInfo {
         soundfont: state.audio.soundfont_info(),
         credits: vec![
             Credit {
+                id: "bravura",
                 name: "Bravura",
                 version: "bundled",
                 author: "Steinberg Media Technologies",
@@ -608,6 +670,7 @@ fn about_info(app: tauri::AppHandle, state: State<AppState>) -> AboutInfo {
                 role: "Music font (SMuFL) used to engrave the score",
             },
             Credit {
+                id: "fluidr3",
                 name: "FluidR3 GM",
                 version: "3.1",
                 author: "Frank Wen",
@@ -616,6 +679,7 @@ fn about_info(app: tauri::AppHandle, state: State<AppState>) -> AboutInfo {
                 role: "Instrument sounds for playback (downloaded on first use)",
             },
             Credit {
+                id: "rustysynth",
                 name: "RustySynth",
                 version: "1.3",
                 author: "Nobuaki Tanaka",
@@ -624,6 +688,7 @@ fn about_info(app: tauri::AppHandle, state: State<AppState>) -> AboutInfo {
                 role: "SoundFont synthesizer",
             },
             Credit {
+                id: "cpal",
                 name: "cpal",
                 version: "0.15",
                 author: "The RustAudio developers",
@@ -632,6 +697,7 @@ fn about_info(app: tauri::AppHandle, state: State<AppState>) -> AboutInfo {
                 role: "Audio output",
             },
             Credit {
+                id: "tauri",
                 name: "Tauri",
                 version: tauri::VERSION,
                 author: "The Tauri Programme",
@@ -640,6 +706,7 @@ fn about_info(app: tauri::AppHandle, state: State<AppState>) -> AboutInfo {
                 role: "Desktop application framework",
             },
             Credit {
+                id: "ureq",
                 name: "ureq",
                 version: "2",
                 author: "Martin Algesten and contributors",
@@ -648,6 +715,7 @@ fn about_info(app: tauri::AppHandle, state: State<AppState>) -> AboutInfo {
                 role: "Downloading the SoundFont",
             },
             Credit {
+                id: "serde",
                 name: "serde · postcard · crc32fast",
                 version: "1",
                 author: "Their respective authors",
@@ -661,9 +729,9 @@ fn about_info(app: tauri::AppHandle, state: State<AppState>) -> AboutInfo {
 
 /// Opens the folder that holds the downloaded SoundFont.
 #[tauri::command]
-fn reveal_soundfont_folder(state: State<AppState>) -> Result<String, String> {
+fn reveal_soundfont_folder(state: State<AppState>) -> Result<String, UiError> {
     let dir = state.audio.soundfont_dir().to_path_buf();
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir)?;
     Ok(dir.display().to_string())
 }
 
@@ -672,7 +740,7 @@ fn save_document(
     state: State<AppState>,
     id: String,
     path: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, UiError> {
     let mut inner = state.inner.lock().unwrap();
     let session = inner.find(&id)?;
     let mut path = match path
@@ -680,29 +748,29 @@ fn save_document(
         .or_else(|| session.doc().path.clone())
     {
         Some(p) => p,
-        None => return Err("no file name chosen".into()),
+        None => return Err(UiError::internal("no file name chosen")),
     };
     if path.extension().is_none() {
         path.set_extension(file::FILE_EXTENSION);
     }
-    session.save(&path).map_err(|e| e.to_string())?;
+    session.save(&path)?;
     Ok(view(session))
 }
 
 /// Closes a tab. Refuses to drop unsaved work unless `discard` is set.
 #[tauri::command]
-fn close_document(state: State<AppState>, id: String, discard: bool) -> Result<(), String> {
+fn close_document(state: State<AppState>, id: String, discard: bool) -> Result<(), UiError> {
     let mut inner = state.inner.lock().unwrap();
     let pos = inner
         .sessions
         .iter()
         .position(|s| s.id().to_string() == id)
-        .ok_or("document is not open")?;
+        .ok_or_else(|| UiError::internal("document is not open"))?;
     if inner.sessions[pos].doc().is_dirty() && !discard {
-        return Err("document has unsaved changes".into());
+        return Err(UiError::internal("document has unsaved changes"));
     }
     let session = inner.sessions.remove(pos);
-    session.close().map_err(|e| e.to_string())
+    Ok(session.close()?)
 }
 
 #[tauri::command]
@@ -715,17 +783,17 @@ fn list_recoverable(state: State<AppState>) -> Vec<Recoverable> {
 fn recover_document(
     state: State<AppState>,
     session_id: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, UiError> {
     let store = state
         .store
         .as_ref()
-        .ok_or("crash recovery is unavailable")?;
-    let old = Uuid::parse_str(&session_id).map_err(|e| e.to_string())?;
-    let loaded = store.load(old).map_err(|e| e.to_string())?;
+        .ok_or_else(|| UiError::new("recovery.unavailable", "crash recovery is unavailable"))?;
+    let old = Uuid::parse_str(&session_id)?;
+    let loaded = store.load(old)?;
     let mut session = start_session(&state, loaded.document)?;
     // The new session already holds a full snapshot; make it durable
     // before deleting the old one.
-    session.sync().map_err(|e| e.to_string())?;
+    session.sync()?;
     let _ = store.discard(old);
     let v = view(&mut session);
     state.inner.lock().unwrap().sessions.push(session);
@@ -733,13 +801,13 @@ fn recover_document(
 }
 
 #[tauri::command]
-fn discard_recoverable(state: State<AppState>, session_id: String) -> Result<(), String> {
+fn discard_recoverable(state: State<AppState>, session_id: String) -> Result<(), UiError> {
     let store = state
         .store
         .as_ref()
-        .ok_or("crash recovery is unavailable")?;
-    let id = Uuid::parse_str(&session_id).map_err(|e| e.to_string())?;
-    store.discard(id).map_err(|e| e.to_string())
+        .ok_or_else(|| UiError::new("recovery.unavailable", "crash recovery is unavailable"))?;
+    let id = Uuid::parse_str(&session_id)?;
+    Ok(store.discard(id)?)
 }
 
 /// Quits after the user confirmed (unsaved work is discarded).
@@ -757,7 +825,7 @@ fn quit(app: tauri::AppHandle, state: State<AppState>) {
 async fn check_for_update(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
-) -> Result<updater::UpdateStatus, String> {
+) -> Result<updater::UpdateStatus, UiError> {
     let updates = state.updates.clone();
     Ok(updates.check(&app).await)
 }
@@ -769,23 +837,28 @@ fn update_status(state: State<AppState>) -> updater::UpdateStatus {
 
 /// Starts downloading the update the user accepted.
 #[tauri::command]
-fn download_update(state: State<AppState>) -> Result<(), String> {
-    state.updates.download()
+fn download_update(state: State<AppState>) -> Result<(), UiError> {
+    Ok(state.updates.download()?)
 }
 
 /// Installs the downloaded update and restarts. Unsaved documents are
 /// flushed to the recovery journal first, so they are offered back when the
 /// new version starts, exactly as after a crash.
 #[tauri::command]
-fn install_update(app: tauri::AppHandle, state: State<AppState>) -> Result<(), String> {
+fn install_update(app: tauri::AppHandle, state: State<AppState>) -> Result<(), UiError> {
     state.audio.stop();
     for s in &state.inner.lock().unwrap().sessions {
         if s.doc().is_dirty() {
-            s.sync()
-                .map_err(|e| format!("Could not protect unsaved work: {e}"))?;
+            s.sync().map_err(|e| {
+                UiError::new(
+                    "update.protect",
+                    format!("Could not protect unsaved work: {e}"),
+                )
+                .arg("detail", e.to_string())
+            })?;
         }
     }
-    state.updates.install()?;
+    state.updates.install().map_err(UiError::from)?;
     // Windows: the installer has already taken over and closed the app.
     app.restart()
 }
@@ -915,6 +988,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            set_default_names,
             list_documents,
             new_document,
             open_document,
