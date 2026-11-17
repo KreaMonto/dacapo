@@ -11,6 +11,8 @@
 // Keyboard: Alt focuses the bar, Alt+<first letter> opens a menu, arrows
 // move, Enter/Space activates, Esc closes.
 
+import { keyLabel } from './i18n.js';
+
 export function installMenuBar(bar, menus, run, onClose) {
   bar.setAttribute('role', 'menubar');
   bar.innerHTML = menus
@@ -31,7 +33,7 @@ export function installMenuBar(bar, menus, run, onClose) {
       const role = checkable ? (it.radio ? 'menuitemradio' : 'menuitemcheckbox') : 'menuitem';
       return `<button class="menu-item" role="${role}" data-j="${j}" tabindex="-1"${enabled ? '' : ' disabled aria-disabled="true"'}${checkable ? ` aria-checked="${checked}"` : ''}>`
         + `<span class="menu-check">${checked ? (it.radio ? '●' : '✓') : ''}</span>`
-        + `<span class="menu-label">${esc(it.label)}</span><span class="menu-key">${it.key ? esc(it.key) : ''}</span></button>`;
+        + `<span class="menu-label">${esc(it.label)}</span><span class="menu-key">${it.key ? esc(keyLabel(it.key)) : ''}</span></button>`;
     }).join('');
   }
 
