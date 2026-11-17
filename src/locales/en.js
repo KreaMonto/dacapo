@@ -226,6 +226,8 @@ export default {
   'menu.view.themesystem': 'Theme: System',
   'menu.view.themelight': 'Theme: Light',
   'menu.view.themedark': 'Theme: Dark',
+  'menu.view.languagesystem': 'Language: System',
+  'menu.view.language': 'Language: {name}', // {name} is the language's own name (Español)
   'menu.insert': 'Insert',
   'menu.insert.measure': 'Measure After Current',
   'menu.insert.staff': 'Staff…',

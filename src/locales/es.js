@@ -232,6 +232,8 @@ export default {
   'menu.view.themesystem': 'Tema: el del sistema',
   'menu.view.themelight': 'Tema: claro',
   'menu.view.themedark': 'Tema: oscuro',
+  'menu.view.languagesystem': 'Idioma: el del sistema',
+  'menu.view.language': 'Idioma: {name}',
   'menu.insert': '&Insertar',
   'menu.insert.measure': 'Compás después del actual',
   'menu.insert.staff': 'Pentagrama…',

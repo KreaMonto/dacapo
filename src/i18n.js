@@ -19,11 +19,22 @@ import es from './locales/es.js';
 
 const LOCALES = { en, es };
 export const LANGUAGES = Object.keys(LOCALES);
+// Each language's name in itself, for View → Language.
+export const LANGUAGE_NAMES = { en: 'English', es: 'Español' };
+
+/**
+ * What the user picked in View → Language: a code from LANGUAGES, or
+ * 'system' to follow the operating system. Changing it reloads the page.
+ */
+export const languageChoice = (() => {
+  let chosen = null;
+  try { chosen = JSON.parse(localStorage.getItem('partita.language')); } catch { /* storage unavailable */ }
+  return LOCALES[chosen] ? chosen : 'system';
+})();
 
 /** The language to use: the user's choice if any, else the system's, else English. */
 function pickLanguage() {
-  let chosen = null;
-  try { chosen = JSON.parse(localStorage.getItem('partita.language')); } catch { /* storage unavailable */ }
+  const chosen = languageChoice === 'system' ? null : languageChoice;
   const wanted = [chosen, ...(navigator.languages || [navigator.language])].filter(Boolean);
   for (const tag of wanted) {
     const base = String(tag).toLowerCase().split('-')[0];

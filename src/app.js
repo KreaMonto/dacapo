@@ -7,7 +7,9 @@ import {
 } from './render.js';
 import { installTooltips } from './tooltip.js';
 import { installMenuBar } from './menu.js';
-import { t, tn, has, keyLabel, applyTranslations } from './i18n.js';
+import {
+  t, tn, has, keyLabel, applyTranslations, LANGUAGES, LANGUAGE_NAMES, languageChoice,
+} from './i18n.js';
 import {
   INSTRUMENTS, TRANSPOSITIONS, instrumentByProgram, instrumentOptions, shortNameFor, transpositionKey,
 } from './instruments.js';
@@ -1117,6 +1119,23 @@ function applyExtendedValues() {
   $('palette').classList.toggle('extended-values', state.extendedValues);
 }
 
+/**
+ * View → Language. The texts are read once at start-up, so the page reloads
+ * in the new language. Nothing is lost: documents, undo history and crash
+ * recovery live in Rust, and the page reopens every tab. What is being typed
+ * as lyrics is written first and playback stops; the active tab is kept.
+ */
+function setLanguage(code) {
+  if (code === languageChoice) return;
+  closeLyric();
+  serial(async () => {
+    if (playback.playing) await stopPlayback();
+    savePref('language', code === 'system' ? null : code);
+    try { sessionStorage.setItem('partita.activeTab', state.active ?? ''); } catch { /* ignore */ }
+    location.reload();
+  });
+}
+
 function applyTheme() {
   // 'system' removes the attribute so CSS follows prefers-color-scheme.
   if (state.theme === 'system') delete document.documentElement.dataset.theme;
@@ -1154,6 +1173,8 @@ const commands = {
   'theme:system': () => { setPref('theme', 'system'); applyTheme(); },
   'theme:light': () => { setPref('theme', 'light'); applyTheme(); },
   'theme:dark': () => { setPref('theme', 'dark'); applyTheme(); },
+  'language:system': () => setLanguage('system'),
+  ...Object.fromEntries(LANGUAGES.map((code) => [`language:${code}`, () => setLanguage(code)])),
   // Insert / notation
   'add-measure': () => act({ type: 'insert_measure' }),
   'remove-measure': () => act({ type: 'remove_measure' }),
@@ -2003,6 +2024,15 @@ const MENUS = [
     { label: t('menu.view.themesystem'), cmd: 'theme:system', radio: true, checked: () => state.theme === 'system' },
     { label: t('menu.view.themelight'), cmd: 'theme:light', radio: true, checked: () => state.theme === 'light' },
     { label: t('menu.view.themedark'), cmd: 'theme:dark', radio: true, checked: () => state.theme === 'dark' },
+    { sep: true },
+    { label: t('menu.view.languagesystem'), cmd: 'language:system', radio: true, checked: () => languageChoice === 'system' },
+    // Each language is offered under its own name.
+    ...LANGUAGES.map((code) => ({
+      label: t('menu.view.language', { name: LANGUAGE_NAMES[code] }),
+      cmd: `language:${code}`,
+      radio: true,
+      checked: () => languageChoice === code,
+    })),
   ] },
   { label: t('menu.insert'), items: [
     { label: t('menu.insert.measure'), cmd: 'add-measure', key: 'Ctrl+Enter', enabled: hasDoc },
@@ -2102,12 +2132,27 @@ serial(async () => {
   try { await document.fonts.load('40px Bravura', ''); } catch { /* render anyway */ }
   await checkRecovery();
   for (const tab of await invoke('list_documents')) adopt(await invoke('get_document', { id: tab.id }));
-  if (state.order.length) state.active = state.order[0];
+  // After View → Language the page reloads: go back to the tab that was open.
+  let previous = null;
+  try {
+    previous = sessionStorage.getItem('partita.activeTab');
+    sessionStorage.removeItem('partita.activeTab');
+  } catch { /* ignore */ }
+  if (state.docs.has(previous)) state.active = previous;
+  else if (state.order.length) state.active = state.order[0];
   else await newDocument();
   render();
   // First run of page view: start with the page fitted to the window.
   if (state.view === 'page' && loadPref('zoom', null) === null) fitWidth();
   page.focus();
+  // An update may already be downloading or waiting (the page was reloaded):
+  // show it again in the status bar.
+  const u = await invoke('update_status');
+  if (u.state === 'downloading' || u.state === 'ready') {
+    updates.status = u;
+    if (u.state === 'downloading') pollUpdate();
+    else renderStatus();
+  }
   // Look for a new version a little after start-up, at most once a day.
   setTimeout(() => serial(() => checkForUpdates(false)), 5000);
 });
