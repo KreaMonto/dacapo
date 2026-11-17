@@ -58,6 +58,41 @@ export function shownStaffName(score, staff) {
   return name;
 }
 const NAME_GAP = 1.4 * SP; // between a staff name and the start of the staff
+const GROUP_W = 1.6 * SP; // room for brackets and braces left of the staves
+
+/** Short name shown on the systems after the first ('' for none). */
+export function shownShortName(score, staff) {
+  return (score.staves[staff].short_name || '').trim();
+}
+
+/**
+ * The key a staff shows for a concert-pitch key: transposing instruments
+ * (B-flat clarinet, F horn) read in another key. Mirrors
+ * Transposition::written_key in Rust.
+ */
+export function writtenFifths(staff, fifths) {
+  const t = staff.transposition;
+  if (!t || (!t.diatonic && !t.chromatic)) return fifths;
+  let f = fifths - (7 * t.chromatic - 12 * t.diatonic);
+  while (f > 7) f -= 12;
+  while (f < -7) f += 12;
+  return f;
+}
+
+/**
+ * Runs of consecutive staves joined by a bracket or brace:
+ * [{ first, last, kind }], groups of one staff left out.
+ */
+export function staffGroups(score) {
+  const out = [];
+  score.staves.forEach((st, i) => {
+    const g = st.group;
+    const prev = out[out.length - 1];
+    if (g && prev && prev.id === g.id && prev.last === i - 1) prev.last = i;
+    else if (g) out.push({ id: g.id, kind: g.kind, first: i, last: i });
+  });
+  return out.filter((g) => g.last > g.first);
+}
 
 const syllableAt = (e, verse) => (e.lyrics && e.lyrics[verse] && e.lyrics[verse].text ? e.lyrics[verse] : null);
 
@@ -269,17 +304,37 @@ export function layout(view, width, opts = {}) {
   const byMeasure = [];
   for (const ms of measures) for (let m = ms.m; m <= ms.mEnd; m++) byMeasure[m] = ms;
 
-  // Staff names sit left of the first system, which is indented for them.
-  const names = score.staves.map((_, st) => shownStaffName(score, st));
-  const nameIndent = names.some(Boolean) ? Math.max(...names.map((n) => (n ? textWidth(n) : 0))) + NAME_GAP : 0;
+  // Staff names sit left of the systems: full names on the first, short
+  // names on the others. Brackets and braces need room too.
+  const groups = staffGroups(score);
+  const groupIndent = groups.length ? GROUP_W : 0;
+  // In a braced group of staves with one name (a piano), it is shown once.
+  const sharedName = (list) => {
+    const out = [...list];
+    for (const g of groups) {
+      if (g.kind !== 'brace') continue;
+      const named = out.slice(g.first, g.last + 1).filter(Boolean);
+      if (named.length > 1 && named.every((n) => n === named[0])) {
+        for (let st = g.first + 1; st <= g.last; st++) out[st] = '';
+      }
+    }
+    return out;
+  };
+  const names = sharedName(score.staves.map((_, st) => shownStaffName(score, st)));
+  const shortNames = sharedName(score.staves.map((_, st) => shownShortName(score, st)));
+  const widest = (list) => (list.some(Boolean) ? Math.max(...list.map((n) => (n ? textWidth(n) : 0))) + NAME_GAP : 0);
+  const nameIndent = widest(names) + groupIndent;
+  const shortIndent = widest(shortNames) + groupIndent;
 
   const keyWidth = (f) => Math.abs(f) * 1.05 * SP;
+  // The widest key signature among the staves (transposing ones differ).
+  const keyRoom = (fifths) => Math.max(...score.staves.map((st) => keyWidth(writtenFifths(st, fifths))));
   const systems = [];
   let sys = null;
   for (const ms of measures) {
-    const startPrefix = 0.6 * SP + CLEF_COL + keyWidth(ms.attrs.key.fifths) + (ms.timeChange ? 2.8 * SP : 0) + SP;
-    const midPrefix = (ms.keyChange ? keyWidth(ms.attrs.key.fifths) + SP : 0) + (ms.timeChange ? 2.8 * SP : 0);
-    const room = avail - (systems.length === 1 ? nameIndent : 0);
+    const startPrefix = 0.6 * SP + CLEF_COL + keyRoom(ms.attrs.key.fifths) + (ms.timeChange ? 2.8 * SP : 0) + SP;
+    const midPrefix = (ms.keyChange ? keyRoom(ms.attrs.key.fifths) + SP : 0) + (ms.timeChange ? 2.8 * SP : 0);
+    const room = avail - (systems.length === 1 ? nameIndent : shortIndent);
     const fitsMid = sys && sys.width + midPrefix + ms.content <= room;
     if (!fitsMid) {
       sys = { measures: [], width: 0 };
@@ -360,7 +415,7 @@ export function layout(view, width, opts = {}) {
     y += s.height + SYSTEM_GAP;
     // Justify every system but the last (unless it is already nearly full).
     const last = i === systems.length - 1;
-    const indent = i === 0 ? nameIndent : 0;
+    const indent = i === 0 ? nameIndent : shortIndent;
     const room = avail - indent;
     const stretch = Number.isFinite(room) && (!last || s.width > room * 0.75) ? (room - s.width) / s.measures.length : 0;
     let x = marginX + indent;
@@ -386,7 +441,7 @@ export function layout(view, width, opts = {}) {
     : [{ index: 0, x: 0, y: 0, w: totalWidth, h: totalHeight }];
 
   return {
-    systems, measures, byMeasure, nStaves, pages, mode, geo, marginX, verses, names,
+    systems, measures, byMeasure, nStaves, pages, mode, geo, marginX, verses, names, shortNames, groups, groupIndent,
     width: totalWidth,
     height: totalHeight,
     staffTop: (ms, staff) => ms.system.y + ms.system.staffY[staff],
@@ -492,13 +547,32 @@ export function renderScore(view, width, opts = {}) {
     const xEnd = s.x0 + s.width;
     // Measure number.
     push(`<text class="mnum" x="${s.x0}" y="${s.y - 1.6 * SP}">${first.m + 1}</text>`);
-    // Staff names on the first system; click one to edit the staff.
-    if (s.index === 0) {
-      lay.names.forEach((name, st) => {
-        if (!name) return;
-        const mid = s.y + s.staffY[st] + 2 * SP;
-        push(`<text class="sname" data-staff="${st}" font-family='${LYRIC_FONT}' font-size="${LYRIC_PX}" text-anchor="end" dominant-baseline="central" x="${s.x0 - NAME_GAP}" y="${mid}">${esc(name)}</text>`);
-      });
+    // Staff names: full on the first system, short on the others. Click
+    // one to edit the staff. A name shared by a braced group is centred.
+    (s.index === 0 ? lay.names : lay.shortNames).forEach((name, st) => {
+      if (!name) return;
+      const brace = lay.groups.find((g) => g.kind === 'brace' && g.first === st);
+      const shared = brace && (s.index === 0 ? lay.names : lay.shortNames).slice(st + 1, brace.last + 1).every((n) => !n);
+      const top = s.y + s.staffY[st];
+      const mid = shared ? (top + s.y + s.staffY[brace.last] + 4 * SP) / 2 : top + 2 * SP;
+      push(`<text class="sname" data-staff="${st}" font-family='${LYRIC_FONT}' font-size="${LYRIC_PX}" text-anchor="end" dominant-baseline="central" x="${s.x0 - lay.groupIndent - NAME_GAP}" y="${mid}">${esc(name)}</text>`);
+    });
+    // Brackets (instrument families) and braces (one instrument on
+    // several staves) left of the system.
+    for (const g of lay.groups) {
+      const y1 = s.y + s.staffY[g.first];
+      const y2 = s.y + s.staffY[g.last] + 4 * SP;
+      if (g.kind === 'brace') {
+        // SMuFL braces are one staff (4 spaces) tall: stretch to the group.
+        const k = (y2 - y1) / (4 * SP);
+        const w = 0.6 * SP + 0.25 * SP * k;
+        push(`<text class="m group" transform="translate(${s.x0 - 0.35 * SP - w} ${y2}) scale(${w / (0.328 * SP)} ${k})">\uE000</text>`);
+      } else {
+        const x = s.x0 - 0.9 * SP;
+        push(`<rect class="group" x="${x}" y="${y1 - 0.5 * SP}" width="${0.5 * SP}" height="${y2 - y1 + SP}"/>`);
+        push(`<text class="m group" x="${x}" y="${y1 - 0.5 * SP}">\uE003</text>`);
+        push(`<text class="m group" x="${x}" y="${y2 + 0.5 * SP}">\uE004</text>`);
+      }
     }
     // System bracket.
     if (lay.nStaves > 1) {
@@ -548,7 +622,7 @@ export function renderScore(view, width, opts = {}) {
         px += CLEF_COL;
       }
       if (ms.systemStart || ms.keyChange) {
-        const f = ms.attrs.key.fifths;
+        const f = writtenFifths(staff, ms.attrs.key.fifths);
         const positions = (f >= 0 ? KEY_SHARPS : KEY_FLATS).slice(0, Math.abs(f));
         for (const p of positions) {
           const y = top + 2 * SP - (p + CLEF_KEY_SHIFT[staff.clef]) * (SP / 2);
@@ -564,13 +638,15 @@ export function renderScore(view, width, opts = {}) {
         push(`<text class="m tsig" x="${px + 1.1 * SP}" y="${top + 3 * SP}">${timeDigits(ms.attrs.time.beat_type)}</text>`);
       }
 
-      // Barline.
+      // Barline. Inside a bracket or brace it runs on to the next staff.
       const bx = ms.x + ms.w;
+      const joined = lay.groups.some((g) => st >= g.first && st < g.last);
+      const barBottom = joined ? lay.staffTop(ms, st + 1) : top + 4 * SP;
       if (lastMeasure) {
-        push(`<line class="bar" x1="${bx - 6}" x2="${bx - 6}" y1="${top}" y2="${top + 4 * SP}"/>`);
-        push(`<rect class="barthick" x="${bx - 3.5}" y="${top}" width="3.5" height="${4 * SP}"/>`);
+        push(`<line class="bar" x1="${bx - 6}" x2="${bx - 6}" y1="${top}" y2="${barBottom}"/>`);
+        push(`<rect class="barthick" x="${bx - 3.5}" y="${top}" width="3.5" height="${barBottom - top}"/>`);
       } else {
-        push(`<line class="bar" x1="${bx}" x2="${bx}" y1="${top}" y2="${top + 4 * SP}"/>`);
+        push(`<line class="bar" x1="${bx}" x2="${bx}" y1="${top}" y2="${barBottom}"/>`);
       }
 
       // Multi-measure rest: thick bar on the middle line, count above.
@@ -600,7 +676,7 @@ export function renderScore(view, width, opts = {}) {
         const infos = events.map((e, i) => {
           const gi = groupOf.get(i);
           const opts = gi === undefined ? {} : { up: groupUp[gi], beamed: true };
-          const info = drawEvent(push, e, xs[i], top, yOf, mid, v, multi, ms.attrs.key.fifths, cls, opts);
+          const info = drawEvent(push, e, xs[i], top, yOf, mid, v, multi, writtenFifths(staff, ms.attrs.key.fifths), cls, opts);
           return Object.assign(info, { e, ms, top, staff: st, voice: v, cls, sung: lay.verses[st] > 0 });
         });
         const starts = eventStarts(events);
@@ -1236,8 +1312,8 @@ export function pointerTarget(lay, view, x, y, voice) {
     staff, measure: ms.m, voice, index, onEvent, page: s.page || 0,
     step,
     octave: Math.floor(d / 7),
-    alter: keyAlter(ms.attrs.key.fifths, step),
-    fifths: ms.attrs.key.fifths,
+    alter: keyAlter(writtenFifths(view.score.staves[staff], ms.attrs.key.fifths), step),
+    fifths: writtenFifths(view.score.staves[staff], ms.attrs.key.fifths),
     d, mid, top,
     x: onEvent !== null ? eventX : x,
     y: top + 2 * SP - (d - mid) * (SP / 2),

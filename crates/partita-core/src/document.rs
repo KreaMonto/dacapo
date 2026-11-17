@@ -15,9 +15,9 @@ use thiserror::Error;
 use crate::cursor::{self, Caret, Move, SelectionRange};
 use crate::history::{History, Transaction, TxKind};
 use crate::model::{
-    is_measure_rest, Articulation, Clef, Duration, Dynamic, Event, EventId, EventKind,
-    KeySignature, LyricJoin, Metadata, Pitch, Score, Slur, Step, Syllable, TimeSignature,
-    MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS, MAX_VERSES,
+    is_measure_rest, Articulation, Clef, Duration, Dynamic, Event, EventId, EventKind, GroupKind,
+    KeySignature, LyricJoin, Metadata, Pitch, Score, Slur, StaffGroup, Step, Syllable,
+    TimeSignature, Transposition, MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS, MAX_VERSES,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
 
@@ -109,6 +109,19 @@ pub fn nearest_pitch(step: Step, reference: Pitch) -> Pitch {
         .min_by_key(|c| ((c - r).abs(), if *c >= r { 0 } else { 1 }))
         .unwrap();
     Pitch::from_diatonic_index(best)
+}
+
+/// What the staff dialog edits.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StaffProps {
+    pub name: String,
+    #[serde(default)]
+    pub short_name: String,
+    #[serde(default)]
+    pub instrument: u8,
+    pub clef: Clef,
+    #[serde(default)]
+    pub transposition: Transposition,
 }
 
 impl Document {
@@ -532,7 +545,10 @@ impl Document {
     ) -> Result<(), EditError> {
         let reference = self.reference_pitch(self.caret);
         let mut pitch = nearest_pitch(step, reference);
-        pitch.alter = key_alter(self.score.measures[self.caret.measure].key, step);
+        pitch.alter = key_alter(
+            self.score.written_key(self.caret.staff, self.caret.measure),
+            step,
+        );
         self.insert_event(
             EventKind::Chord {
                 pitches: vec![pitch],
@@ -547,11 +563,11 @@ impl Document {
     }
 
     /// Natural pitch adjusted by the key signature of `measure`.
-    fn pitch_in_key(&self, measure: usize, step: Step, octave: i8) -> Pitch {
+    fn pitch_in_key(&self, staff: usize, measure: usize, step: Step, octave: i8) -> Pitch {
         Pitch {
             step,
             octave: octave.clamp(0, 9),
-            alter: key_alter(self.score.measures[measure].key, step),
+            alter: key_alter(self.score.written_key(staff, measure), step),
         }
     }
 
@@ -566,7 +582,7 @@ impl Document {
         now_ms: u64,
     ) -> Result<(), EditError> {
         self.set_caret(at, false);
-        let pitch = self.pitch_in_key(self.caret.measure, step, octave);
+        let pitch = self.pitch_in_key(self.caret.staff, self.caret.measure, step, octave);
         self.insert_event(
             EventKind::Chord {
                 pitches: vec![pitch],
@@ -611,7 +627,7 @@ impl Document {
             ..at
         };
         self.set_caret(after, false);
-        let pitch = self.pitch_in_key(at.measure, step, octave);
+        let pitch = self.pitch_in_key(at.staff, at.measure, step, octave);
         let mut pitches = event.pitches().to_vec();
         if pitches.contains(&pitch) {
             return Ok(());
@@ -656,7 +672,7 @@ impl Document {
             }
             None => nearest_pitch(step, self.reference_pitch(c)),
         };
-        pitch.alter = key_alter(self.score.measures[c.measure].key, step);
+        pitch.alter = key_alter(self.score.written_key(c.staff, c.measure), step);
         if pitches.contains(&pitch) {
             return Ok(());
         }
@@ -1290,28 +1306,56 @@ impl Document {
         self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
     }
 
-    /// Adds a staff at the bottom that plays `instrument` (General MIDI).
+    /// Adds a staff at the bottom with the given name, sound, clef and
+    /// transposition.
     pub fn add_instrument_staff(
         &mut self,
-        name: impl Into<String>,
-        clef: Clef,
-        instrument: u8,
+        props: StaffProps,
         now_ms: u64,
     ) -> Result<(), EditError> {
-        let name: String = name
-            .into()
-            .trim()
-            .chars()
-            .take(MAX_STAFF_NAME_CHARS)
-            .collect();
-        let mut staff = self.score.blank_staff(name, clef);
-        staff.instrument = instrument.min(127);
+        let clip = |s: &str| -> String { s.trim().chars().take(MAX_STAFF_NAME_CHARS).collect() };
+        let mut staff = self.score.blank_staff(clip(&props.name), props.clef);
+        staff.short_name = clip(&props.short_name);
+        staff.instrument = props.instrument.min(127);
+        staff.transposition = props.transposition;
         let op = Op::InsertStaff {
             index: self.score.staves.len(),
             staff,
         };
         let caret = self.caret;
         self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
+    }
+
+    /// Joins staves `first..=last` with a bracket or a brace, or (`None`)
+    /// takes them out of any group. One undo step.
+    pub fn group_staves(
+        &mut self,
+        first: usize,
+        last: usize,
+        kind: Option<GroupKind>,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let (first, last) = (first.min(last), first.max(last));
+        if last >= self.score.staves.len() {
+            return Err(crate::ops::OpError::StaffIndex(last).into());
+        }
+        let group = match kind {
+            Some(kind) if last > first => Some(StaffGroup {
+                id: self.score.alloc_id(),
+                kind,
+            }),
+            Some(_) => return Ok(()), // one staff alone is not a group
+            None => None,
+        };
+        let ops: Vec<Op> = (first..=last)
+            .filter(|&s| self.score.staves[s].group != group)
+            .map(|staff| Op::SetStaffGroup { staff, group })
+            .collect();
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
     }
 
     pub fn remove_staff(&mut self, index: usize, now_ms: u64) -> Result<(), EditError> {
@@ -1341,27 +1385,64 @@ impl Document {
     pub fn set_staff_properties(
         &mut self,
         staff: usize,
-        name: String,
-        instrument: u8,
-        clef: Clef,
+        props: StaffProps,
         now_ms: u64,
     ) -> Result<(), EditError> {
         let Some(current) = self.score.staves.get(staff) else {
             return Err(crate::ops::OpError::StaffIndex(staff).into());
         };
-        let name: String = name.trim().chars().take(MAX_STAFF_NAME_CHARS).collect();
+        let clip = |s: &str| -> String { s.trim().chars().take(MAX_STAFF_NAME_CHARS).collect() };
+        let (name, short_name) = (clip(&props.name), clip(&props.short_name));
         let mut ops = Vec::new();
         if current.name != name {
             ops.push(Op::SetStaffName { staff, name });
         }
-        if current.instrument != instrument {
+        if current.short_name != short_name {
+            ops.push(Op::SetStaffShortName { staff, short_name });
+        }
+        if current.instrument != props.instrument {
             ops.push(Op::SetStaffInstrument {
                 staff,
-                instrument: instrument.min(127),
+                instrument: props.instrument.min(127),
             });
         }
-        if current.clef != clef {
-            ops.push(Op::SetStaffClef { staff, clef });
+        if current.clef != props.clef {
+            ops.push(Op::SetStaffClef {
+                staff,
+                clef: props.clef,
+            });
+        }
+        if current.transposition != props.transposition {
+            // The music keeps sounding the same: written notes move by the
+            // difference (a C for piano becomes a D for B-flat clarinet).
+            let (old, new) = (current.transposition, props.transposition);
+            let d = old.diatonic as i32 - new.diatonic as i32;
+            let c = old.chromatic as i32 - new.chromatic as i32;
+            for (m, cell) in current.measures.iter().enumerate() {
+                for (v, events) in cell.voices.iter().enumerate() {
+                    for (index, e) in events.iter().enumerate() {
+                        if let EventKind::Chord { pitches } = &e.kind {
+                            let mut moved = e.clone();
+                            moved.kind = EventKind::Chord {
+                                pitches: pitches.iter().map(|p| p.transposed(d, c)).collect(),
+                            };
+                            ops.push(Op::ReplaceEvent {
+                                at: VoiceLoc {
+                                    staff,
+                                    measure: m,
+                                    voice: v,
+                                },
+                                index,
+                                event: moved,
+                            });
+                        }
+                    }
+                }
+            }
+            ops.push(Op::SetStaffTransposition {
+                staff,
+                transposition: new,
+            });
         }
         if ops.is_empty() {
             return Ok(());
@@ -2219,26 +2300,118 @@ mod tests {
 mod staff_properties_tests {
     use super::*;
 
+    fn props(name: &str, instrument: u8, clef: Clef) -> StaffProps {
+        StaffProps {
+            name: name.into(),
+            short_name: String::new(),
+            instrument,
+            clef,
+            transposition: Transposition::NONE,
+        }
+    }
+
     #[test]
     fn name_instrument_and_clef_are_one_undo_step() {
         let mut doc = Document::new(Score::new("Orchestra", 2));
-        doc.set_staff_properties(0, "  Violoncello  ".into(), 42, Clef::Bass, 1_000)
-            .unwrap();
+        let mut cello = props("  Violoncello  ", 42, Clef::Bass);
+        cello.short_name = "Vc.".into();
+        doc.set_staff_properties(0, cello, 1_000).unwrap();
         let s = &doc.score.staves[0];
         assert_eq!(
-            (s.name.as_str(), s.instrument, s.clef),
-            ("Violoncello", 42, Clef::Bass)
+            (s.name.as_str(), s.short_name.as_str(), s.instrument, s.clef),
+            ("Violoncello", "Vc.", 42, Clef::Bass)
         );
         assert!(doc.undo().unwrap());
         let s = &doc.score.staves[0];
         assert_eq!(
-            (s.name.as_str(), s.instrument, s.clef),
-            ("Staff 1", 0, Clef::Treble)
+            (s.name.as_str(), s.short_name.as_str(), s.instrument, s.clef),
+            ("Staff 1", "", 0, Clef::Treble)
         );
         assert!(!doc.can_undo());
         // Nothing changed: nothing recorded.
-        doc.set_staff_properties(0, "Staff 1".into(), 0, Clef::Treble, 2_000)
+        doc.set_staff_properties(0, props("Staff 1", 0, Clef::Treble), 2_000)
             .unwrap();
         assert!(!doc.can_undo());
+    }
+
+    #[test]
+    fn a_transposing_instrument_keeps_the_sound() {
+        let mut doc = Document::new(Score::new("Clarinet", 2));
+        doc.set_key_signature(KeySignature { fifths: -1 }, 0)
+            .unwrap(); // F major
+        doc.insert_note(
+            Step::C,
+            Duration::new(crate::model::DurationBase::Quarter),
+            1,
+        )
+        .unwrap();
+        doc.insert_note(
+            Step::B,
+            Duration::new(crate::model::DurationBase::Quarter),
+            2,
+        )
+        .unwrap();
+        let before: Vec<i32> = doc.score.staves[0].measures[0].voices[0]
+            .iter()
+            .map(|e| e.pitches()[0].midi())
+            .collect();
+        let mut clarinet = props("Clarinet in B♭", 71, Clef::Treble);
+        clarinet.transposition = Transposition {
+            diatonic: -1,
+            chromatic: -2,
+        };
+        doc.set_staff_properties(0, clarinet, 10_000).unwrap();
+        let staff = &doc.score.staves[0];
+        let written: Vec<Pitch> = staff.measures[0].voices[0]
+            .iter()
+            .map(|e| e.pitches()[0])
+            .collect();
+        // C becomes D, B-flat becomes C: a major second up on paper...
+        assert_eq!((written[0].step, written[0].alter), (Step::D, 0));
+        assert_eq!((written[1].step, written[1].alter), (Step::C, 0));
+        // ...in G major for the clarinet, sounding exactly as before.
+        assert_eq!(doc.score.written_key(0, 0).fifths, 1);
+        let sounding: Vec<i32> = written
+            .iter()
+            .map(|p| staff.transposition.sounding_midi(*p))
+            .collect();
+        assert_eq!(sounding, before);
+        // New notes follow the clarinet's key: F is F-sharp in G major.
+        doc.insert_note(
+            Step::F,
+            Duration::new(crate::model::DurationBase::Quarter),
+            20_000,
+        )
+        .unwrap();
+        let f = doc.score.staves[0].measures[0].voices[0][2].pitches()[0];
+        assert_eq!((f.step, f.alter), (Step::F, 1));
+        // One undo puts the piano and its notes back.
+        doc.undo().unwrap();
+        doc.undo().unwrap();
+        assert!(doc.score.staves[0].transposition.is_none());
+        assert_eq!(
+            doc.score.staves[0].measures[0].voices[0][0].pitches()[0].step,
+            Step::C
+        );
+    }
+
+    #[test]
+    fn grouping_staves() {
+        let mut score = Score::new("Strings", 1);
+        for name in ["Violin II", "Viola", "Violoncello"] {
+            let s = score.blank_staff(name, Clef::Treble);
+            score.staves.push(s);
+        }
+        let mut doc = Document::new(score);
+        doc.group_staves(0, 3, Some(GroupKind::Bracket), 1).unwrap();
+        let g = doc.score.staves[0].group;
+        assert!(g.is_some());
+        assert!(doc.score.staves.iter().all(|s| s.group == g));
+        doc.group_staves(3, 3, Some(GroupKind::Brace), 2).unwrap(); // one staff: no-op
+        assert_eq!(doc.score.staves[3].group, g);
+        doc.group_staves(2, 3, None, 3).unwrap();
+        assert!(doc.score.staves[3].group.is_none());
+        doc.undo().unwrap();
+        assert_eq!(doc.score.staves[3].group, g);
     }
 }

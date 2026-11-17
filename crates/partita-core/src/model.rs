@@ -518,23 +518,121 @@ impl Default for StaffMeasure {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Staff {
     pub id: StaffId,
-    /// Shown at the start of the staff (e.g. "Violin I", "Piano").
+    /// Shown at the start of the staff on the first system (e.g. "Violin I").
     pub name: String,
+    /// Shown on the following systems (e.g. "Vln. I"); empty for none.
+    #[serde(default)]
+    pub short_name: String,
     pub clef: Clef,
     /// Sound for playback: General MIDI program 0-127 (0 = piano).
     #[serde(default)]
     pub instrument: u8,
+    /// How the written notes sound: a B-flat clarinet sounds a major
+    /// second lower than written. Pitches are stored as written.
+    #[serde(default)]
+    pub transposition: Transposition,
+    /// Bracket or brace joining this staff with its neighbours: consecutive
+    /// staves with the same group are joined.
+    #[serde(default)]
+    pub group: Option<StaffGroup>,
     /// One entry per score measure.
     pub measures: Vec<StaffMeasure>,
+}
+
+/// Interval from written to sounding pitch, in diatonic steps and
+/// semitones: (-1, -2) is a major second down (B-flat instruments),
+/// (-4, -7) a perfect fifth down (F horn), (7, 12) an octave up (piccolo).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Transposition {
+    pub diatonic: i8,
+    pub chromatic: i8,
+}
+
+impl Transposition {
+    pub const NONE: Transposition = Transposition {
+        diatonic: 0,
+        chromatic: 0,
+    };
+
+    pub fn is_none(&self) -> bool {
+        *self == Transposition::NONE
+    }
+
+    /// The interval as a number of fifths (+2 for a major second up),
+    /// which is how much it moves a key signature.
+    pub fn fifths(&self) -> i32 {
+        7 * self.chromatic as i32 - 12 * self.diatonic as i32
+    }
+
+    /// The written key for a concert-pitch key: the key moves the other
+    /// way from the sound. Kept within seven sharps or flats.
+    pub fn written_key(&self, concert: KeySignature) -> KeySignature {
+        let mut f = concert.fifths as i32 - self.fifths();
+        while f > 7 {
+            f -= 12;
+        }
+        while f < -7 {
+            f += 12;
+        }
+        KeySignature { fifths: f as i8 }
+    }
+
+    /// The concert key for a written key.
+    pub fn concert_key(&self, written: KeySignature) -> KeySignature {
+        Transposition {
+            diatonic: -self.diatonic,
+            chromatic: -self.chromatic,
+        }
+        .written_key(written)
+    }
+
+    /// MIDI key of a written pitch.
+    pub fn sounding_midi(&self, written: Pitch) -> i32 {
+        written.midi() + self.chromatic as i32
+    }
+}
+
+impl Pitch {
+    /// The pitch moved by an interval of `diatonic` steps and `chromatic`
+    /// semitones, spelled accordingly (C + major second = D, E + minor
+    /// second = F).
+    pub fn transposed(self, diatonic: i32, chromatic: i32) -> Pitch {
+        let mut p = Pitch::from_diatonic_index(self.diatonic_index() + diatonic);
+        let natural_shift = p.midi() - Pitch::new(self.step, self.octave).midi();
+        p.alter = (self.alter as i32 + chromatic - natural_shift).clamp(-2, 2) as i8;
+        p
+    }
+}
+
+/// How a group of staves is joined at the left edge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroupKind {
+    /// A square bracket: an instrument family (woodwinds, strings...).
+    Bracket,
+    /// A curly brace: one instrument on several staves (piano, harp).
+    Brace,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct StaffGroup {
+    pub id: u64,
+    pub kind: GroupKind,
 }
 
 #[derive(Deserialize)]
 struct StaffFields {
     id: StaffId,
     name: String,
+    #[serde(default)]
+    short_name: String,
     clef: Clef,
     #[serde(default)]
     instrument: u8,
+    #[serde(default)]
+    transposition: Transposition,
+    #[serde(default)]
+    group: Option<StaffGroup>,
     measures: Vec<StaffMeasure>,
 }
 
@@ -555,8 +653,11 @@ impl<'de> Deserialize<'de> for Staff {
             return Ok(Staff {
                 id: s.id,
                 name: s.name,
+                short_name: String::new(),
                 clef: s.clef,
                 instrument: 0,
+                transposition: Transposition::NONE,
+                group: None,
                 measures: s.measures,
             });
         }
@@ -564,8 +665,11 @@ impl<'de> Deserialize<'de> for Staff {
         Ok(Staff {
             id: s.id,
             name: s.name,
+            short_name: s.short_name,
             clef: s.clef,
             instrument: s.instrument.min(127),
+            transposition: s.transposition,
+            group: s.group,
             measures: s.measures,
         })
     }
@@ -682,10 +786,26 @@ impl Score {
         Staff {
             id: self.alloc_id(),
             name: name.into(),
+            short_name: String::new(),
             clef,
             instrument: 0,
+            transposition: Transposition::NONE,
+            group: None,
             measures: vec![StaffMeasure::default(); self.measures.len()],
         }
+    }
+
+    /// The key signature a staff shows in a measure: the score's key,
+    /// moved for transposing instruments.
+    pub fn written_key(&self, staff: usize, measure: usize) -> KeySignature {
+        let concert = self
+            .measures
+            .get(measure)
+            .map(|a| a.key)
+            .unwrap_or_default();
+        self.staves
+            .get(staff)
+            .map_or(concert, |s| s.transposition.written_key(concert))
     }
 
     pub fn voice(&self, staff: usize, measure: usize, voice: usize) -> Option<&Vec<Event>> {
@@ -792,6 +912,41 @@ mod tests {
         };
         assert_eq!(fis.midi(), 66);
         assert_eq!(fis.shifted(1).alter, 1);
+    }
+
+    #[test]
+    fn transposing_instruments() {
+        let b_flat = Transposition {
+            diatonic: -1,
+            chromatic: -2,
+        };
+        let horn = Transposition {
+            diatonic: -4,
+            chromatic: -7,
+        };
+        let piccolo = Transposition {
+            diatonic: 7,
+            chromatic: 12,
+        };
+        // Concert C major: B-flat instruments read D major, horn G major.
+        assert_eq!(b_flat.written_key(KeySignature { fifths: 0 }).fifths, 2);
+        assert_eq!(horn.written_key(KeySignature { fifths: 0 }).fifths, 1);
+        assert_eq!(piccolo.written_key(KeySignature { fifths: -3 }).fifths, -3);
+        // Concert E major (4 sharps) would be F-sharp major: 6 sharps.
+        assert_eq!(b_flat.written_key(KeySignature { fifths: 4 }).fifths, 6);
+        // Concert B major (5 sharps): C-sharp would be 7, then D-flat (-5).
+        assert_eq!(b_flat.written_key(KeySignature { fifths: 6 }).fifths, -4);
+        assert_eq!(b_flat.concert_key(KeySignature { fifths: 2 }).fifths, 0);
+        // Written D sounds C.
+        let d = Pitch::new(Step::D, 5);
+        assert_eq!(b_flat.sounding_midi(d), Pitch::new(Step::C, 5).midi());
+        // Spelling: E + minor second up = F, C + major second down = B-flat.
+        assert_eq!(
+            Pitch::new(Step::E, 4).transposed(1, 1),
+            Pitch::new(Step::F, 4)
+        );
+        let bb = Pitch::new(Step::C, 4).transposed(-1, -2);
+        assert_eq!((bb.step, bb.alter, bb.octave), (Step::B, -1, 3));
     }
 
     #[test]

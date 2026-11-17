@@ -69,8 +69,10 @@ This document tracks the development goals and major stages toward a complete op
 - [ ] Verify the downloaded SoundFont with a pinned SHA-256 (today: exact size + RIFF/sfbk signature).
 - [ ] MIDI input (step-time and real-time entry).
 - [x] Instrument names at the start of the staff.
-- [ ] Short names on later systems (Vln. I, Vc.), brackets and braces for instrument groups.
-- [ ] Transposing instruments (clarinet in B♭, horn in F).
+- [x] Short names on later systems (Vln. I, Vc.), brackets and braces for instrument groups.
+- [x] Transposing instruments (clarinet in B♭, horn in F), written in their own key.
+- [ ] A concert-pitch view that shows every staff as it sounds.
+- [ ] Nested groups (a bracket for the strings with a sub-bracket for the violins).
 
 ## Phase 5: UX and collaboration
 
