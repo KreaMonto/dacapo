@@ -189,6 +189,12 @@
         }
       },
       set_dynamic({ dynamic }) { const e = voiceOf(view.caret)[view.caret.index - 1]; if (e) { snapshot(); e.dynamic = e.dynamic === dynamic ? null : dynamic; } },
+      // As Document::set_tempo_mark: in measure 1 the value is the opening tempo.
+      set_tempo_mark({ measure, mark }) {
+        snapshot();
+        if (mark && measure === 0 && mark.bpm) { view.score.tempo = mark.bpm; mark = { ...mark, bpm: null }; }
+        view.score.measures[measure] = { ...view.score.measures[measure], tempo: mark };
+      },
       // Every text at once, as the real backend takes it (Metadata in model.rs).
       set_metadata({ type, ...metadata }) { snapshot(); view.score.metadata = metadata; },
       toggle_slur() {

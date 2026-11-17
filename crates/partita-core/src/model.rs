@@ -326,7 +326,8 @@ thread_local! {
 /// Runs `f` with the document types read in the binary layout of recovery
 /// format `version`: 3 (Da Capo 0.2.0 and 0.2.1: no lyrics, no staff
 /// instruments, no page texts), 4 (Da Capo 0.2.2: no staff instruments, no
-/// page texts) or 5 (Partita 0.3.0: no page texts).
+/// page texts), 5 (Partita 0.3.0: no page texts) or 6 (development builds
+/// before 0.4.0: no tempo markings).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
@@ -485,10 +486,16 @@ pub struct KeySignature {
 }
 
 /// Attributes shared by every staff in one measure column.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `time` and `key` are in force in the measure (repeated in every measure
+/// until they change); `tempo` is a marking printed at the start of this
+/// measure only.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct MeasureAttrs {
     pub time: TimeSignature,
     pub key: KeySignature,
+    /// Since file format 7 (recovery format 7).
+    pub tempo: Option<TempoMark>,
 }
 
 impl Default for MeasureAttrs {
@@ -496,6 +503,108 @@ impl Default for MeasureAttrs {
         MeasureAttrs {
             time: TimeSignature::COMMON,
             key: KeySignature::default(),
+            tempo: None,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct MeasureAttrsFields {
+    time: TimeSignature,
+    key: KeySignature,
+    #[serde(default)]
+    tempo: Option<TempoMark>,
+}
+
+/// [`MeasureAttrs`] as written to recovery data before tempo marks
+/// (recovery formats 3 to 6).
+#[derive(Deserialize)]
+struct MeasureAttrsPreTempo {
+    time: TimeSignature,
+    key: KeySignature,
+}
+
+impl<'de> Deserialize<'de> for MeasureAttrs {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        if matches!(legacy_format(), 3..=6) {
+            let a = MeasureAttrsPreTempo::deserialize(deserializer)?;
+            return Ok(MeasureAttrs {
+                time: a.time,
+                key: a.key,
+                tempo: None,
+            });
+        }
+        let a = MeasureAttrsFields::deserialize(deserializer)?;
+        Ok(MeasureAttrs {
+            time: a.time,
+            key: a.key,
+            tempo: a.tempo,
+        })
+    }
+}
+
+/// The note value a metronome mark counts (♩ = 76, ♩. = 60…).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BeatUnit {
+    Eighth,
+    #[default]
+    Quarter,
+    DottedQuarter,
+    Half,
+    DottedHalf,
+}
+
+impl BeatUnit {
+    /// Length in eighth notes (a dotted quarter is 3).
+    pub fn eighths(self) -> u32 {
+        match self {
+            BeatUnit::Eighth => 1,
+            BeatUnit::Quarter => 2,
+            BeatUnit::DottedQuarter => 3,
+            BeatUnit::Half => 4,
+            BeatUnit::DottedHalf => 6,
+        }
+    }
+
+    /// The number a metronome mark shows for a tempo in quarter notes per
+    /// minute (♩ = 90 is ♩. = 60).
+    pub fn per_minute(self, quarter_bpm: u16) -> u16 {
+        ((quarter_bpm as u32 * 2 + self.eighths() / 2) / self.eighths()) as u16
+    }
+
+    /// Quarter notes per minute for `beats` of this unit per minute.
+    pub fn to_quarter_bpm(self, beats: u16) -> u16 {
+        (beats as u32 * self.eighths()).div_ceil(2) as u16
+    }
+}
+
+/// A tempo marking at the start of a measure: words ("Andante con moto"),
+/// a metronome mark (♩ = 76), or both. What is printed is chosen apart from
+/// what plays: a hidden marking still sets the playback tempo.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TempoMark {
+    /// The words, or empty.
+    pub text: String,
+    /// Quarter notes per minute from this measure on, or `None` for words
+    /// alone that do not change the tempo ("dolce", "a tempo"…). Ignored in
+    /// the first measure, whose tempo is [`Score::tempo`].
+    pub bpm: Option<u16>,
+    /// The note value the metronome mark shows.
+    pub beat: BeatUnit,
+    pub show_text: bool,
+    pub show_metronome: bool,
+}
+
+impl Default for TempoMark {
+    fn default() -> Self {
+        TempoMark {
+            text: String::new(),
+            bpm: None,
+            beat: BeatUnit::Quarter,
+            show_text: true,
+            show_metronome: true,
         }
     }
 }
@@ -908,6 +1017,24 @@ impl Score {
         None
     }
 
+    /// Playback tempo (quarter notes per minute) in measure `m`: from the
+    /// last tempo marking with a metronome value at or before it, or the
+    /// opening tempo.
+    pub fn tempo_at(&self, m: usize) -> u16 {
+        self.measures
+            .iter()
+            .take(m + 1)
+            .skip(1)
+            .rev()
+            .find_map(|a| a.tempo.as_ref()?.bpm)
+            .unwrap_or(self.tempo)
+    }
+
+    /// Whether any measure has a tempo marking (which needs file format 7).
+    pub fn has_tempo_marks(&self) -> bool {
+        self.measures.iter().any(|a| a.tempo.is_some())
+    }
+
     /// Empty score: one treble staff with `measures` empty measures in 4/4.
     pub fn new(title: impl Into<String>, measures: usize) -> Self {
         let measures = measures.max(1);
@@ -1040,6 +1167,30 @@ impl Score {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn metronome_marks_count_their_beat() {
+        assert_eq!(BeatUnit::DottedQuarter.per_minute(90), 60);
+        assert_eq!(BeatUnit::DottedQuarter.to_quarter_bpm(60), 90);
+        assert_eq!(BeatUnit::Half.per_minute(120), 60);
+        assert_eq!(BeatUnit::Eighth.to_quarter_bpm(160), 80);
+        assert_eq!(BeatUnit::Quarter.per_minute(76), 76);
+    }
+
+    #[test]
+    fn tempo_in_force_comes_from_the_last_marking_with_a_value() {
+        let mut s = Score::new("t", 4);
+        s.tempo = 80;
+        s.measures[2].tempo = Some(TempoMark {
+            bpm: Some(132),
+            ..TempoMark::default()
+        });
+        s.measures[3].tempo = Some(TempoMark::default()); // words alone
+        assert_eq!(
+            (0..4).map(|m| s.tempo_at(m)).collect::<Vec<_>>(),
+            vec![80, 80, 132, 132]
+        );
+    }
 
     #[test]
     fn durations_in_ticks() {

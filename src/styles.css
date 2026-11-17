@@ -333,6 +333,13 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .score .ptext-pnum { cursor: pointer; }
 .score .ptext.placeholder { fill: var(--muted); opacity: 0.55; font-weight: normal; }
 .text-input { text-align: center; }
+/* Tempo markings: words in bold, then the metronome mark. A click opens them. */
+.score .tempo { fill: var(--ink); cursor: pointer; }
+.score .tempo:hover { fill: var(--accent); }
+.score .tempo-words { font-weight: 700; }
+@media print { .score .tempo { fill: #000 !important; } }
+.tempo-form .check { display: flex; align-items: center; gap: 8px; font-weight: normal; }
+.tempo-form .disabled { opacity: 0.45; }
 /* Titles, Header and Footer dialog. */
 .texts-form h3 { margin: 6px 0 -4px; font-size: 13px; }
 .texts-form .check { display: flex; align-items: center; gap: 8px; font-weight: normal; }

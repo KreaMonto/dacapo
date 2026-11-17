@@ -210,6 +210,25 @@ mod tests {
     }
 
     #[test]
+    fn tempo_markings_survive_a_crash() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = store(tmp.path());
+        let mut s = Session::start(Document::new(Score::new("Rondo", 2)), Some(&store)).unwrap();
+        let mark = crate::model::TempoMark {
+            text: "Allegretto".into(),
+            bpm: Some(108),
+            beat: crate::model::BeatUnit::DottedQuarter,
+            show_text: true,
+            show_metronome: false,
+        };
+        s.edit(|d| d.set_tempo_mark(1, Some(mark.clone()), 1_000).unwrap());
+        crash(s);
+        let found = store.scan();
+        let loaded = store.load(found[0].session_id).unwrap();
+        assert_eq!(loaded.document.score.measures[1].tempo, Some(mark));
+    }
+
+    #[test]
     fn page_texts_survive_a_crash() {
         let tmp = tempfile::tempdir().unwrap();
         let store = store(tmp.path());

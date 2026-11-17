@@ -214,7 +214,7 @@ impl Op {
                     let cell = contents.get(s).cloned().unwrap_or_default();
                     staff.measures.insert(*index, cell);
                 }
-                score.measures.insert(*index, *attrs);
+                score.measures.insert(*index, attrs.clone());
                 let max_id = contents
                     .iter()
                     .flat_map(|c| c.voices.iter().flatten())
@@ -248,11 +248,16 @@ impl Op {
                 if !attrs.time.is_valid() {
                     return Err(OpError::InvalidTime);
                 }
+                if let Some(bpm) = attrs.tempo.as_ref().and_then(|t| t.bpm) {
+                    if !crate::model::TEMPO_RANGE.contains(&bpm) {
+                        return Err(OpError::InvalidTempo(bpm));
+                    }
+                }
                 let slot = score
                     .measures
                     .get_mut(*index)
                     .ok_or(OpError::MeasureIndex(*index))?;
-                let old = std::mem::replace(slot, *attrs);
+                let old = std::mem::replace(slot, attrs.clone());
                 Ok(Op::SetMeasureAttrs {
                     index: *index,
                     attrs: old,
@@ -472,6 +477,11 @@ mod tests {
                         beat_type: 4,
                     },
                     key: KeySignature { fifths: 2 },
+                    tempo: Some(crate::model::TempoMark {
+                        text: "Lento".into(),
+                        bpm: Some(50),
+                        ..Default::default()
+                    }),
                 },
             },
             Op::SetStaffClef {

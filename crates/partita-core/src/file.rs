@@ -33,9 +33,10 @@ pub const FILE_EXTENSION: &str = "partita";
 ///   are written as version 5.
 /// - 6: staff instruments, short names, transpositions and brackets or
 ///   braces. Only files that use one of them are written as version 6.
-/// - 7: page texts in the metadata: subtitle, dedication, lyricist, part,
-///   copyright, running header and footer, and page numbering. Only files
-///   that set one of them are written as version 7.
+/// - 7: page texts in the metadata (subtitle, dedication, lyricist, part,
+///   copyright, running header and footer, and page numbering) and tempo
+///   markings on measures. Only files that use one of them are written as
+///   version 7.
 pub const FORMAT_VERSION: u32 = 7;
 const FORMAT_MARKER: &str = "partita";
 /// Marker written by Da Capo (the project's former name) up to 0.2.2.
@@ -82,7 +83,7 @@ fn required_version(score: &Score) -> u32 {
                 .any(|m| m.voices.iter().any(|v| v.iter().any(test)))
         })
     };
-    if score.metadata.uses_page_texts() {
+    if score.metadata.uses_page_texts() || score.has_tempo_marks() {
         7
     } else if score.staves.iter().any(|s| {
         s.instrument != 0
@@ -342,6 +343,29 @@ mod tests {
             crate::model::PageNumbers::default()
         );
         assert!(!old.metadata.uses_page_texts());
+    }
+
+    #[test]
+    fn tempo_markings_need_format_7_only_when_used() {
+        let mut score = Score::new("Etude", 2);
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format_version"], 3);
+        score.measures[1].tempo = Some(crate::model::TempoMark {
+            text: "Allegro".into(),
+            bpm: Some(132),
+            ..Default::default()
+        });
+        let bytes = to_bytes(&score).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(v["format_version"], 7);
+        assert_eq!(from_bytes(&bytes).unwrap(), score);
+        // Files from before tempo markings have measures without the field.
+        let mut v = v;
+        for m in v["score"]["measures"].as_array_mut().unwrap() {
+            m.as_object_mut().unwrap().remove("tempo");
+        }
+        let old = from_bytes(&serde_json::to_vec(&v).unwrap()).unwrap();
+        assert!(!old.has_tempo_marks());
     }
 
     #[test]

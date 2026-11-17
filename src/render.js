@@ -121,6 +121,36 @@ export const TEXT_FONT = 'Georgia, "Times New Roman", serif';
 
 const PAGE_NUMBERS = { show: true, edge: 'top', align: 'right', first_page: false, format: '{page}' };
 
+// ----- tempo markings -----------------------------------------------------------
+// "Andante con moto ♩ = 76" above the top staff, where a measure has a
+// marking (TempoMark in model.rs). What prints is chosen apart from what
+// plays: a hidden marking still sets the tempo.
+
+/** Length of each beat unit in eighth notes, and its SMuFL metronome glyph. */
+export const BEATS = {
+  eighth: { eighths: 1, glyph: '\uECA7' },
+  quarter: { eighths: 2, glyph: '\uECA5' },
+  dotted_quarter: { eighths: 3, glyph: '\uECA5\u2009\uECB7' },
+  half: { eighths: 4, glyph: '\uECA3' },
+  dotted_half: { eighths: 6, glyph: '\uECA3\u2009\uECB7' },
+};
+/** The number a metronome mark shows for a tempo in quarter notes per minute. */
+export const perMinute = (quarterBpm, beat) => Math.floor((quarterBpm * 2 + BEATS[beat].eighths / 2) / BEATS[beat].eighths);
+/** Quarter notes per minute for `n` beats of `beat` per minute. */
+export const toQuarterBpm = (n, beat) => Math.floor((n * BEATS[beat].eighths + 1) / 2);
+
+const TEMPO_SIZE = 2 * SP;
+const TEMPO_NOTE_SIZE = 3.2 * SP;
+const TEMPO_ROOM = 2.6 * SP; // above a system that shows a marking
+
+/** The metronome value a marking shows: the opening tempo in measure 1. */
+const markBpm = (mark, m, score) => (m === 0 ? score.tempo ?? 100 : mark.bpm);
+/** Whether a measure's marking prints anything. */
+function tempoShown(mark, m, score) {
+  if (!mark) return false;
+  return (mark.show_text && !!mark.text) || (mark.show_metronome && !!markBpm(mark, m, score));
+}
+
 /** The metadata with every field, also for a view from an older backend. */
 export function fullMetadata(m = {}) {
   return {
@@ -340,6 +370,8 @@ export function layout(view, width, opts = {}) {
     }
     return {
       m, mEnd: m, attrs, cap, restOnly,
+      tempo: attrs.tempo || null,
+      tempoShown: tempoShown(attrs.tempo, m, score),
       overfull,
       content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP, Math.min(lyricW, 80 * SP) + 2.6 * SP),
       timeChange: !prev || prev.time.beats !== attrs.time.beats || prev.time.beat_type !== attrs.time.beat_type,
@@ -353,7 +385,8 @@ export function layout(view, width, opts = {}) {
   for (let i = 0; i < single.length; i++) {
     let j = i;
     if (opts.multiRest && single[i].restOnly) {
-      while (j + 1 < single.length && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange) j++;
+      // A tempo marking (even a hidden one) starts a new run: it may change the tempo.
+      while (j + 1 < single.length && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo) j++;
     }
     if (j > i) {
       measures.push({ ...single[i], mEnd: single[j].m, multi: j - i + 1, content: 13 * SP });
@@ -467,14 +500,16 @@ export function layout(view, width, opts = {}) {
   let page = 0;
   let y = heading.top + heading.height + MARGIN_TOP;
   systems.forEach((s, i) => {
-    if (geo && i > 0 && y + s.height + 2 * SP > pageTop(page) + geo.h - geo.margin) {
+    // Room above for a tempo marking.
+    const above = s.measures.some((ms) => ms.tempoShown) ? TEMPO_ROOM : 0;
+    if (geo && i > 0 && y + above + s.height + 2 * SP > pageTop(page) + geo.h - geo.margin) {
       page++;
       y = pageTop(page) + geo.margin + MARGIN_TOP;
     }
     s.index = i;
     s.page = page;
-    s.y = y;
-    y += s.height + SYSTEM_GAP;
+    s.y = y + above;
+    y += above + s.height + SYSTEM_GAP;
     // Justify every system but the last (unless it is already nearly full).
     const last = i === systems.length - 1;
     const indent = i === 0 ? nameIndent : shortIndent;
@@ -567,6 +602,53 @@ export function hitTest(lay, view, x, y, voice) {
   const events = view.score.staves[staff].measures[ms.m].voices[voice];
   const index = eventXs(lay, ms, events).filter((ex) => x > ex + 0.2 * SP).length;
   return { staff, measure: ms.m, voice, index };
+}
+
+/**
+ * Draws the tempo markings that print something, above the top staff at the
+ * start of their measure (over the clef at the start of a system). Each
+ * carries `data-tempo` (its measure): a click opens it.
+ */
+function drawTempoMarks(lay, score, push, onPage) {
+  let system = null;
+  let right = -Infinity; // where the previous marking of this system ends
+  for (const ms of lay.measures) {
+    if (!ms.tempoShown) continue;
+    onPage(ms.system.page);
+    if (ms.system !== system) { system = ms.system; right = -Infinity; }
+    const mark = ms.tempo;
+    // At the start of the measure, unless the previous marking still runs
+    // there (narrow measures): then right after it.
+    const x = Math.max(ms.systemStart ? ms.system.x0 : ms.x + 0.6 * SP, right + 1.2 * SP);
+    const y = lay.staffTop(ms, 0) - 3.2 * SP;
+    const parts = [];
+    let width = 0;
+    if (mark.show_text && mark.text) {
+      parts.push(`<tspan class="tempo-words">${esc(mark.text)}</tspan>`);
+      width += tempoTextWidth(mark.text, true);
+    }
+    const bpm = markBpm(mark, ms.m, score);
+    if (mark.show_metronome && bpm) {
+      const beat = BEATS[mark.beat] ? mark.beat : 'quarter';
+      const value = `\u2009\u00a0=\u00a0${perMinute(bpm, beat)}`;
+      parts.push(`<tspan class="tempo-note" font-family="Bravura" font-size="${TEMPO_NOTE_SIZE}">${BEATS[beat].glyph}</tspan><tspan>${value}</tspan>`);
+      width += (parts.length > 1 ? tempoTextWidth('\u00a0\u00a0', false) : 0)
+        + (BEATS[beat].eighths % 3 === 0 ? 1.9 : 1.2) * SP + tempoTextWidth(value, false);
+    }
+    right = x + width;
+    push(`<text class="tempo" data-tempo="${ms.m}" font-family='${TEXT_FONT}' font-size="${TEMPO_SIZE}" x="${x}" y="${y}">${parts.join('\u00a0\u00a0')}</text>`);
+  }
+}
+
+let tempoCtx;
+/** Width of tempo words in layout units (estimated where no canvas exists). */
+function tempoTextWidth(text, bold) {
+  if (tempoCtx === undefined) {
+    try { tempoCtx = document.createElement('canvas').getContext('2d'); } catch { tempoCtx = null; }
+  }
+  if (!tempoCtx) return text.length * TEMPO_SIZE * 0.55;
+  tempoCtx.font = `${bold ? '700 ' : ''}${TEMPO_SIZE}px ${TEXT_FONT}`;
+  return tempoCtx.measureText(text).width;
 }
 
 /**
@@ -693,6 +775,7 @@ export function renderScore(view, width, opts = {}) {
     }
   }
   drawPageTexts(lay, push, onPage, opts);
+  drawTempoMarks(lay, score, push, onPage);
 
   // Drawn events, for ties and slurs: per staff+voice in score order, and by id.
   const seqs = new Map();
