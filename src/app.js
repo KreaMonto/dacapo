@@ -652,6 +652,7 @@ function renderStatus() {
         note: () => bold(t('status.notes', { value }), 'status.notes.help'),
         rest: () => bold(t('status.rests', { value }), 'status.rests.help'),
         erase: () => bold(t('status.erase'), 'status.erase.help'),
+        text: () => bold(t('status.text'), 'status.text.help'),
         mark: () => bold(t('status.mark', { name: state.mark?.name || '' }), 'status.mark.help'),
       }[state.mode]());
     parts.push(esc(doc.dirty ? t('status.unsaved') : (doc.path ? t('status.saved') : t('status.new'))));
@@ -1836,7 +1837,9 @@ function placeTextInput() {
   if (!key || !doc || !field) return;
   const el = $('score').querySelector(textTarget(key, doc).selector);
   const svg = el?.ownerSVGElement;
-  if (!el || !svg) { field.style.visibility = 'hidden'; formatBar.hidden = true; return; }
+  // Its text is gone (undone, or its note deleted meanwhile): stop typing
+  // rather than leave an invisible field behind.
+  if (!el || !svg) { commitTextEdit(true); return; }
   const box = svg.getBoundingClientRect();
   const vb = svg.viewBox.baseVal;
   const scale = box.width / vb.width;
@@ -1888,7 +1891,7 @@ for (const field of [textEdit.input, textEdit.area]) {
   });
   field.addEventListener('input', () => { if (field === textEdit.area) placeTextInput(); });
   // Using the format bar keeps the field open.
-  field.addEventListener('blur', (ev) => { if (!formatBar.contains(ev.relatedTarget)) commitTextEdit(); });
+  field.addEventListener('blur', () => setTimeout(endTypingIfAway, 0));
 }
 
 // ----- text boxes ------------------------------------------------------------------
@@ -1975,8 +1978,51 @@ function placeFormatBar() {
   Object.assign(formatBar.style, { left: `${left}px`, top: `${top}px` });
 }
 
-/** Applies a change of look, then goes back to typing. */
-function applyFormat(change) {
+/**
+ * Ends the typing when the focus is neither in the text nor in the format
+ * bar (checked once it has settled: choosing in a font list moves it in
+ * steps, and a native dropdown may hold it for a moment).
+ */
+function endTypingIfAway() {
+  if (!textEdit.key || barPointerDown) return;
+  const a = document.activeElement;
+  if (a === textEdit.field || formatBar.contains(a)) return;
+  commitTextEdit();
+}
+let barPointerDown = false; // between pressing and releasing in the bar
+
+/** The bar's controls show the current look, without rebuilding it (which would drop the focus). */
+function syncFormatBar() {
+  const f = formatTarget();
+  if (!f || formatBar.hidden) return;
+  const st = f.resolved;
+  const font = formatBar.querySelector('.fb-font');
+  if (font && document.activeElement !== font) {
+    if (st.font && ![...font.options].some((o) => o.value === st.font)) font.innerHTML = fontOptions(st.font);
+    font.value = st.font;
+  }
+  const size = formatBar.querySelector('.fb-size');
+  if (size && document.activeElement !== size) size.value = ptOf(st);
+  const press = (fmt, on) => {
+    const b = formatBar.querySelector(`[data-fmt="${fmt}"]`);
+    if (!b) return;
+    b.setAttribute('aria-pressed', String(on));
+    b.classList.toggle('on', on);
+  };
+  press('bold', st.bold);
+  press('italic', st.italic);
+  if (f.box) {
+    for (const a of ['left', 'center', 'right']) press(`align-${a}`, state.boxEdit.align === a);
+    press('frame', state.boxEdit.frame);
+  }
+}
+
+/**
+ * Applies a change of look. The text stays selected: a button gives the
+ * focus back to the text, while the font list and the size keep it, so the
+ * next change can follow right away.
+ */
+function applyFormat(change, backToText = true) {
   const f = formatTarget();
   if (!f) return;
   if (f.box) {
@@ -1988,11 +2034,23 @@ function applyFormat(change) {
   } else {
     act({ type: 'set_text_style', kind: f.kind, style: { ...f.style, ...change.style } });
   }
-  // Redraw the bar once the change is in.
-  queue.then(() => { if (textEdit.key) { showFormatBar(); textEdit.field.focus({ preventScroll: true }); } });
+  // Show the new values once the change is in.
+  queue.then(() => {
+    if (!textEdit.key) return;
+    syncFormatBar();
+    placeTextInput();
+    if (backToText) textEdit.field.focus({ preventScroll: true });
+  });
 }
 
 formatBar.addEventListener('mousedown', (ev) => { if (ev.target.closest('button')) ev.preventDefault(); });
+formatBar.addEventListener('pointerdown', () => { barPointerDown = true; }, true);
+window.addEventListener('pointercancel', () => { barPointerDown = false; }, true);
+window.addEventListener('pointerup', () => {
+  if (!barPointerDown) return;
+  // After the click has moved the focus where it goes.
+  setTimeout(() => { barPointerDown = false; endTypingIfAway(); }, 0);
+}, true);
 formatBar.addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-fmt]');
   const f = b && formatTarget();
@@ -2006,20 +2064,19 @@ formatBar.addEventListener('click', (ev) => {
   else if (fmt === 'reset') applyFormat({ reset: true });
 });
 formatBar.addEventListener('change', (ev) => {
-  if (ev.target.matches('.fb-font')) applyFormat({ style: { font: ev.target.value } });
+  if (ev.target.matches('.fb-font')) applyFormat({ style: { font: ev.target.value } }, false);
   if (ev.target.matches('.fb-size')) {
     const pt = Number(ev.target.value);
-    if (pt >= 4 && pt <= 72) applyFormat({ style: { size: Math.round(pt * 10) } });
+    if (pt >= 4 && pt <= 72) applyFormat({ style: { size: Math.round(pt * 10) } }, false);
   }
 });
 formatBar.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') { ev.preventDefault(); textEdit.field?.focus(); }
-  if (ev.key === 'Enter' && ev.target.matches('.fb-size')) { ev.preventDefault(); ev.target.blur(); }
+  // Enter in the size: apply it and go back to the text.
+  if (ev.key === 'Enter' && ev.target.matches('.fb-size')) { ev.preventDefault(); ev.target.dispatchEvent(new Event('change', { bubbles: true })); textEdit.field?.focus(); }
 });
-// Leaving the bar for anywhere but the field ends the typing.
-formatBar.addEventListener('focusout', (ev) => {
-  if (ev.relatedTarget !== textEdit.field && !formatBar.contains(ev.relatedTarget)) commitTextEdit();
-});
+// Leaving the bar for anywhere but the text ends the typing.
+formatBar.addEventListener('focusout', () => setTimeout(endTypingIfAway, 0));
 
 /** Score → Text Styles…: the look of every kind of text at once. */
 async function textStylesDialog() {

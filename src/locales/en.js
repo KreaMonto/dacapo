@@ -577,6 +577,8 @@ export default {
   'status.rests': 'Placing {value} rests',
   'status.rests.help': '— click to place · Esc to stop',
   'status.erase': 'Eraser',
+  'status.text': 'Text box',
+  'status.text.help': '— click on a page to write there · Esc to stop',
   'status.erase.help': '— click a note, or drag a box · Esc to stop',
   'status.mark': 'Placing {name}',
   'status.mark.help': '— click a note · Esc to stop',
