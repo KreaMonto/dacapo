@@ -15,8 +15,9 @@
 //   data-i18n-aria / -placeholder / -title → those attributes
 
 import en from './locales/en.js';
+import es from './locales/es.js';
 
-const LOCALES = { en };
+const LOCALES = { en, es };
 export const LANGUAGES = Object.keys(LOCALES);
 
 /** The language to use: the user's choice if any, else the system's, else English. */

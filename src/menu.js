@@ -8,15 +8,19 @@
 //   ]}]
 //
 // `checked` and `enabled` are functions, evaluated every time a menu opens.
-// Keyboard: Alt focuses the bar, Alt+<first letter> opens a menu, arrows
-// move, Enter/Space activates, Esc closes.
+// Keyboard: Alt focuses the bar, Alt+<letter> opens a menu, arrows move,
+// Enter/Space activates, Esc closes. The letter is the first one, or the
+// one after '&' in a top-level label ('A&yuda' opens with Alt+Y), so a
+// translation can avoid two menus starting with the same letter.
 
 import { keyLabel } from './i18n.js';
 
 export function installMenuBar(bar, menus, run, onClose) {
+  const amp = (label) => Math.max(0, label.indexOf('&'));
+  const letters = menus.map((m) => m.label.replace('&', '')[amp(m.label)].toLowerCase());
   bar.setAttribute('role', 'menubar');
   bar.innerHTML = menus
-    .map((m, i) => `<div class="menu"><button class="menu-top" role="menuitem" aria-haspopup="true" aria-expanded="false" data-i="${i}" tabindex="-1">${m.label}</button><div class="menu-pop" role="menu" hidden></div></div>`)
+    .map((m, i) => `<div class="menu"><button class="menu-top" role="menuitem" aria-haspopup="true" aria-expanded="false" aria-keyshortcuts="Alt+${letters[i].toUpperCase()}" data-i="${i}" tabindex="-1">${m.label.replace('&', '')}</button><div class="menu-pop" role="menu" hidden></div></div>`)
     .join('');
   const tops = [...bar.querySelectorAll('.menu-top')];
   let open = -1;
@@ -129,7 +133,7 @@ export function installMenuBar(bar, menus, run, onClose) {
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Alt') { altAlone = true; return; }
     if (ev.altKey && !ev.ctrlKey && ev.key.length === 1) {
-      const i = menus.findIndex((m) => m.label[0].toLowerCase() === ev.key.toLowerCase());
+      const i = letters.indexOf(ev.key.toLowerCase());
       if (i !== -1) { ev.preventDefault(); openMenu(i, true); }
     }
     altAlone = false;
