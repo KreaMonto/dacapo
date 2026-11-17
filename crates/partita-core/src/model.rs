@@ -289,7 +289,31 @@ pub struct Event {
     /// empty syllables at the end. Rests have no lyrics.
     #[serde(default)]
     pub lyrics: Vec<Syllable>,
+    /// Words attached to the event (an expression, a technique), at most one
+    /// of each kind, in kind order. Since file format 7 (recovery format 8).
+    #[serde(default)]
+    pub texts: Vec<NoteText>,
 }
+
+/// Where words attached to a note go, and how they look.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoteTextKind {
+    /// Under the staff, in italics: how to play (dolce, espressivo, cresc.).
+    Expression,
+    /// Over the staff: a playing technique (pizz., arco, con sord.).
+    Technique,
+}
+
+/// Words attached to a note or rest: they move, copy and disappear with it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteText {
+    pub kind: NoteTextKind,
+    pub text: String,
+}
+
+/// Longest text attached to a note, in characters.
+pub const MAX_NOTE_TEXT_CHARS: usize = 60;
 
 /// The current fields of [`Event`], as read from JSON or binary data.
 #[derive(Deserialize)]
@@ -304,6 +328,20 @@ struct EventFields {
     #[serde(default)]
     dynamic: Option<Dynamic>,
     #[serde(default)]
+    lyrics: Vec<Syllable>,
+    #[serde(default)]
+    texts: Vec<NoteText>,
+}
+
+/// [`Event`] as written to recovery data before note texts (formats 4 to 7).
+#[derive(Deserialize)]
+struct EventPreTexts {
+    id: EventId,
+    duration: Duration,
+    kind: EventKind,
+    tie: bool,
+    articulations: Vec<Articulation>,
+    dynamic: Option<Dynamic>,
     lyrics: Vec<Syllable>,
 }
 
@@ -326,8 +364,9 @@ thread_local! {
 /// Runs `f` with the document types read in the binary layout of recovery
 /// format `version`: 3 (Da Capo 0.2.0 and 0.2.1: no lyrics, no staff
 /// instruments, no page texts), 4 (Da Capo 0.2.2: no staff instruments, no
-/// page texts), 5 (Partita 0.3.0: no page texts) or 6 (development builds
-/// before 0.4.0: no tempo markings).
+/// page texts), 5 (Partita 0.3.0: no page texts), or 6 and 7 (development
+/// builds before 0.4.0: no tempo markings in 6; no note texts or rehearsal
+/// marks in either).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
@@ -360,6 +399,20 @@ impl<'de> Deserialize<'de> for Event {
                 articulations: e.articulations,
                 dynamic: e.dynamic,
                 lyrics: Vec::new(),
+                texts: Vec::new(),
+            });
+        }
+        if matches!(legacy_format(), 4..=7) {
+            let e = EventPreTexts::deserialize(deserializer)?;
+            return Ok(Event {
+                id: e.id,
+                duration: e.duration,
+                kind: e.kind,
+                tie: e.tie,
+                articulations: e.articulations,
+                dynamic: e.dynamic,
+                lyrics: e.lyrics,
+                texts: Vec::new(),
             });
         }
         let e = EventFields::deserialize(deserializer)?;
@@ -371,6 +424,7 @@ impl<'de> Deserialize<'de> for Event {
             articulations: e.articulations,
             dynamic: e.dynamic,
             lyrics: e.lyrics,
+            texts: e.texts,
         })
     }
 }
@@ -394,6 +448,7 @@ impl Event {
             articulations: Vec::new(),
             dynamic: None,
             lyrics: Vec::new(),
+            texts: Vec::new(),
         }
     }
 
@@ -496,6 +551,9 @@ pub struct MeasureAttrs {
     pub key: KeySignature,
     /// Since file format 7 (recovery format 7).
     pub tempo: Option<TempoMark>,
+    /// A rehearsal mark at the start of this measure ("A", "12"), printed
+    /// in a box. Since file format 7 (recovery format 8).
+    pub rehearsal: Option<String>,
 }
 
 impl Default for MeasureAttrs {
@@ -504,6 +562,7 @@ impl Default for MeasureAttrs {
             time: TimeSignature::COMMON,
             key: KeySignature::default(),
             tempo: None,
+            rehearsal: None,
         }
     }
 }
@@ -513,6 +572,16 @@ struct MeasureAttrsFields {
     time: TimeSignature,
     key: KeySignature,
     #[serde(default)]
+    tempo: Option<TempoMark>,
+    #[serde(default)]
+    rehearsal: Option<String>,
+}
+
+/// [`MeasureAttrs`] as written to recovery format 7 (before rehearsal marks).
+#[derive(Deserialize)]
+struct MeasureAttrsPreRehearsal {
+    time: TimeSignature,
+    key: KeySignature,
     tempo: Option<TempoMark>,
 }
 
@@ -532,6 +601,16 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
                 time: a.time,
                 key: a.key,
                 tempo: None,
+                rehearsal: None,
+            });
+        }
+        if legacy_format() == 7 {
+            let a = MeasureAttrsPreRehearsal::deserialize(deserializer)?;
+            return Ok(MeasureAttrs {
+                time: a.time,
+                key: a.key,
+                tempo: a.tempo,
+                rehearsal: None,
             });
         }
         let a = MeasureAttrsFields::deserialize(deserializer)?;
@@ -539,6 +618,7 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
             time: a.time,
             key: a.key,
             tempo: a.tempo,
+            rehearsal: a.rehearsal,
         })
     }
 }
@@ -1030,9 +1110,23 @@ impl Score {
             .unwrap_or(self.tempo)
     }
 
-    /// Whether any measure has a tempo marking (which needs file format 7).
+    /// Whether any measure has a tempo marking.
     pub fn has_tempo_marks(&self) -> bool {
         self.measures.iter().any(|a| a.tempo.is_some())
+    }
+
+    /// Whether the score has tempo markings, rehearsal marks or texts on
+    /// notes (which need file format 7).
+    pub fn has_markings(&self) -> bool {
+        self.has_tempo_marks()
+            || self.measures.iter().any(|a| a.rehearsal.is_some())
+            || self
+                .staves
+                .iter()
+                .flat_map(|s| s.measures.iter())
+                .flat_map(|m| m.voices.iter())
+                .flatten()
+                .any(|e| !e.texts.is_empty())
     }
 
     /// Empty score: one treble staff with `measures` empty measures in 4/4.

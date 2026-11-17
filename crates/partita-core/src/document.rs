@@ -16,9 +16,9 @@ use crate::cursor::{self, Caret, Move, SelectionRange};
 use crate::history::{History, Transaction, TxKind};
 use crate::model::{
     is_measure_rest, Articulation, Clef, Duration, Dynamic, Event, EventId, EventKind, GroupKind,
-    KeySignature, LyricJoin, MeasureAttrs, Metadata, Pitch, Score, Slur, StaffGroup, Step,
-    Syllable, TempoMark, TimeSignature, Transposition, MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS,
-    MAX_VERSES,
+    KeySignature, LyricJoin, MeasureAttrs, Metadata, NoteText, NoteTextKind, Pitch, Score, Slur,
+    StaffGroup, Step, Syllable, TempoMark, TimeSignature, Transposition, MAX_NOTE_TEXT_CHARS,
+    MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS, MAX_VERSES,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
 
@@ -1219,6 +1219,69 @@ impl Document {
         self.commit(TxKind::Edit, ops, caret, now_ms, false)
     }
 
+    /// Words attached to event `id`: an expression under the staff or a
+    /// technique over it. Empty `text` removes that kind. One undo step.
+    pub fn set_note_text(
+        &mut self,
+        id: EventId,
+        kind: NoteTextKind,
+        text: &str,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let Some((staff, measure, voice, index)) = self.score.locate(id) else {
+            return Ok(());
+        };
+        let text: String = text.trim().chars().take(MAX_NOTE_TEXT_CHARS).collect();
+        let mut event = self.score.staves[staff].measures[measure].voices[voice][index].clone();
+        let before = event.texts.clone();
+        event.texts.retain(|t| t.kind != kind);
+        if !text.is_empty() {
+            event.texts.push(NoteText { kind, text });
+            event.texts.sort_by_key(|t| t.kind);
+        }
+        if event.texts == before {
+            return Ok(());
+        }
+        let op = Op::ReplaceEvent {
+            at: VoiceLoc {
+                staff,
+                measure,
+                voice,
+            },
+            index,
+            event,
+        };
+        let caret = self.caret;
+        self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
+    }
+
+    /// A rehearsal mark ("A", "B"…) at the start of `measure`, or none.
+    pub fn set_rehearsal(
+        &mut self,
+        measure: usize,
+        text: Option<String>,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let Some(current) = self.score.measures.get(measure).cloned() else {
+            return Err(crate::ops::OpError::MeasureIndex(measure).into());
+        };
+        let text = text
+            .map(|t| t.trim().chars().take(12).collect::<String>())
+            .filter(|t| !t.is_empty());
+        if current.rehearsal == text {
+            return Ok(());
+        }
+        let op = Op::SetMeasureAttrs {
+            index: measure,
+            attrs: MeasureAttrs {
+                rehearsal: text,
+                ..current
+            },
+        };
+        let caret = self.caret;
+        self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
+    }
+
     // ----- clipboard -----------------------------------------------------
 
     pub fn copy(&self) -> Option<Clipboard> {
@@ -1304,10 +1367,11 @@ impl Document {
     /// Adds an empty measure at `index` (copying the attributes in force).
     pub fn insert_measure(&mut self, index: usize, now_ms: u64) -> Result<(), EditError> {
         let index = index.min(self.score.measures.len());
-        // The time and key in force, without the tempo marking (which belongs
-        // to its own measure).
+        // The time and key in force, without the tempo and rehearsal marks
+        // (which belong to their own measure).
         let attrs = MeasureAttrs {
             tempo: None,
+            rehearsal: None,
             ..self.score.measures[index.saturating_sub(1).min(self.score.measures.len() - 1)]
                 .clone()
         };
@@ -1456,6 +1520,72 @@ impl Document {
         props: StaffProps,
         now_ms: u64,
     ) -> Result<(), EditError> {
+        let ops = self.staff_property_ops(staff, &props)?;
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
+    }
+
+    /// Changes an instrument from the staff dialog: `staff` gets `props`,
+    /// and the other staves of its brace (a piano's left hand) the same name,
+    /// sound and transposition, each keeping its clef. A staff on its own
+    /// with `staves` 2 or more becomes a grand staff: bass staves are added
+    /// below it, braced with it. One undo step.
+    pub fn set_instrument(
+        &mut self,
+        staff: usize,
+        props: StaffProps,
+        staves: usize,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let Some(current) = self.score.staves.get(staff).cloned() else {
+            return Err(crate::ops::OpError::StaffIndex(staff).into());
+        };
+        let mut ops = self.staff_property_ops(staff, &props)?;
+        let brace = current.group.filter(|g| g.kind == GroupKind::Brace);
+        if let Some(brace) = brace {
+            let partners: Vec<usize> = (0..self.score.staves.len())
+                .filter(|&s| s != staff && self.score.staves[s].group == Some(brace))
+                .collect();
+            for s in partners {
+                let own = StaffProps {
+                    clef: self.score.staves[s].clef,
+                    ..props.clone()
+                };
+                ops.extend(self.staff_property_ops(s, &own)?);
+            }
+        } else if staves > 1 {
+            let clip =
+                |s: &str| -> String { s.trim().chars().take(MAX_STAFF_NAME_CHARS).collect() };
+            let group = Some(StaffGroup {
+                id: self.score.alloc_id(),
+                kind: GroupKind::Brace,
+            });
+            ops.push(Op::SetStaffGroup { staff, group });
+            for k in 1..staves.min(4) {
+                let mut added = self.score.blank_staff(clip(&props.name), Clef::Bass);
+                added.short_name = clip(&props.short_name);
+                added.instrument = props.instrument.min(127);
+                added.transposition = props.transposition;
+                added.group = group;
+                ops.push(Op::InsertStaff {
+                    index: staff + k,
+                    staff: added,
+                });
+            }
+        }
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
+    }
+
+    /// The ops that give staff `staff` the properties `props` (nothing for
+    /// what already matches).
+    fn staff_property_ops(&self, staff: usize, props: &StaffProps) -> Result<Vec<Op>, EditError> {
         let Some(current) = self.score.staves.get(staff) else {
             return Err(crate::ops::OpError::StaffIndex(staff).into());
         };
@@ -1512,11 +1642,7 @@ impl Document {
                 transposition: new,
             });
         }
-        if ops.is_empty() {
-            return Ok(());
-        }
-        let caret = self.caret;
-        self.commit(TxKind::Edit, ops, caret, now_ms, false)
+        Ok(ops)
     }
 
     pub fn set_staff_name(
@@ -1632,6 +1758,89 @@ mod tests {
             .iter()
             .map(|e| e.pitches().first().map(|p| p.step))
             .collect()
+    }
+
+    #[test]
+    fn texts_on_notes_and_rehearsal_marks() {
+        let mut doc = Document::new(Score::new("t", 3));
+        type_notes(&mut doc, &[C, D], 0);
+        let id = doc.score.voice(0, 0, 0).unwrap()[0].id;
+        doc.set_note_text(id, NoteTextKind::Technique, "pizz.", 1_000)
+            .unwrap();
+        doc.set_note_text(id, NoteTextKind::Expression, "  dolce ", 2_000)
+            .unwrap();
+        let texts = |d: &Document| d.score.voice(0, 0, 0).unwrap()[0].texts.clone();
+        assert_eq!(
+            texts(&doc),
+            vec![
+                NoteText {
+                    kind: NoteTextKind::Expression,
+                    text: "dolce".into()
+                },
+                NoteText {
+                    kind: NoteTextKind::Technique,
+                    text: "pizz.".into()
+                },
+            ],
+            "trimmed, one per kind, in kind order"
+        );
+        doc.set_note_text(id, NoteTextKind::Technique, "", 3_000)
+            .unwrap();
+        assert_eq!(texts(&doc).len(), 1);
+        doc.undo().unwrap();
+        assert_eq!(texts(&doc).len(), 2, "removing is one undo step");
+
+        doc.set_rehearsal(1, Some("A".into()), 4_000).unwrap();
+        assert_eq!(doc.score.measures[1].rehearsal.as_deref(), Some("A"));
+        doc.insert_measure(2, 5_000).unwrap();
+        assert!(doc.score.measures[2].rehearsal.is_none(), "not copied");
+        doc.set_rehearsal(1, Some("  ".into()), 6_000).unwrap();
+        assert!(doc.score.measures[1].rehearsal.is_none(), "blank removes");
+        assert!(doc.score.has_markings(), "the texts on the note remain");
+    }
+
+    #[test]
+    fn a_lone_staff_becomes_a_grand_staff_and_braced_staves_change_together() {
+        let mut doc = Document::new(Score::new("t", 2));
+        let piano = StaffProps {
+            name: "Piano".into(),
+            short_name: "Pno.".into(),
+            instrument: 1,
+            clef: Clef::Treble,
+            transposition: Transposition::NONE,
+        };
+        doc.set_instrument(0, piano.clone(), 2, 1_000).unwrap();
+        let s = &doc.score.staves;
+        assert_eq!(s.len(), 2);
+        assert_eq!((s[0].clef, s[1].clef), (Clef::Treble, Clef::Bass));
+        assert_eq!((s[1].name.as_str(), s[1].instrument), ("Piano", 1));
+        assert!(s[0].group.is_some() && s[0].group == s[1].group);
+        doc.undo().unwrap();
+        assert_eq!(doc.score.staves.len(), 1, "one undo step");
+        assert!(doc.score.staves[0].group.is_none());
+        doc.redo().unwrap();
+
+        // Renaming one hand renames the instrument; each hand keeps its clef.
+        let harp = StaffProps {
+            name: "Harp".into(),
+            short_name: "Hp.".into(),
+            instrument: 46,
+            ..piano
+        };
+        doc.set_instrument(
+            1,
+            StaffProps {
+                clef: Clef::Bass,
+                ..harp
+            },
+            2,
+            2_000,
+        )
+        .unwrap();
+        let s = &doc.score.staves;
+        assert_eq!(s.len(), 2, "already a grand staff: nothing added");
+        assert!(s.iter().all(|st| st.name == "Harp" && st.instrument == 46));
+        assert_eq!((s[0].clef, s[1].clef), (Clef::Treble, Clef::Bass));
     }
 
     #[test]

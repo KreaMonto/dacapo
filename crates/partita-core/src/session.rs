@@ -210,6 +210,30 @@ mod tests {
     }
 
     #[test]
+    fn note_texts_and_rehearsal_marks_survive_a_crash() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = store(tmp.path());
+        let mut s = Session::start(Document::new(Score::new("Air", 2)), Some(&store)).unwrap();
+        s.edit(|d| d.insert_note(Step::A, Q, 0).unwrap());
+        let id = s.doc().score.voice(0, 0, 0).unwrap()[0].id;
+        s.edit(|d| {
+            d.set_note_text(
+                id,
+                crate::model::NoteTextKind::Expression,
+                "cantabile",
+                1_000,
+            )
+            .unwrap()
+        });
+        s.edit(|d| d.set_rehearsal(1, Some("B".into()), 2_000).unwrap());
+        let expected = s.doc().score.clone();
+        crash(s);
+        let found = store.scan();
+        let loaded = store.load(found[0].session_id).unwrap();
+        assert_eq!(loaded.document.score, expected);
+    }
+
+    #[test]
     fn tempo_markings_survive_a_crash() {
         let tmp = tempfile::tempdir().unwrap();
         let store = store(tmp.path());

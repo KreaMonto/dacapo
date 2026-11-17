@@ -251,6 +251,13 @@ pub fn export(score: &Score) -> String {
                 x.push_str("      </attributes>\n");
             }
             if s == 0 {
+                if let Some(mark) = &score.measures[m].rehearsal {
+                    let _ = writeln!(
+                        x,
+                        "      <direction placement=\"above\"><direction-type><rehearsal>{}</rehearsal></direction-type></direction>",
+                        esc(mark)
+                    );
+                }
                 if let Some(direction) = tempo_direction(score, m) {
                     x.push_str(&direction);
                 }
@@ -283,6 +290,18 @@ pub fn export(score: &Score) -> String {
                     prev_in_voice[v] = events.last();
                 } else {
                     for e in events {
+                        for nt in &e.texts {
+                            let (placement, style) = match nt.kind {
+                                NoteTextKind::Expression => ("below", " font-style=\"italic\""),
+                                NoteTextKind::Technique => ("above", ""),
+                            };
+                            let _ = writeln!(
+                                x,
+                                "      <direction placement=\"{placement}\"><direction-type><words{style}>{}</words></direction-type><voice>{}</voice></direction>",
+                                esc(&nt.text),
+                                v + 1
+                            );
+                        }
                         if let Some(d) = e.dynamic {
                             let _ = writeln!(
                                 x,
@@ -832,6 +851,8 @@ struct Importer {
     unnamed: Vec<usize>,
     /// Tempo markings by measure, from the first part's directions.
     tempo_marks: HashMap<usize, TempoMark>,
+    /// Rehearsal marks by measure, from the first part.
+    rehearsals: HashMap<usize, String>,
 }
 
 impl Importer {
@@ -992,6 +1013,7 @@ impl Importer {
             }
             attrs.push(MeasureAttrs {
                 tempo: self.tempo_marks.remove(&m),
+                rehearsal: self.rehearsals.remove(&m),
                 ..last.clone()
             });
         }
@@ -1102,6 +1124,8 @@ impl Importer {
         let mut divisions = 1.0f64;
         let mut open_slurs: HashMap<String, EventId> = HashMap::new();
         let mut pending_dynamic: HashMap<u32, Dynamic> = HashMap::new();
+        // Words waiting for the next note of their staff.
+        let mut pending_texts: HashMap<u32, Vec<NoteText>> = HashMap::new();
         let mut capacity = MeasureAttrs::default().time.measure_ticks();
         let mut current_attrs = MeasureAttrs::default();
 
@@ -1227,6 +1251,47 @@ impl Importer {
                         if first_part {
                             if let Some(mark) = tempo_mark_of(el, m, bpm) {
                                 self.tempo_marks.entry(m).or_insert(mark);
+                            }
+                            if let Some(r) = el
+                                .descendants()
+                                .find(|n| n.has_tag_name("rehearsal"))
+                                .and_then(|r| r.text())
+                                .map(str::trim)
+                                .filter(|r| !r.is_empty())
+                            {
+                                self.rehearsals.entry(m).or_insert_with(|| r.to_string());
+                            }
+                        }
+                        // Words that are not a tempo marking go on the next
+                        // note: italic or below the staff is an expression,
+                        // otherwise a technique.
+                        if bpm.is_none() {
+                            let words: Vec<roxmltree::Node> = el
+                                .descendants()
+                                .filter(|n| n.has_tag_name("words"))
+                                .collect();
+                            let text = words
+                                .iter()
+                                .filter_map(|w| w.text())
+                                .map(str::trim)
+                                .filter(|t| !t.is_empty())
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            if !text.is_empty() {
+                                let italic = words
+                                    .iter()
+                                    .any(|w| w.attribute("font-style") == Some("italic"));
+                                let kind = if italic || el.attribute("placement") == Some("below") {
+                                    NoteTextKind::Expression
+                                } else {
+                                    NoteTextKind::Technique
+                                };
+                                let list = pending_texts.entry(staff_no).or_default();
+                                list.retain(|t| t.kind != kind);
+                                list.push(NoteText {
+                                    kind,
+                                    text: text.chars().take(MAX_NOTE_TEXT_CHARS).collect(),
+                                });
                             }
                         }
                     }
@@ -1420,6 +1485,10 @@ impl Importer {
                         e.articulations.sort();
                         if e.dynamic.is_none() && !e.is_rest() {
                             e.dynamic = pending_dynamic.remove(&staff_no);
+                        }
+                        if let Some(mut texts) = pending_texts.remove(&staff_no) {
+                            texts.sort_by_key(|t| t.kind);
+                            e.texts = texts;
                         }
 
                         for (i, l) in children(el, "lyric").enumerate() {
@@ -1696,6 +1765,55 @@ mod tests {
         assert_eq!(back.tempo, 76);
         assert_eq!(back.measures[0].tempo, score.measures[0].tempo);
         assert_eq!(back.measures[1].tempo, score.measures[1].tempo);
+    }
+
+    #[test]
+    fn note_texts_and_rehearsal_marks_round_trip() {
+        let mut score = sample();
+        let e = &mut score.staves[0].measures[0].voices[0][0];
+        e.texts = vec![
+            NoteText {
+                kind: NoteTextKind::Expression,
+                text: "dolce".into(),
+            },
+            NoteText {
+                kind: NoteTextKind::Technique,
+                text: "con sord.".into(),
+            },
+        ];
+        score.measures[1].rehearsal = Some("A".into());
+        let xml = export(&score);
+        assert!(xml.contains("<words font-style=\"italic\">dolce</words>"));
+        assert!(xml.contains("<rehearsal>A</rehearsal>"));
+        let back = import(&xml, "x").unwrap().score;
+        assert_eq!(
+            back.staves[0].measures[0].voices[0][0].texts,
+            score.staves[0].measures[0].voices[0][0].texts
+        );
+        assert_eq!(back.measures[1].rehearsal.as_deref(), Some("A"));
+    }
+
+    #[test]
+    fn words_from_other_programs_become_expressions_or_techniques() {
+        let xml = r#"<score-partwise>
+  <part-list><score-part id="P1"><part-name>Violin</part-name></score-part></part-list>
+  <part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes>
+    <direction placement="above"><direction-type><words>pizz.</words></direction-type></direction>
+    <direction placement="below"><direction-type><words>espressivo</words></direction-type></direction>
+    <note><pitch><step>A</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note>
+  </measure></part>
+</score-partwise>"#;
+        let s = import(xml, "x").unwrap().score;
+        let texts = &s.staves[0].measures[0].voices[0][0].texts;
+        assert_eq!(texts.len(), 2);
+        assert_eq!(
+            (texts[0].kind, texts[0].text.as_str()),
+            (NoteTextKind::Expression, "espressivo")
+        );
+        assert_eq!(
+            (texts[1].kind, texts[1].text.as_str()),
+            (NoteTextKind::Technique, "pizz.")
+        );
     }
 
     #[test]

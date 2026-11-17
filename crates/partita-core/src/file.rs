@@ -34,9 +34,9 @@ pub const FILE_EXTENSION: &str = "partita";
 /// - 6: staff instruments, short names, transpositions and brackets or
 ///   braces. Only files that use one of them are written as version 6.
 /// - 7: page texts in the metadata (subtitle, dedication, lyricist, part,
-///   copyright, running header and footer, and page numbering) and tempo
-///   markings on measures. Only files that use one of them are written as
-///   version 7.
+///   copyright, running header and footer, and page numbering), tempo
+///   markings and rehearsal marks on measures, and texts on notes. Only
+///   files that use one of them are written as version 7.
 pub const FORMAT_VERSION: u32 = 7;
 const FORMAT_MARKER: &str = "partita";
 /// Marker written by Da Capo (the project's former name) up to 0.2.2.
@@ -83,7 +83,7 @@ fn required_version(score: &Score) -> u32 {
                 .any(|m| m.voices.iter().any(|v| v.iter().any(test)))
         })
     };
-    if score.metadata.uses_page_texts() || score.has_tempo_marks() {
+    if score.metadata.uses_page_texts() || score.has_markings() {
         7
     } else if score.staves.iter().any(|s| {
         s.instrument != 0
@@ -366,6 +366,15 @@ mod tests {
         }
         let old = from_bytes(&serde_json::to_vec(&v).unwrap()).unwrap();
         assert!(!old.has_tempo_marks());
+    }
+
+    #[test]
+    fn note_texts_and_rehearsal_marks_need_format_7() {
+        let mut score = Score::new("Etude", 1);
+        score.measures[0].rehearsal = Some("A".into());
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format_version"], 7);
+        assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
     }
 
     #[test]

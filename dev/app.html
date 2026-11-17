@@ -189,6 +189,20 @@
         }
       },
       set_dynamic({ dynamic }) { const e = voiceOf(view.caret)[view.caret.index - 1]; if (e) { snapshot(); e.dynamic = e.dynamic === dynamic ? null : dynamic; } },
+      // As Document::set_note_text: one text per kind ('' removes it).
+      set_note_text({ id, kind, text }) {
+        for (const st of view.score.staves) for (const cell of st.measures) for (const v of cell.voices) for (const e of v) {
+          if (e.id !== id) continue;
+          snapshot();
+          e.texts = (e.texts || []).filter((nt) => nt.kind !== kind);
+          if (text.trim()) e.texts.push({ kind, text: text.trim() });
+          e.texts.sort((a, b) => a.kind.localeCompare(b.kind));
+        }
+      },
+      set_rehearsal({ measure, text }) {
+        snapshot();
+        view.score.measures[measure] = { ...view.score.measures[measure], rehearsal: text?.trim() || null };
+      },
       // As Document::set_tempo_mark: in measure 1 the value is the opening tempo.
       set_tempo_mark({ measure, mark }) {
         snapshot();
@@ -214,9 +228,24 @@
       },
       // (The fake backend does not re-spell notes when the transposition
       // changes; it only shows the new key and names.)
-      set_staff({ staff, name, short_name, instrument, clef, transposition }) {
+      // As Document::set_instrument: braced staves change together, and a
+      // lone staff with staves = 2 gets a bass staff below, braced.
+      set_staff({ staff, name, short_name, instrument, clef, transposition, staves = 1 }) {
         snapshot();
-        Object.assign(view.score.staves[staff], { name, short_name, instrument, clef, transposition });
+        const st = view.score.staves[staff];
+        const brace = st.group?.kind === 'brace' ? st.group.id : null;
+        for (const other of view.score.staves) {
+          if (other === st || (brace !== null && other.group?.id === brace)) {
+            Object.assign(other, { name, short_name, instrument, transposition }, other === st ? { clef } : {});
+          }
+        }
+        if (brace === null && staves > 1) {
+          st.group = { id: nextId++, kind: 'brace' };
+          view.score.staves.splice(staff + 1, 0, {
+            id: nextId++, name, short_name, clef: 'bass', instrument, transposition, group: st.group,
+            measures: view.score.measures.map(() => blank()),
+          });
+        }
       },
       add_staff({ clef, name, short_name, instrument, transposition, staves = 1 }) {
         snapshot();

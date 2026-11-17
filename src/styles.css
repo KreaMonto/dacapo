@@ -224,6 +224,21 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .palette summary:hover { color: var(--text); }
 .palette .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 .palette .grid3 button { padding: 0; height: 32px; }
+/* Indications: tempo, expression, technique, rehearsal mark. */
+.palette .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.palette .text-btn { height: 32px; padding: 0 4px; font: 14px Georgia, "Times New Roman", serif; white-space: nowrap; }
+.palette .text-btn .m { font-family: Bravura; font-size: 22px; line-height: 0; vertical-align: -3px; }
+.palette .text-btn .boxed { border: 1.5px solid currentColor; border-radius: 2px; padding: 0 5px; font-weight: 700; }
+/* Words on notes and rehearsal marks in the score: click to change them. */
+.score .ntext { cursor: text; }
+.score .ntext-expression { font-style: italic; }
+.score .ntext.placeholder { opacity: 0.5; }
+.score .rehearsal rect { fill: none; stroke: var(--ink); stroke-width: 1.4; }
+.score .rehearsal text { fill: var(--ink); font-weight: 700; }
+.score .rehearsal { cursor: text; }
+.score .rehearsal:hover rect { stroke: var(--accent); }
+.score .rehearsal:hover text { fill: var(--accent); }
+@media print { .score .ntext.placeholder { display: none; } .score .rehearsal rect { stroke: #000; } .score .rehearsal text { fill: #000; } }
 .palette .mark-btn { font-size: 28px; padding-top: 14px; }
 .palette .dynamics button { font-size: 22px; padding-top: 4px; }
 .palette .icon-btn { padding: 4px 6px; height: 32px; }

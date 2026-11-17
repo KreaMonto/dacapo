@@ -189,6 +189,12 @@ async function staffDialog(staff) {
   if (!current) return;
   const trans = current.transposition || { diatonic: 0, chromatic: 0 };
   const listed = transpositionKey(trans);
+  // Staves of this instrument: those braced with it (a piano's two hands).
+  // A lone staff can become a grand staff here; going back means deleting
+  // the extra staff, so a braced instrument shows its count, fixed.
+  const group = !adding && current.group?.kind === 'brace' ? current.group.id : null;
+  const braced = group === null ? 1 : doc.score.staves.filter((st) => st.group?.id === group).length;
+  const proposed = adding ? instrumentByProgram(current.instrument || 0).staves : braced;
   const transOptions = TRANSPOSITIONS.map((tr) =>
     `<option value="${tr.key}"${tr.key === listed ? ' selected' : ''}>${esc(tr.label)}</option>`).join('')
     + (listed ? '' : `<option value="custom" selected>${esc(t('staff.transposition.other', trans))}</option>`);
@@ -208,11 +214,13 @@ async function staffDialog(staff) {
       <label>${esc(t('staff.transposition'))}
         <select id="staff-trans">${transOptions}</select></label>
     </div>
-    ${adding ? `<label>${esc(t('staff.count'))}
-      <select id="staff-count">
+    <label>${esc(t('staff.count'))}
+      <select id="staff-count"${braced > 1 ? ' disabled' : ''}>
         <option value="1">${esc(t('staff.count.one'))}</option>
-        <option value="2"${instrumentByProgram(current.instrument || 0).staves === 2 ? ' selected' : ''}>${esc(t('staff.count.two'))}</option>
-      </select></label>` : ''}
+        <option value="2"${proposed === 2 ? ' selected' : ''}>${esc(t('staff.count.two'))}</option>
+        ${braced > 2 ? `<option value="${braced}" selected>${esc(t('staff.count.n', { n: braced }))}</option>` : ''}
+      </select></label>
+    ${braced > 1 ? `<p class="muted hint">${esc(t('staff.count.braced'))}</p>` : ''}
     <p class="muted hint">${esc(t('staff.hint'))}</p>
   </form>`;
   const pending = choiceDialog(adding ? t('staff.title.add') : t('staff.title'), body, [
@@ -242,7 +250,7 @@ async function staffDialog(staff) {
     if (!shortTouched) short.value = shortNameFor(name.value, i);
     clef.value = i.clef;
     transSel.value = transpositionKey(i.transposition) || 'none';
-    if (count) count.value = String(i.staves);
+    if (!count.disabled) count.value = String(i.staves);
   });
   $('staff-form').addEventListener('submit', (ev) => { ev.preventDefault(); $('dialog').querySelector('[data-answer="ok"]').click(); });
   name.focus();
@@ -259,7 +267,7 @@ async function staffDialog(staff) {
     transposition: chosen ? { diatonic: chosen.diatonic, chromatic: chosen.chromatic } : trans,
   };
   if (adding) await act({ type: 'add_staff', ...props, staves: Number(count.value) });
-  else await act({ type: 'set_staff', staff, ...props });
+  else await act({ type: 'set_staff', staff, ...props, staves: Number(count.value) });
 }
 
 /** Joins the selected staves with a bracket or brace, or ungroups them. */
@@ -377,6 +385,7 @@ function render() {
     multiRest: state.multiRest, view: state.view, paper: state.paper, zoom: state.zoom, lyricEdit: lyricEdit(doc),
     // Grey hints where an empty title or composer can be clicked (not printed).
     placeholders: { title: t('pagetext.title'), composer: t('pagetext.composer') },
+    noteTextEdit: state.noteTextEdit,
   });
   if (layout.mode === 'page') {
     scoreEl.innerHTML = pages.map((svg, i) => {
@@ -732,6 +741,7 @@ document.addEventListener('keydown', (ev) => {
       return;
     }
     if (lower === 'l') { ev.preventDefault(); runCommand('lyrics'); return; }
+    if (lower === 'e') { ev.preventDefault(); commitLyric(); runCommand('note-text:expression'); return; }
   }
   // Menus and dialogs handle their own keys.
   if (target.closest?.('.menubar, dialog')) return;
@@ -819,6 +829,19 @@ $('score').addEventListener('mousedown', (ev) => {
   if (ev.button !== 0) return;
   // Texts around the music (title, header, footer...): a click edits the
   // text there; the page number opens the dialog with all of them.
+  // Words on a note and rehearsal marks: typed over where they are.
+  const ntext = ev.target.closest?.('[data-ntext]');
+  if (ntext && !ntext.classList.contains('placeholder')) {
+    ev.preventDefault();
+    openTextEdit(`note:${ntext.dataset.ntext}`);
+    return;
+  }
+  const rehearsal = ev.target.closest?.('[data-rehearsal]');
+  if (rehearsal) {
+    ev.preventDefault();
+    openTextEdit(`rehearsal:${rehearsal.dataset.rehearsal}`);
+    return;
+  }
   // A tempo marking opens its dialog.
   const tempo = ev.target.closest?.('[data-tempo]');
   if (tempo) {
@@ -1650,7 +1673,7 @@ lyric.input.addEventListener('keydown', (ev) => {
 // (Score → Titles, Header and Footer…) has every text and the page numbers.
 
 const textEdit = {
-  key: null, // the metadata field being typed
+  key: null, // what is being typed: see textTarget
   input: Object.assign(document.createElement('input'), {
     className: 'lyric-input text-input', type: 'text', autocomplete: 'off', hidden: true,
   }),
@@ -1665,16 +1688,56 @@ function setMetadata(changes) {
   if (doc) act({ type: 'set_metadata', ...metadataOf(doc), ...changes });
 }
 
+/**
+ * What a text field edits, by key: a page text ('title', 'footer'…), words
+ * on a note ('note:<id>:<kind>') or a rehearsal mark ('rehearsal:<measure>').
+ */
+function textTarget(key, doc) {
+  const [type, a, b] = key.split(':');
+  if (type === 'note') {
+    const found = findEvent(doc, Number(a));
+    return {
+      selector: `[data-ntext="${a}:${b}"]`,
+      value: found?.e.texts?.find((nt) => nt.kind === b)?.text ?? '',
+      label: t(`notetext.${b}`),
+      write: (text) => act({ type: 'set_note_text', id: Number(a), kind: b, text }),
+    };
+  }
+  if (type === 'rehearsal') {
+    const measure = Number(a);
+    return {
+      selector: `[data-rehearsal="${measure}"] text`,
+      value: doc.score.measures[measure]?.rehearsal ?? '',
+      label: t('rehearsal.label'),
+      write: (text) => act({ type: 'set_rehearsal', measure, text: text || null }),
+    };
+  }
+  return {
+    selector: `[data-text="${key}"]`,
+    value: metadataOf(doc)[key],
+    label: t(`pagetext.${key}`),
+    write: (text) => setMetadata({ [key]: text }),
+  };
+}
+
 function openTextEdit(key) {
   const doc = active();
   if (!doc) return;
   if (state.lyric) closeLyric();
   commitTextEdit();
+  const target = textTarget(key, doc);
   textEdit.key = key;
-  textEdit.input.value = metadataOf(doc)[key];
-  textEdit.input.setAttribute('aria-label', t(`pagetext.${key}`));
+  textEdit.input.value = target.value;
+  textEdit.input.setAttribute('aria-label', target.label);
   textEdit.input.hidden = false;
-  placeTextInput();
+  // New words on a note: drawn as a hint where they will go, to type over.
+  const [type, id, kind] = key.split(':');
+  if (type === 'note' && !target.value) {
+    state.noteTextEdit = { id: Number(id), kind, hint: t(`notetext.${kind}.hint`) };
+    render();
+  } else {
+    placeTextInput();
+  }
   textEdit.input.focus({ preventScroll: true });
   textEdit.input.select();
 }
@@ -1682,17 +1745,18 @@ function openTextEdit(key) {
 /** Puts the field over its text (after every render and scroll), in the text's own font and size. */
 function placeTextInput() {
   const key = textEdit.key;
-  if (!key) return;
-  const el = $('score').querySelector(`[data-text="${key}"]`);
+  const doc = active();
+  if (!key || !doc) return;
+  const el = $('score').querySelector(textTarget(key, doc).selector);
   const svg = el?.ownerSVGElement;
   if (!el || !svg) { textEdit.input.style.visibility = 'hidden'; return; }
   const box = svg.getBoundingClientRect();
   const vb = svg.viewBox.baseVal;
   const scale = box.width / vb.width;
-  const px = TEXT_SIZE[key] * scale;
+  const px = Number(el.getAttribute('font-size') || TEXT_SIZE.footer) * scale;
   const r = el.getBoundingClientRect();
-  const anchor = el.getAttribute('text-anchor');
-  const width = Math.max(r.width + 3 * px, 14 * px);
+  const anchor = el.getAttribute('text-anchor') || 'start';
+  const width = Math.max(r.width + 3 * px, 10 * px);
   const left = anchor === 'start' ? r.left - 0.3 * px : anchor === 'end' ? r.right - width + 0.3 * px : r.left + r.width / 2 - width / 2;
   const baseline = box.top + (Number(el.getAttribute('y')) - vb.y) * scale;
   const style = getComputedStyle(el);
@@ -1711,11 +1775,15 @@ function placeTextInput() {
 function commitTextEdit(cancel = false) {
   const key = textEdit.key;
   if (!key) return;
+  const doc = active();
+  const target = doc && textTarget(key, doc);
   textEdit.key = null;
   textEdit.input.hidden = true;
-  const doc = active();
+  const hinted = !!state.noteTextEdit;
+  state.noteTextEdit = null;
   const value = textEdit.input.value.trim();
-  if (!cancel && doc && value !== metadataOf(doc)[key]) setMetadata({ [key]: value });
+  if (!cancel && target && value !== target.value) target.write(value);
+  else if (hinted) render();
   page.focus();
 }
 
@@ -1724,6 +1792,36 @@ textEdit.input.addEventListener('keydown', (ev) => {
   else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); commitTextEdit(true); }
 });
 textEdit.input.addEventListener('blur', () => commitTextEdit());
+
+/**
+ * Notes → Expression / Technique: words on the note before the caret (or
+ * the one at it, at the start of a measure).
+ */
+function startNoteText(kind) {
+  const doc = active();
+  if (!doc) return;
+  const c = doc.caret;
+  const voice = doc.score.staves[c.staff]?.measures[c.measure]?.voices[c.voice] || [];
+  const e = voice[c.index - 1] || voice[c.index];
+  if (!e) { showError(t('error.notetext.nonote')); return; }
+  openTextEdit(`note:${e.id}:${kind}`);
+}
+
+/**
+ * Score → Rehearsal Mark: the next letter (A, B, C… after the last one
+ * before the caret's measure) at the start of that measure; if it has one
+ * already, it opens to be changed.
+ */
+function rehearsalMark() {
+  const doc = active();
+  if (!doc) return;
+  const m = doc.caret.measure;
+  if (doc.score.measures[m]?.rehearsal) { openTextEdit(`rehearsal:${m}`); return; }
+  const before = doc.score.measures.slice(0, m).map((a) => a.rehearsal).filter((r) => /^[A-Z]$/.test(r || ''));
+  const last = before.at(-1);
+  const next = last && last < 'Z' ? String.fromCharCode(last.charCodeAt(0) + 1) : 'A';
+  act({ type: 'set_rehearsal', measure: m, text: next });
+}
 
 // Page number positions offered in the dialog: edge and place across.
 const PAGE_NUMBER_PLACES = ['top-left', 'top-center', 'top-right', 'top-outside', 'bottom-left', 'bottom-center', 'bottom-right', 'bottom-outside'];
@@ -1801,6 +1899,11 @@ const TEMPO_WORDS = ['Grave', 'Largo', 'Lento', 'Adagio', 'Andante', 'Andante co
   'Allegretto', 'Allegro', 'Allegro moderato', 'Allegro vivace', 'Vivace', 'Presto', 'Prestissimo', 'a tempo',
   'Tempo I', 'rit.', 'rall.', 'accel.', 'Più mosso', 'Meno mosso'];
 
+// What a marking prints: words and metronome mark, one of them, or nothing
+// (it still plays).
+const TEMPO_SHOW = ['both', 'text', 'metronome', 'none'];
+const showOf = (mark) => (mark.show_text ? (mark.show_metronome ? 'both' : 'text') : mark.show_metronome ? 'metronome' : 'none');
+
 /** Playback tempo in force in measure `m` (quarter notes per minute). */
 function tempoAt(score, m) {
   let bpm = score.tempo ?? 100;
@@ -1823,7 +1926,6 @@ async function tempoDialog(measure) {
     <label>${esc(t('tempo.text'))}
       <input type="text" id="tempo-text" list="tempo-words" value="${esc(mark.text)}" placeholder="${esc(t('tempo.text.example'))}" autocomplete="off"></label>
     <datalist id="tempo-words">${TEMPO_WORDS.map((w) => `<option value="${esc(w)}">`).join('')}</datalist>
-    <label class="check"><input type="checkbox" id="tempo-show-text"${mark.show_text ? ' checked' : ''}> ${esc(t('tempo.show_text'))}</label>
     ${first ? '' : `<label class="check"><input type="checkbox" id="tempo-changes"${changes ? ' checked' : ''}> ${esc(t('tempo.changes'))}</label>`}
     <div class="row" id="tempo-metronome">
       <label>${esc(t('tempo.beat'))}
@@ -1832,7 +1934,9 @@ async function tempoDialog(measure) {
       <label>${esc(t('tempo.per_minute'))}
         <input type="number" id="tempo-number" min="5" max="999" value="${perMinute(quarter, beat)}"></label>
     </div>
-    <label class="check"><input type="checkbox" id="tempo-show-metronome"${mark.show_metronome ? ' checked' : ''}> ${esc(t('tempo.show_metronome'))}</label>
+    <label>${esc(t('tempo.show'))}
+      <select id="tempo-show">${TEMPO_SHOW.map((v) =>
+        `<option value="${v}"${v === showOf(mark) ? ' selected' : ''}>${esc(t(`tempo.show.${v}`))}</option>`).join('')}</select></label>
     <p class="muted hint">${esc(t(first ? 'tempo.hint.first' : 'tempo.hint'))}</p>
   </form>`;
   const pending = choiceDialog(t('tempo.title', { n: measure + 1 }), body, [
@@ -1851,12 +1955,14 @@ async function tempoDialog(measure) {
     lastBeat = beatSel.value;
     if (q) number.value = perMinute(q, lastBeat);
   });
-  // Words alone ("dolce", "a tempo") need no metronome value.
+  // Words alone ("a tempo", "dolce") have no metronome mark to print.
+  const show = $('tempo-show');
   const syncChanges = () => {
     const on = !changesBox || changesBox.checked;
     $('tempo-metronome').classList.toggle('disabled', !on);
     number.disabled = beatSel.disabled = !on;
-    $('tempo-show-metronome').disabled = !on;
+    for (const o of show.options) if (o.value === 'both' || o.value === 'metronome') o.disabled = !on;
+    if (!on && (show.value === 'both' || show.value === 'metronome')) show.value = 'text';
   };
   changesBox?.addEventListener('change', syncChanges);
   syncChanges();
@@ -1873,8 +1979,8 @@ async function tempoDialog(measure) {
     text,
     bpm: withValue ? q : null,
     beat: beatSel.value,
-    show_text: $('tempo-show-text').checked,
-    show_metronome: withValue && $('tempo-show-metronome').checked,
+    show_text: show.value === 'both' || show.value === 'text',
+    show_metronome: withValue && (show.value === 'both' || show.value === 'metronome'),
   };
   // Nothing to print and no tempo to set: no marking.
   if (!first && !text && !withValue) { act({ type: 'set_tempo_mark', measure, mark: null }); return; }
@@ -1924,6 +2030,7 @@ const SHORTCUTS = [
     ['Alt + ↑ / ↓', 'entry.move'],
     ['T', 'entry.tie'],
     ['S', 'entry.slur'],
+    ['Ctrl + E', 'entry.expression'],
     ['N', 'entry.mouse'],
     ['X', 'entry.eraser'],
     ['Alt + 1 – 4', 'entry.voice'],
@@ -2226,7 +2333,8 @@ const onControlClick = (ev) => {
   else if (b.dataset.kind) setKind(b.dataset.kind);
   else if (b.dataset.alter || b.dataset.artic || b.dataset.dyn) useMark(b);
   else runCommand(b.dataset.cmd);
-  page.focus();
+  // Back to the score, unless the button opened something to type in.
+  if (!textEdit.key && !$('dialog').open) page.focus();
 };
 document.querySelector('.toolbar').addEventListener('click', onControlClick);
 $('palette').addEventListener('click', onControlClick);
@@ -2246,6 +2354,9 @@ for (const a of ARTICULATIONS) commands[`artic:${a}`] = () => act({ type: 'toggl
 for (const d of DYNAMICS) commands[`dyn:${d}`] = () => act({ type: 'set_dynamic', dynamic: d });
 commands['page-texts'] = () => pageTextsDialog();
 commands['tempo-mark'] = () => { const doc = active(); if (doc) tempoDialog(doc.caret.measure); };
+commands['note-text:expression'] = () => startNoteText('expression');
+commands['note-text:technique'] = () => startNoteText('technique');
+commands.rehearsal = () => rehearsalMark();
 
 /** A radio choice of a submenu: label and tooltip from `key` (and `key.desc` if there is one). */
 const choice = (key, cmd, checked) => ({
@@ -2324,6 +2435,7 @@ const MENUS = [
   { label: t('menu.score'), items: [
     { label: t('menu.score.texts'), cmd: 'page-texts', enabled: hasDoc, desc: t('menu.score.texts.desc') },
     { label: t('menu.score.tempo'), cmd: 'tempo-mark', enabled: hasDoc, desc: t('menu.score.tempo.desc') },
+    { label: t('menu.score.rehearsal'), cmd: 'rehearsal', enabled: hasDoc, desc: t('menu.score.rehearsal.desc') },
     { sep: true },
     { label: t('menu.score.measure'), enabled: hasDoc, items: [
       { label: t('menu.score.measure.add'), cmd: 'add-measure', key: 'Ctrl+Enter', desc: t('toolbar.addmeasure.desc') },
@@ -2346,6 +2458,8 @@ const MENUS = [
     { label: t('palette.tie'), cmd: 'tie', key: 'T', enabled: hasDoc, desc: t('palette.tie.desc') },
     { label: t('palette.slur'), cmd: 'slur', key: 'S', enabled: hasSelection, desc: t('palette.slur.desc') },
     { label: t('menu.notes.lyrics'), cmd: 'lyrics', key: 'Ctrl+L', enabled: hasDoc, checked: () => !!state.lyric, desc: t('menu.notes.lyrics.desc') },
+    { label: t('menu.notes.expression'), cmd: 'note-text:expression', key: 'Ctrl+E', enabled: hasDoc, desc: t('notetext.expression.desc') },
+    { label: t('menu.notes.technique'), cmd: 'note-text:technique', enabled: hasDoc, desc: t('notetext.technique.desc') },
     { sep: true },
     { label: t('palette.accidentals'), enabled: hasDoc, items: ACCIDENTALS.map(([name]) =>
       ({ label: t(`palette.${name}`), cmd: `alter:${name}`, desc: t(`palette.${name}.desc`) })) },
