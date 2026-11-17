@@ -179,6 +179,12 @@ Everything is laid out in one shared coordinate space. Each page is emitted as i
 
 **Chrome.** The menu bar (`src/menu.js`) and tooltips (`src/tooltip.js`) are small dependency-free modules. Every menu, toolbar and palette action goes through one `commands` map in `app.js`.
 
+**Languages.** Every text the user reads goes through `t('key')` in `src/i18n.js`. The texts live in `src/locales/<lang>.js`, one flat object per language. English (`en.js`) is the reference: a key missing from another language falls back to English. Static HTML is tagged with `data-i18n` attributes instead of carrying text. The language is View → Language, or the system's; it is read once at start-up, so changing it reloads the page (documents live in Rust, so nothing is lost).
+
+The Rust side sends no sentences. Errors reach the frontend as `{ code, args, message }` (`src-tauri/src/ui_error.rs`), and the frontend shows `error.<code>` from the locale, filling in `args` (an operating-system or library message travels as `args.detail` and is shown as it comes; `message` is the English fallback for unknown codes). MusicXML import notes are `{ kind, count }`. The few names Rust has to make up ("Untitled 2", "Staff 3") are templates the frontend sends at start-up with `set_default_names`.
+
+To add a language: copy `src/locales/en.js` to `src/locales/<code>.js`, translate the values, add it to `LOCALES` and `LANGUAGE_NAMES` in `src/i18n.js`, and give top-level menu labels distinct Alt letters (`&` marks the letter, as in `A&yuda`).
+
 **Music font.** All symbols come from **Bravura**, the reference font of the [SMuFL](https://www.smufl.org/) standard by Steinberg. It is bundled in `src/fonts/` under the SIL Open Font License, so the app works offline.
 
 SMuFL fonts follow fixed conventions:

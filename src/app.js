@@ -8,6 +8,9 @@ import {
 import { installTooltips } from './tooltip.js';
 import { installMenuBar } from './menu.js';
 import {
+  t, tn, has, keyLabel, applyTranslations, LANGUAGES, LANGUAGE_NAMES, languageChoice,
+} from './i18n.js';
+import {
   INSTRUMENTS, TRANSPOSITIONS, instrumentByProgram, instrumentOptions, shortNameFor, transpositionKey,
 } from './instruments.js';
 
@@ -15,22 +18,21 @@ const tauri = window.__TAURI__;
 const invoke = tauri.core.invoke;
 const dialog = tauri.dialog;
 
-const FILTERS = [{ name: 'Partita score', extensions: ['partita'] }];
+const FILTERS = [{ name: t('filter.partita'), extensions: ['partita'] }];
 // Opening also accepts scores saved under the project's former name, Da Capo,
 // and MusicXML from other notation programs (imported as a new score).
 const MUSICXML_EXTENSIONS = ['musicxml', 'mxl', 'xml'];
 const OPEN_FILTERS = [
-  { name: 'All scores', extensions: ['partita', 'dacapo', ...MUSICXML_EXTENSIONS] },
-  { name: 'Partita score', extensions: ['partita', 'dacapo'] },
-  { name: 'MusicXML', extensions: MUSICXML_EXTENSIONS },
+  { name: t('filter.all'), extensions: ['partita', 'dacapo', ...MUSICXML_EXTENSIONS] },
+  { name: t('filter.partita'), extensions: ['partita', 'dacapo'] },
+  { name: t('filter.musicxml'), extensions: MUSICXML_EXTENSIONS },
 ];
-const MUSICXML_FILTERS = [{ name: 'MusicXML', extensions: ['musicxml'] }];
+const MUSICXML_FILTERS = [{ name: t('filter.musicxml'), extensions: ['musicxml'] }];
 const isMusicXml = (path) => MUSICXML_EXTENSIONS.includes(String(path).split('.').pop().toLowerCase());
 const KEY_NAMES = ['C♭', 'G♭', 'D♭', 'A♭', 'E♭', 'B♭', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F♯', 'C♯'];
 const DURATION_KEYS = { 1: 'SixtyFourth', 2: 'ThirtySecond', 3: 'Sixteenth', 4: 'Eighth', 5: 'Quarter', 6: 'Half', 7: 'Whole' };
 // Only with View → Breve and 128th Notes on.
 const EXTENDED_KEYS = { 8: 'Breve', 9: 'HundredTwentyEighth' };
-const VALUE_NAMES = { Breve: 'breve', HundredTwentyEighth: '128th', SixtyFourth: '64th', ThirtySecond: '32nd', Sixteenth: '16th' };
 
 // Small per-user view preferences. Storage may be unavailable; fall back
 // to defaults silently.
@@ -71,6 +73,7 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const page = $('page');
+applyTranslations();
 
 // ----- talking to Rust -------------------------------------------------------
 
@@ -81,8 +84,20 @@ function serial(fn) {
   return queue;
 }
 
+/**
+ * The text for an error. Rust sends `{ code, args, message }`: the code is
+ * translated (error.<code>), and `message` is the English fallback for codes
+ * the locale does not know (and the text of code "other").
+ */
+function errorText(e) {
+  if (e && typeof e === 'object' && e.code) {
+    return has(`error.${e.code}`) ? t(`error.${e.code}`, e.args) : String(e.message);
+  }
+  return String(e?.message ?? e);
+}
+
 function showError(e) {
-  state.error = String(e);
+  state.error = errorText(e);
   renderStatus();
   console.error(e);
 }
@@ -128,14 +143,14 @@ async function importMusicXml(path) {
   render();
   const notes = v.import_notes || [];
   if (notes.length) {
-    await choiceDialog('Imported with a few changes',
-      `<p>Partita opened the score. A few things it cannot show yet were simplified:</p><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`,
-      [{ spacer: true }, { label: 'OK', value: 'ok', primary: true }]);
+    await choiceDialog(t('import.title'),
+      `<p>${esc(t('import.body'))}</p><ul>${notes.map((n) => `<li>${esc(tn(`import.note.${n.kind}`, n.count))}</li>`).join('')}</ul>`,
+      [{ spacer: true }, { label: t('button.ok'), value: 'ok', primary: true }]);
   }
 }
 
 async function importMusicXmlFromDialog() {
-  const path = await dialog.open({ multiple: false, filters: [{ name: 'MusicXML', extensions: MUSICXML_EXTENSIONS }] });
+  const path = await dialog.open({ multiple: false, filters: [{ name: t('filter.musicxml'), extensions: MUSICXML_EXTENSIONS }] });
   if (path) await importMusicXml(path);
 }
 
@@ -148,7 +163,16 @@ async function exportMusicXml() {
   await invoke('export_musicxml', { id: doc.id, path });
 }
 
-const CLEF_LABELS = { treble: 'Treble', bass: 'Bass', alto: 'Alto', tenor: 'Tenor' };
+/** Whether a staff still has the name it got by default ("Staff 2", in any language Partita speaks). */
+function isDefaultStaffName(name) {
+  return [t('default.staff'), 'Staff {n}'].some((template) => {
+    const [before, after = ''] = template.split('{n}');
+    const middle = name.slice(before.length, name.length - after.length);
+    return name.startsWith(before) && name.endsWith(after) && /^\d+$/.test(middle);
+  });
+}
+
+const CLEF_LABELS = Object.fromEntries(['treble', 'bass', 'alto', 'tenor'].map((c) => [c, t(`clef.${c}`)]));
 
 /**
  * Name, sound and clef of a staff. With `staff` null it adds a new staff.
@@ -165,36 +189,36 @@ async function staffDialog(staff) {
   if (!current) return;
   const trans = current.transposition || { diatonic: 0, chromatic: 0 };
   const listed = transpositionKey(trans);
-  const transOptions = TRANSPOSITIONS.map((t) =>
-    `<option value="${t.key}"${t.key === listed ? ' selected' : ''}>${esc(t.label)}</option>`).join('')
-    + (listed ? '' : `<option value="custom" selected>${esc(`Other: ${trans.diatonic} steps, ${trans.chromatic} semitones`)}</option>`);
+  const transOptions = TRANSPOSITIONS.map((tr) =>
+    `<option value="${tr.key}"${tr.key === listed ? ' selected' : ''}>${esc(tr.label)}</option>`).join('')
+    + (listed ? '' : `<option value="custom" selected>${esc(t('staff.transposition.other', trans))}</option>`);
   const body = `<form class="staff-form" id="staff-form">
     <div class="row">
-      <label>Name (first system)
-        <input id="staff-name" type="text" maxlength="40" value="${esc(current.name)}" placeholder="${adding ? 'e.g. Violin I' : ''}" autocomplete="off"></label>
-      <label>Short name (next systems)
-        <input id="staff-short" type="text" maxlength="40" value="${esc(current.short_name || '')}" placeholder="e.g. Vln. I" autocomplete="off"></label>
+      <label>${esc(t('staff.name'))}
+        <input id="staff-name" type="text" maxlength="40" value="${esc(current.name)}" placeholder="${adding ? esc(t('staff.name.example')) : ''}" autocomplete="off"></label>
+      <label>${esc(t('staff.short'))}
+        <input id="staff-short" type="text" maxlength="40" value="${esc(current.short_name || '')}" placeholder="${esc(t('staff.short.example'))}" autocomplete="off"></label>
     </div>
-    <label>Sound
+    <label>${esc(t('staff.sound'))}
       <select id="staff-sound">${instrumentOptions(current.instrument || 0, esc)}</select></label>
     <div class="row">
-      <label>Clef
+      <label>${esc(t('staff.clef'))}
         <select id="staff-clef">${Object.entries(CLEF_LABELS).map(([v, l]) =>
-          `<option value="${v}"${v === current.clef ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
-      <label>Transposition
+          `<option value="${v}"${v === current.clef ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+      <label>${esc(t('staff.transposition'))}
         <select id="staff-trans">${transOptions}</select></label>
     </div>
-    ${adding ? `<label>Staves
+    ${adding ? `<label>${esc(t('staff.count'))}
       <select id="staff-count">
-        <option value="1">One staff</option>
-        <option value="2"${instrumentByProgram(current.instrument || 0).staves === 2 ? ' selected' : ''}>Two staves, braced (treble and bass)</option>
+        <option value="1">${esc(t('staff.count.one'))}</option>
+        <option value="2"${instrumentByProgram(current.instrument || 0).staves === 2 ? ' selected' : ''}>${esc(t('staff.count.two'))}</option>
       </select></label>` : ''}
-    <p class="muted hint">Notes are written in the instrument's key and play at concert pitch. Changing the transposition keeps the music sounding the same.</p>
+    <p class="muted hint">${esc(t('staff.hint'))}</p>
   </form>`;
-  const pending = choiceDialog(adding ? 'Add a staff' : 'Staff', body, [
+  const pending = choiceDialog(adding ? t('staff.title.add') : t('staff.title'), body, [
     { spacer: true },
-    { label: 'Cancel', value: 'cancel' },
-    { label: adding ? 'Add Staff' : 'OK', value: 'ok', primary: true },
+    { label: t('button.cancel'), value: 'cancel' },
+    { label: adding ? t('staff.add') : t('button.ok'), value: 'ok', primary: true },
   ]);
   const name = $('staff-name');
   const short = $('staff-short');
@@ -205,7 +229,7 @@ async function staffDialog(staff) {
   const inst = () => INSTRUMENTS[Number(sound.value)];
   // Name and short name follow the sound until the user types their own.
   const startInst = instrumentByProgram(current.instrument || 0);
-  let nameTouched = !adding && current.name !== startInst.name && !/^Staff \d+$/.test(current.name);
+  let nameTouched = !adding && current.name !== startInst.name && !isDefaultStaffName(current.name);
   let shortTouched = !adding && !!current.short_name && current.short_name !== shortNameFor(current.name, startInst);
   name.addEventListener('input', () => {
     nameTouched = name.value.trim() !== '';
@@ -226,7 +250,7 @@ async function staffDialog(staff) {
   const answer = await pending;
   if (answer !== 'ok') return;
   const instrument = Number(sound.value);
-  const chosen = TRANSPOSITIONS.find((t) => t.key === transSel.value);
+  const chosen = TRANSPOSITIONS.find((tr) => tr.key === transSel.value);
   const props = {
     name: name.value.trim() || instrumentByProgram(instrument).name,
     short_name: short.value.trim(),
@@ -243,9 +267,9 @@ function groupSelectedStaves(kind) {
   const doc = active();
   const sel = doc?.selection;
   if (!sel || sel.staff_hi <= sel.staff_lo) {
-    return choiceDialog('Select the staves first',
-      '<p>Select some music across the staves you want to join (for example, drag from the top staff to the bottom one), then choose the bracket or brace again.</p>',
-      [{ spacer: true }, { label: 'OK', value: 'ok', primary: true }]);
+    return choiceDialog(t('group.select.title'),
+      `<p>${esc(t('group.select.body'))}</p>`,
+      [{ spacer: true }, { label: t('button.ok'), value: 'ok', primary: true }]);
   }
   return act({ type: 'group_staves', first: sel.staff_lo, last: sel.staff_hi, kind });
 }
@@ -270,14 +294,14 @@ async function closeDocument(id) {
   if (doc.dirty) {
     state.active = id;
     render();
-    const save = await dialog.ask(`Save changes to “${doc.name}” before closing?`, {
-      title: 'Partita', kind: 'warning', okLabel: 'Save', cancelLabel: 'Don’t save',
+    const save = await dialog.ask(t('close.save', { name: doc.name }), {
+      title: 'Partita', kind: 'warning', okLabel: t('close.save.ok'), cancelLabel: t('close.save.no'),
     });
     if (save) {
       if (!(await saveDocument())) return;
     } else {
-      const sure = await dialog.ask(`Close “${doc.name}” and lose the unsaved changes?`, {
-        title: 'Partita', kind: 'warning', okLabel: 'Discard changes', cancelLabel: 'Keep editing',
+      const sure = await dialog.ask(t('close.discard', { name: doc.name }), {
+        title: 'Partita', kind: 'warning', okLabel: t('close.discard.ok'), cancelLabel: t('close.discard.no'),
       });
       if (!sure) return;
       discard = true;
@@ -309,14 +333,14 @@ async function checkRecovery() {
     return;
   }
   box.hidden = false;
-  box.innerHTML = '<strong>Partita closed unexpectedly.</strong> Unsaved work was recovered:' +
+  box.innerHTML = `<strong>${esc(t('recovery.title'))}</strong> ${esc(t('recovery.body'))}` +
     items.map((r) => {
       const m = r.manifest;
-      const name = m ? m.display_name : 'Unknown document';
+      const name = m ? m.display_name : t('recovery.unknown');
       const when = m ? new Date(m.updated_ms).toLocaleString() : '';
       return `<div class="item" data-sid="${r.session_id}">
         <span>${esc(name)} <span style="color:var(--muted)">${esc(when)}</span></span>
-        <button data-recover>Restore</button><button data-discard>Discard</button></div>`;
+        <button data-recover>${esc(t('recovery.restore'))}</button><button data-discard>${esc(t('recovery.discard'))}</button></div>`;
     }).join('');
   box.onclick = (ev) => serial(async () => {
     const item = ev.target.closest('.item');
@@ -327,8 +351,8 @@ async function checkRecovery() {
       state.active = v.id;
       item.remove();
     } else if (ev.target.matches('[data-discard]')) {
-      const sure = await dialog.ask('Delete this recovered work permanently?', {
-        title: 'Partita', kind: 'warning', okLabel: 'Delete', cancelLabel: 'Keep',
+      const sure = await dialog.ask(t('recovery.discard.ask'), {
+        title: 'Partita', kind: 'warning', okLabel: t('recovery.discard.ok'), cancelLabel: t('recovery.discard.no'),
       });
       if (!sure) return;
       await invoke('discard_recoverable', { sessionId: sid });
@@ -538,9 +562,9 @@ function placeAtPointer() {
 function renderTabs() {
   $('tabs').innerHTML = state.order.map((id) => {
     const d = state.docs.get(id);
-    return `<div class="tab${id === state.active ? ' active' : ''}" role="tab" data-id="${id}" data-tip="${esc(d.name)}" data-desc="${esc(d.path || 'Not saved yet')}${d.dirty ? ' · unsaved changes' : ''}">
-      <span>${esc(d.name)}</span>${d.dirty ? '<span class="dirty" aria-label="Unsaved changes">●</span>' : ''}
-      <button class="x" data-close="${id}" aria-label="Close ${esc(d.name)}">×</button></div>`;
+    return `<div class="tab${id === state.active ? ' active' : ''}" role="tab" data-id="${id}" data-tip="${esc(d.name)}" data-desc="${esc(d.path || t('tab.notsaved'))}${d.dirty ? esc(t('tab.unsaved')) : ''}">
+      <span>${esc(d.name)}</span>${d.dirty ? `<span class="dirty" aria-label="${esc(t('tab.dirty'))}">●</span>` : ''}
+      <button class="x" data-close="${id}" aria-label="${esc(t('tab.close', { name: d.name }))}">×</button></div>`;
   }).join('');
 }
 
@@ -555,8 +579,8 @@ function syncControls(doc) {
       b.textContent = b.dataset[state.kind];
       fitGlyph(b);
     }
-    b.dataset.tip = `${b.dataset.name} ${state.kind}`;
-    b.dataset.desc = 'Choose it, then click on a staff to place it. With a selection, changes its note values.';
+    b.dataset.tip = t(`figure.${b.dataset.dur}.${state.kind}`);
+    b.dataset.desc = t('palette.figure.desc');
     b.setAttribute('aria-label', b.dataset.tip);
     b.classList.toggle('on', b.dataset.dur === state.duration.base);
   });
@@ -600,10 +624,10 @@ function renderVoices(doc) {
   const n = voiceCount(doc);
   const current = doc.caret.voice;
   let html = n === 1
-    ? '<span class="label">Single voice</span>'
+    ? `<span class="label">${esc(t('palette.voice.single'))}</span>`
     : Array.from({ length: n }, (_, v) =>
-      `<button data-voice="${v}" class="${v === current ? 'on' : ''}" data-tip="Voice ${v + 1}" data-desc="Write in this voice. Each voice has its own color." data-key="Alt+${v + 1}">${v + 1}</button>`).join('');
-  if (n < 4) html += `<button data-voice="${n}" class="add" data-tip="Add voice ${n + 1}" data-desc="A second independent line on the same staff, e.g. divisi strings or two melodies in one hand." data-key="Alt+${n + 1}">+ Voice</button>`;
+      `<button data-voice="${v}" class="${v === current ? 'on' : ''}" data-tip="${esc(t('palette.voice.n', { n: v + 1 }))}" data-desc="${esc(t('palette.voice.desc'))}" data-key="Alt+${v + 1}">${v + 1}</button>`).join('');
+  if (n < 4) html += `<button data-voice="${n}" class="add" data-tip="${esc(t('palette.voice.add', { n: n + 1 }))}" data-desc="${esc(t('palette.voice.add.desc'))}" data-key="Alt+${n + 1}">${esc(t('palette.voice.add.button'))}</button>`;
   $('voices').innerHTML = html;
 }
 
@@ -621,38 +645,42 @@ function renderStatus() {
   const parts = [];
   if (doc) {
     const c = doc.caret;
-    const voice = voiceCount(doc) > 1 ? ` · Voice ${c.voice + 1}` : '';
-    parts.push(`Staff ${c.staff + 1} · Measure ${c.measure + 1}${voice}`);
+    const voice = voiceCount(doc) > 1 ? t('status.voice', { n: c.voice + 1 }) : '';
+    parts.push(esc(t('status.position', { staff: c.staff + 1, measure: c.measure + 1 }) + voice));
     const d = state.duration;
-    const value = `${d.dots ? 'dotted ' : ''}${VALUE_NAMES[d.base] || d.base.toLowerCase()}`;
+    const base = t(`value.${d.base}`);
+    const value = d.dots ? t('value.dotted', { value: base }) : base;
+    const verse = state.lyric && state.layout?.verses[state.lyric.staff] > 1 ? t('status.lyrics.verse', { n: state.lyric.verse + 1 }) : '';
+    const bold = (head, help) => `<b>${esc(head)}</b> ${esc(t(help))}`;
     parts.push(state.lyric
-      ? `<b>Lyrics${state.layout?.verses[state.lyric.staff] > 1 ? ` · verse ${state.lyric.verse + 1}` : ''}</b> — Space: next note · - hyphen · _ hold the syllable · ↓ ↑ verse · Esc to finish`
+      ? bold(t('status.lyrics') + verse, 'status.lyrics.help')
       : {
-        select: `Select tool · next value: ${value}`,
-        note: `<b>Placing ${value} notes</b> — click a line or space · click a note to add to its chord · Esc to stop`,
-        rest: `<b>Placing ${value} rests</b> — click to place · Esc to stop`,
-        erase: '<b>Eraser</b> — click a note, or drag a box · Esc to stop',
-        mark: `<b>Placing ${esc(state.mark?.name || '')}</b> — click a note · Esc to stop`,
-      }[state.mode]);
-    parts.push(doc.dirty ? 'Unsaved changes' : (doc.path ? 'Saved' : 'New document'));
+        select: () => esc(t('status.select', { value })),
+        note: () => bold(t('status.notes', { value }), 'status.notes.help'),
+        rest: () => bold(t('status.rests', { value }), 'status.rests.help'),
+        erase: () => bold(t('status.erase'), 'status.erase.help'),
+        mark: () => bold(t('status.mark', { name: state.mark?.name || '' }), 'status.mark.help'),
+      }[state.mode]());
+    parts.push(esc(doc.dirty ? t('status.unsaved') : (doc.path ? t('status.saved') : t('status.new'))));
     parts.push(doc.protected
-      ? '<span class="ok" data-tip="Crash recovery is on" data-desc="Every change is written to disk within half a second; your work survives a crash or power cut.">● Recovery on</span>'
-      : '<span class="warn">● Recovery unavailable</span>');
+      ? `<span class="ok" data-tip="${esc(t('status.recovery.tip'))}" data-desc="${esc(t('status.recovery.desc'))}">${esc(t('status.recovery.on'))}</span>`
+      : `<span class="warn">${esc(t('status.recovery.off'))}</span>`);
     const errors = measureErrors(doc);
     if (errors.length) {
-      parts.push(`<span class="errors" data-jump data-tip="Measures with errors" data-desc="Click to jump to the next one.">⚠ ${errors.length} measure${errors.length > 1 ? 's' : ''} with errors</span>`);
+      parts.push(`<span class="errors" data-jump data-tip="${esc(t('status.errors.tip'))}" data-desc="${esc(t('status.errors.desc'))}">${esc(tn('status.errors', errors.length))}</span>`);
     }
-    if (doc.warning) parts.push(`<span class="warn">${esc(doc.warning)}</span>`);
+    if (doc.warning) parts.push(`<span class="warn">${esc(t('warning.recovery', { detail: doc.warning }))}</span>`);
     const s = playback.sound;
     if (s?.state === 'downloading') {
       const pct = s.total ? Math.min(100, Math.floor((s.received / s.total) * 100)) : 0;
-      parts.push(`<span class="download" role="status" data-tip="Downloading the FluidR3 GM sounds" data-desc="One-time download. Playback starts by itself when it finishes.">`
-        + `Downloading sounds <progress max="100" value="${pct}" aria-label="Download progress"></progress> <b>${pct}%</b> · ${MB(s.received)} / ${MB(s.total)} MB</span>`);
+      parts.push(`<span class="download" role="status" data-tip="${esc(t('status.sounds.tip'))}" data-desc="${esc(t('status.sounds.desc'))}">`
+        + `${esc(t('status.sounds.downloading'))} <progress max="100" value="${pct}" aria-label="${esc(t('status.sounds.progress'))}"></progress> <b>${pct}%</b> · ${MB(s.received)} / ${MB(s.total)} MB</span>`);
     }
-    if (s?.state === 'loading') parts.push('<span class="ok">Loading sounds…</span>');
+    if (s?.state === 'loading') parts.push(`<span class="ok">${esc(t('status.sounds.loading'))}</span>`);
     const u = updatePart();
     if (u) parts.push(u);
-    parts.push(`<span class="zoom" data-zoom data-tip="Zoom ${Math.round(state.zoom * 100)}%" data-desc="Alt + mouse wheel, or Ctrl + = / Ctrl + −. Click to go back to 100%." data-key="Ctrl+0">${Math.round(state.zoom * 100)}%</span>`);
+    const pct = Math.round(state.zoom * 100);
+    parts.push(`<span class="zoom" data-zoom data-tip="${esc(t('status.zoom.tip', { pct }))}" data-desc="${esc(t('status.zoom.desc'))}" data-key="Ctrl+0">${pct}%</span>`);
   }
   else {
     const u = updatePart();
@@ -693,8 +721,8 @@ function setVoice(voice) {
 }
 
 document.addEventListener('keydown', (ev) => {
-  const t = ev.target;
-  const inField = t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement;
+  const target = ev.target;
+  const inField = target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement;
   const ctrl = ev.ctrlKey || ev.metaKey;
   const key = ev.key;
   const lower = key.length === 1 ? key.toLowerCase() : key;
@@ -725,9 +753,9 @@ document.addEventListener('keydown', (ev) => {
     if (lower === 'l') { ev.preventDefault(); runCommand('lyrics'); return; }
   }
   // Menus and dialogs handle their own keys.
-  if (t.closest?.('.menubar, dialog')) return;
+  if (target.closest?.('.menubar, dialog')) return;
   if (inField) {
-    if (key === 'Escape') { t.blur(); page.focus(); }
+    if (key === 'Escape') { target.blur(); page.focus(); }
     return;
   }
   if (!active()) return;
@@ -1112,6 +1140,23 @@ function applyExtendedValues() {
   $('palette').classList.toggle('extended-values', state.extendedValues);
 }
 
+/**
+ * View → Language. The texts are read once at start-up, so the page reloads
+ * in the new language. Nothing is lost: documents, undo history and crash
+ * recovery live in Rust, and the page reopens every tab. What is being typed
+ * as lyrics is written first and playback stops; the active tab is kept.
+ */
+function setLanguage(code) {
+  if (code === languageChoice) return;
+  closeLyric();
+  serial(async () => {
+    if (playback.playing) await stopPlayback();
+    savePref('language', code === 'system' ? null : code);
+    try { sessionStorage.setItem('partita.activeTab', state.active ?? ''); } catch { /* ignore */ }
+    location.reload();
+  });
+}
+
 function applyTheme() {
   // 'system' removes the attribute so CSS follows prefers-color-scheme.
   if (state.theme === 'system') delete document.documentElement.dataset.theme;
@@ -1149,6 +1194,8 @@ const commands = {
   'theme:system': () => { setPref('theme', 'system'); applyTheme(); },
   'theme:light': () => { setPref('theme', 'light'); applyTheme(); },
   'theme:dark': () => { setPref('theme', 'dark'); applyTheme(); },
+  'language:system': () => setLanguage('system'),
+  ...Object.fromEntries(LANGUAGES.map((code) => [`language:${code}`, () => setLanguage(code)])),
   // Insert / notation
   'add-measure': () => act({ type: 'insert_measure' }),
   'remove-measure': () => act({ type: 'remove_measure' }),
@@ -1233,15 +1280,12 @@ async function ensureSound() {
   playback.sound = s;
   if (s.state === 'ready') return true;
   if (s.state === 'no_device') {
-    showError(`No audio output: ${s.message}`);
+    showError(t('error.noaudio', { message: s.message }));
     return false;
   }
   if (s.state === 'missing' || s.state === 'error') {
-    const detail = s.state === 'error' ? `<p class="warn">The last attempt failed: ${esc(s.message)}</p>` : '';
-    const ok = await askDialog('Download the sounds?',
-      `<p>To play music, Partita uses <b>FluidR3 GM</b>, a free collection of recorded instruments by Frank Wen (MIT license).</p>
-       <p>It is a one-time download of <b>148 MB</b>, kept on this computer for future sessions.</p>${detail}`,
-      'Download');
+    const detail = s.state === 'error' ? `<p class="warn">${esc(t('sounds.failed', { message: s.message }))}</p>` : '';
+    const ok = await askDialog(t('sounds.title'), t('sounds.body') + detail, t('sounds.download'));
     if (!ok) return false;
     await invoke('download_soundfont');
   }
@@ -1252,7 +1296,7 @@ async function ensureSound() {
     renderStatus();
     if (s.state === 'ready') return true;
     if (s.state === 'error' || s.state === 'no_device') {
-      showError(`Sounds unavailable: ${s.message}`);
+      showError(t('error.sounds', { message: s.message }));
       return false;
     }
     await new Promise((r) => setTimeout(r, 300));
@@ -1330,7 +1374,7 @@ function drawPlayhead(follow = false) {
 function syncTransport() {
   const btn = $('play-btn');
   btn.querySelector('use').setAttribute('href', playback.playing ? '#i-pause' : '#i-play');
-  btn.setAttribute('aria-label', playback.playing ? 'Pause' : 'Play');
+  btn.setAttribute('aria-label', playback.playing ? t('toolbar.pause') : t('toolbar.play'));
   btn.classList.toggle('on', playback.playing);
 }
 
@@ -1347,7 +1391,7 @@ const lyric = {
   join: 'none', // and how it joined the next one: 'none' | 'hyphen' | 'extender'
   ctx: null, // canvas context to measure text
 };
-lyric.input.setAttribute('aria-label', 'Lyric syllable');
+lyric.input.setAttribute('aria-label', t('lyrics.input'));
 document.body.append(lyric.input);
 
 /** Where an event lives in a document: `{ e, staff, measure, voice, index }`. */
@@ -1504,7 +1548,7 @@ function lyricStep(dir, join) {
     // No note there. The field stays (leaving it would turn the next
     // letters typed into notes); say why nothing moved.
     render();
-    if (dir > 0) serial(() => { state.error = 'That was the last note of this voice. Press Esc to finish the lyrics.'; renderStatus(); });
+    if (dir > 0) serial(() => { state.error = t('error.lyrics.last'); renderStatus(); });
   }
 }
 
@@ -1531,7 +1575,7 @@ function startLyricsAtCaret() {
     || notes.find((n) => n.measure > c.measure || (n.measure === c.measure && n.index >= c.index))
     || notes[notes.length - 1];
   if (!target) {
-    showError('Lyrics go under notes: write some notes on this staff first.');
+    showError(t('error.lyrics.nonotes'));
     return;
   }
   openLyric({ id: target.id, verse: 0 });
@@ -1559,7 +1603,7 @@ function drawLyricHover(target) {
   if (!svg) return;
   const y = state.layout.lyricY(slot.system, slot.staff, target.verse);
   svg.insertAdjacentHTML('beforeend',
-    `<rect class="lyric-hover" x="${slot.x - 1.7 * SP}" y="${y - 1.45 * SP}" width="${3.4 * SP}" height="${2 * SP}" rx="3"><title>Click to write lyrics here</title></rect>`);
+    `<rect class="lyric-hover" x="${slot.x - 1.7 * SP}" y="${y - 1.45 * SP}" width="${3.4 * SP}" height="${2 * SP}" rx="3"><title>${esc(t('lyrics.hover'))}</title></rect>`);
 }
 
 lyric.input.addEventListener('input', placeLyricInput);
@@ -1608,7 +1652,7 @@ lyric.input.addEventListener('keydown', (ev) => {
 function askDialog(title, bodyHtml, okLabel) {
   const dlg = $('dialog');
   dlg.innerHTML = `<h2>${esc(title)}</h2><div class="dialog-body">${bodyHtml}</div>
-    <div class="dialog-actions"><button type="button" data-answer="no">Cancel</button><button type="button" data-answer="yes" class="primary" autofocus>${esc(okLabel)}</button></div>`;
+    <div class="dialog-actions"><button type="button" data-answer="no">${esc(t('button.cancel'))}</button><button type="button" data-answer="yes" class="primary" autofocus>${esc(okLabel)}</button></div>`;
   dlg.showModal();
   // Resolved from the buttons themselves (and Esc = Cancel): the dialog's
   // `close` event proved unreliable in the webview when a form closes it.
@@ -1629,87 +1673,93 @@ function askDialog(title, bodyHtml, okLabel) {
   });
 }
 
+// Help → Keyboard Shortcuts: [keys, text key] by group. The description is
+// shortcuts.<id>; the keys are translated key by key (keyLabel), unless the
+// language gives the whole cell as shortcuts.<id>.keys (for words such as
+// "Click under a staff").
 const SHORTCUTS = [
-  ['Entering music', [
-    ['A – G', 'Insert a note (octave follows the previous note)'],
-    ['Shift + A – G', 'Add a note to the previous chord'],
-    ['R or 0', 'Insert a rest'],
-    ['1 – 7', 'Note value: 64th … whole'],
-    ['8 / 9', 'Breve / 128th (View → Breve and 128th Notes)'],
-    ['.', 'Dot'],
-    ['+ / −', 'Raise / lower the accidental'],
-    ['Alt + ↑ / ↓', 'Move the note a step (Ctrl+Alt: an octave)'],
-    ['T', 'Tie to the next note'],
-    ['S', 'Slur over the selection'],
-    ['N', 'Mouse entry mode on / off'],
-    ['X', 'Eraser on / off (click a note, or drag a box)'],
-    ['Alt + 1 – 4', 'Switch voice'],
+  ['entry', [
+    ['A – G', 'entry.note'],
+    ['Shift + A – G', 'entry.chord'],
+    ['R or 0', 'entry.rest'],
+    ['1 – 7', 'entry.value'],
+    ['8 / 9', 'entry.extended'],
+    ['.', 'entry.dot'],
+    ['+ / −', 'entry.accidental'],
+    ['Alt + ↑ / ↓', 'entry.move'],
+    ['T', 'entry.tie'],
+    ['S', 'entry.slur'],
+    ['N', 'entry.mouse'],
+    ['X', 'entry.eraser'],
+    ['Alt + 1 – 4', 'entry.voice'],
   ]],
-  ['Lyrics', [
-    ['Ctrl + L', 'Write lyrics under the note at the caret (again to finish)'],
-    ['Click under a staff', 'Write lyrics under that note'],
-    ['Space', 'End the word and go to the next note'],
-    ['-', 'End the syllable with a hyphen and go to the next note'],
-    ['_', 'Hold the syllable over the next notes (extender line)'],
-    ['← / →', 'Previous / next note (at the edge of the text)'],
-    ['↓ / ↑', 'Next / previous verse'],
-    ['Backspace', 'In an empty syllable: back to the previous note'],
-    ['Esc or Enter', 'Finish'],
+  ['lyrics', [
+    ['Ctrl + L', 'lyrics.start'],
+    ['Click under a staff', 'lyrics.click'],
+    ['Space', 'lyrics.space'],
+    ['-', 'lyrics.hyphen'],
+    ['_', 'lyrics.extender'],
+    ['← / →', 'lyrics.notes'],
+    ['↓ / ↑', 'lyrics.verses'],
+    ['Backspace', 'lyrics.back'],
+    ['Esc or Enter', 'lyrics.finish'],
   ]],
-  ['Moving and selecting', [
-    ['← / →', 'Previous / next note'],
-    ['↑ / ↓', 'Staff above / below'],
-    ['Home / End', 'Start / end of the measure'],
-    ['Ctrl + ← / →', 'Previous / next measure'],
-    ['Ctrl + Home / End', 'Start / end of the score'],
-    ['Shift + any move', 'Extend the selection'],
-    ['Click / drag', 'Place the caret / select'],
-    ['Shift + click', 'Extend the selection'],
-    ['Ctrl + A', 'Select all'],
-    ['Esc', 'Back to the select tool'],
+  ['moving', [
+    ['← / →', 'moving.notes'],
+    ['↑ / ↓', 'moving.staves'],
+    ['Home / End', 'moving.measure'],
+    ['Ctrl + ← / →', 'moving.measures'],
+    ['Ctrl + Home / End', 'moving.score'],
+    ['Shift + any move', 'moving.extend'],
+    ['Click / drag', 'moving.click'],
+    ['Shift + click', 'moving.shiftclick'],
+    ['Ctrl + A', 'moving.all'],
+    ['Esc', 'moving.esc'],
   ]],
-  ['Navigation and zoom', [
-    ['Wheel', 'Scroll up / down'],
-    ['Ctrl + wheel', 'Scroll sideways'],
-    ['Alt + wheel', 'Zoom in / out around the pointer'],
-    ['Middle button + drag', 'Pan the score'],
-    ['Ctrl + = / Ctrl + −', 'Zoom in / out'],
-    ['Ctrl + 0', 'Zoom to 100%'],
+  ['navigation', [
+    ['Wheel', 'navigation.wheel'],
+    ['Ctrl + wheel', 'navigation.ctrlwheel'],
+    ['Alt + wheel', 'navigation.altwheel'],
+    ['Middle button + drag', 'navigation.pan'],
+    ['Ctrl + = / Ctrl + −', 'navigation.zoom'],
+    ['Ctrl + 0', 'navigation.zoom100'],
   ]],
-  ['Playback', [
-    ['Space', 'Play from the caret / pause'],
-    ['Shift + Space', 'Play from the beginning'],
-    ['Esc (while playing)', 'Stop'],
+  ['playback', [
+    ['Space', 'playback.play'],
+    ['Shift + Space', 'playback.start'],
+    ['Esc (while playing)', 'playback.stop'],
   ]],
-  ['Editing', [
-    ['Backspace / Del', 'Delete before / after the caret, or the selection'],
-    ['Ctrl + X / C / V', 'Cut / copy / paste'],
-    ['Ctrl + Z / Y', 'Undo / redo'],
-    ['Ctrl + Enter', 'Insert a measure'],
+  ['editing', [
+    ['Backspace / Del', 'editing.delete'],
+    ['Ctrl + X / C / V', 'editing.clipboard'],
+    ['Ctrl + Z / Y', 'editing.undo'],
+    ['Ctrl + Enter', 'editing.measure'],
   ]],
-  ['Files and windows', [
-    ['Ctrl + N / O', 'New / open'],
-    ['Ctrl + S', 'Save (Ctrl+Shift+S: save as)'],
-    ['Ctrl + P', 'Print'],
-    ['Ctrl + W', 'Close tab'],
-    ['Ctrl + Tab', 'Next tab'],
-    ['Alt', 'Menu bar'],
-    ['F1', 'This list'],
+  ['files', [
+    ['Ctrl + N / O', 'files.newopen'],
+    ['Ctrl + S', 'files.save'],
+    ['Ctrl + P', 'files.print'],
+    ['Ctrl + W', 'files.close'],
+    ['Ctrl + Tab', 'files.nexttab'],
+    ['Alt', 'files.menu'],
+    ['F1', 'files.help'],
   ]],
 ];
+const shortcutKeys = (keys, id) => (has(`shortcuts.${id}.keys`) ? t(`shortcuts.${id}.keys`) : keyLabel(keys));
 
 // Title and Close stay put; only the body scrolls when the window is short.
 function openDialog(title, body, extraButtons = '') {
   const dlg = $('dialog');
   dlg.innerHTML = `<h2>${title}</h2><div class="dialog-body">${body}</div>`
-    + `<div class="dialog-actions">${extraButtons}<span class="spacer"></span><button type="button" data-close autofocus>Close</button></div>`;
+    + `<div class="dialog-actions">${extraButtons}<span class="spacer"></span><button type="button" data-close autofocus>${esc(t('button.close'))}</button></div>`;
   dlg.showModal();
 }
 
 function showDialog(which) {
   if (which === 'about' || which === 'credits') return serial(() => showAbout(which === 'credits'));
-  openDialog('Keyboard and mouse shortcuts', `<div class="shortcut-cols">${SHORTCUTS.map(([group, rows]) =>
-    `<section><h3>${group}</h3><table>${rows.map(([k, d]) => `<tr><td><kbd>${esc(k)}</kbd></td><td>${esc(d)}</td></tr>`).join('')}</table></section>`).join('')}</div>`);
+  openDialog(esc(t('shortcuts.title')), `<div class="shortcut-cols">${SHORTCUTS.map(([group, rows]) =>
+    `<section><h3>${esc(t(`shortcuts.group.${group}`))}</h3><table>${rows.map(([k, id]) =>
+      `<tr><td><kbd>${esc(shortcutKeys(k, id))}</kbd></td><td>${esc(t(`shortcuts.${id}`))}</td></tr>`).join('')}</table></section>`).join('')}</div>`);
 }
 
 /** Opens a web page in the system browser (the webview cannot navigate away). */
@@ -1732,11 +1782,11 @@ function updatePart() {
   const u = updates.status;
   if (u?.state === 'downloading') {
     const pct = u.total ? Math.min(100, Math.floor((u.received / u.total) * 100)) : 0;
-    return `<span class="download" role="status" data-tip="Downloading Partita ${esc(u.version)}" data-desc="You can keep working. Partita asks before restarting.">`
-      + `Downloading update <progress max="100" value="${pct}" aria-label="Update download progress"></progress> <b>${pct}%</b></span>`;
+    return `<span class="download" role="status" data-tip="${esc(t('status.update.tip', { version: u.version }))}" data-desc="${esc(t('status.update.desc'))}">`
+      + `${esc(t('status.update.downloading'))} <progress max="100" value="${pct}" aria-label="${esc(t('status.update.progress'))}"></progress> <b>${pct}%</b></span>`;
   }
   if (u?.state === 'ready') {
-    return `<span class="update" data-update data-tip="Partita ${esc(u.version)} is ready" data-desc="Click to restart and install it. Unsaved changes are kept.">⟳ Restart to update</span>`;
+    return `<span class="update" data-update data-tip="${esc(t('status.update.ready.tip', { version: u.version }))}" data-desc="${esc(t('status.update.ready.desc'))}">${esc(t('status.update.ready'))}</span>`;
   }
   return '';
 }
@@ -1787,27 +1837,27 @@ async function checkForUpdates(manual) {
     if (!manual && loadPref('updates.skip', null) === s.version) return;
     await offerUpdate(s);
   } else if (manual && s.state === 'up_to_date') {
-    await choiceDialog('Partita is up to date', `<p>You have the latest version, <b>${esc(s.current)}</b>.</p>`,
-      [{ label: 'OK', value: 'ok', primary: true }]);
+    await choiceDialog(t('update.uptodate.title'), `<p>${t('update.uptodate.body', { version: esc(s.current) })}</p>`,
+      [{ label: t('button.ok'), value: 'ok', primary: true }]);
   } else if (manual && s.state === 'error') {
-    await choiceDialog('Could not check for updates',
-      `<p>Partita could not reach GitHub to look for a new version. Check your internet connection and try again.</p><p class="muted">${esc(s.message)}</p>`,
-      [{ label: 'OK', value: 'ok', primary: true }]);
+    await choiceDialog(t('update.error.title'),
+      `<p>${esc(t('update.error.body'))}</p><p class="muted">${esc(s.message)}</p>`,
+      [{ label: t('button.ok'), value: 'ok', primary: true }]);
   } else if (s.state === 'error') {
     console.warn('[partita] update check failed:', s.message);
   }
 }
 
 async function offerUpdate(info) {
-  const date = info.date ? ` It was published on ${esc(info.date)}.` : '';
-  const answer = await choiceDialog(`Partita ${info.version} is available`,
-    `<p>You have version ${esc(info.current)}.${date} ${link(releaseUrl(info.version), 'See what’s new')}</p>
-     <p>The update downloads in the background while you keep working. Partita asks before restarting, and unsaved changes are kept.</p>`,
+  const date = info.date ? ` ${esc(t('update.available.date', { date: info.date }))}` : '';
+  const answer = await choiceDialog(t('update.available.title', { version: info.version }),
+    `<p>${esc(t('update.available.current', { version: info.current }))}${date} ${link(releaseUrl(info.version), t('update.available.whatsnew'))}</p>
+     <p>${esc(t('update.available.body'))}</p>`,
     [
-      { label: 'Skip This Version', value: 'skip' },
+      { label: t('update.skip'), value: 'skip' },
       { spacer: true },
-      { label: 'Later', value: 'later' },
-      { label: 'Download and Install', value: 'download', primary: true },
+      { label: t('button.later'), value: 'later' },
+      { label: t('update.download'), value: 'download', primary: true },
     ]);
   if (answer === 'skip') savePref('updates.skip', info.version);
   if (answer !== 'download') return;
@@ -1825,7 +1875,7 @@ async function pollUpdate() {
       updates.status = s;
       renderStatus();
       if (s.state === 'ready') { serial(offerRestart); return; }
-      if (s.state === 'error') { showError(`The update could not be downloaded: ${s.message}`); return; }
+      if (s.state === 'error') { showError(t('error.update.download', { message: s.message })); return; }
       if (s.state !== 'downloading') return;
       await new Promise((r) => setTimeout(r, 300));
     }
@@ -1838,18 +1888,18 @@ async function offerRestart() {
   const u = updates.status;
   if (u?.state !== 'ready') return;
   const dirty = [...state.docs.values()].some((d) => d.dirty);
-  const keep = dirty ? '<p>Your unsaved changes are kept: Partita offers them back when it starts again.</p>' : '';
-  const answer = await choiceDialog(`Restart to install Partita ${u.version}?`,
-    `<p>The update has been downloaded and verified.</p>${keep}`,
-    [{ label: 'Later', value: 'later' }, { label: 'Restart Now', value: 'restart', primary: true }]);
+  const keep = dirty ? `<p>${esc(t('update.restart.keep'))}</p>` : '';
+  const answer = await choiceDialog(t('update.restart.title', { version: u.version }),
+    `<p>${esc(t('update.restart.body'))}</p>${keep}`,
+    [{ label: t('button.later'), value: 'later' }, { label: t('update.restart.now'), value: 'restart', primary: true }]);
   if (answer !== 'restart') return;
   if (playback.playing) await stopPlayback();
   try {
     await invoke('install_update');
   } catch (e) {
-    updates.status = { state: 'error', message: String(e) };
+    updates.status = { state: 'error', message: errorText(e) };
     renderStatus();
-    showError(`The update could not be installed: ${e}`);
+    showError(t('error.update.install', { message: errorText(e) }));
   }
 }
 
@@ -1868,46 +1918,46 @@ async function showAbout(scrollToCredits = false) {
     `SoundFont: ${sf.name} ${sf.version} ${sf.installed ? `installed (${MB(sf.size_bytes)} MB)` : 'not downloaded'}`,
   ].join('\n');
   const sfState = sf.installed
-    ? `<span class="ok">● Installed</span> · ${MB(sf.size_bytes)} MB`
+    ? `<span class="ok">${esc(t('about.sf.installed'))}</span> · ${MB(sf.size_bytes)} MB`
     : sf.status.state === 'downloading'
-      ? `<span class="ok">Downloading…</span>`
-      : '<span class="muted">Not downloaded yet — it is offered the first time you press Play.</span>';
+      ? `<span class="ok">${esc(t('about.sf.downloading'))}</span>`
+      : `<span class="muted">${esc(t('about.sf.missing'))}</span>`;
   const body = `
     <div class="about-head">
       <img src="app-icon.png" alt="" width="56" height="56">
       <div>
         <div class="about-name">Partita <span class="about-version">${esc(a.version)}</span></div>
-        <div class="muted">Open source music notation editor · ${esc(platform)}</div>
-        <div class="muted">Free software under the ${link('https://www.gnu.org/licenses/gpl-3.0.html', 'GNU GPL v3.0 or later')}.</div>
+        <div class="muted">${esc(t('about.tagline'))} · ${esc(platform)}</div>
+        <div class="muted">${esc(t('about.license', { link: '\u0000' })).replace('\u0000', link('https://www.gnu.org/licenses/gpl-3.0.html', t('about.license.name')))}</div>
       </div>
     </div>
-    <p class="about-links">${link(a.repository, 'Source code')} · ${link(a.issues, 'Report a problem')} · ${link(`${a.repository}/blob/main/CHANGELOG.md`, 'What’s new')}</p>
+    <p class="about-links">${link(a.repository, t('about.source'))} · ${link(a.issues, t('about.report'))} · ${link(`${a.repository}/blob/main/CHANGELOG.md`, t('about.whatsnew'))}</p>
 
-    <h3>Downloaded by Partita</h3>
+    <h3>${esc(t('about.downloaded'))}</h3>
     <table class="about-table">
       <tr><th>${esc(sf.name)} ${esc(sf.version)}</th><td>${sfState}</td></tr>
-      <tr><td colspan="2" class="muted">Instrument sounds by ${esc(sf.author)} · ${esc(sf.license)} license · ${link(sf.homepage, 'more information')}</td></tr>
+      <tr><td colspan="2" class="muted">${esc(t('about.sf.credit', { author: sf.author, license: sf.license, link: '\u0000' })).replace('\u0000', link(sf.homepage, t('about.sf.more')))}</td></tr>
       ${sf.installed ? `<tr><td colspan="2" class="path" title="${esc(sf.path)}">${esc(sf.path)}</td></tr>` : ''}
     </table>
 
-    <h3 id="about-credits">Credits</h3>
-    <p class="muted">Partita is built on the work of these projects. Thank you!</p>
+    <h3 id="about-credits">${esc(t('about.credits'))}</h3>
+    <p class="muted">${esc(t('about.credits.intro'))}</p>
     <table class="about-table credits">
       ${a.credits.map((c) => `<tr>
         <th>${link(c.url, c.name)} <span class="muted">${esc(c.version)}</span></th>
-        <td>${esc(c.role)}<div class="muted">${esc(c.author)} · ${esc(c.license)}</div></td>
+        <td>${esc(has(`about.role.${c.id}`) ? t(`about.role.${c.id}`) : c.role)}<div class="muted">${esc(c.author)} · ${esc(c.license)}</div></td>
       </tr>`).join('')}
     </table>
 
-    <h3>Technical details</h3>
+    <h3>${esc(t('about.technical'))}</h3>
     <table class="about-table">
-      <tr><th>Version</th><td>${esc(a.version)}</td></tr>
-      <tr><th>Platform</th><td>${esc(platform)} · Tauri ${esc(a.tauri)}</td></tr>
-      <tr><th>File format</th><td>.partita version ${a.file_format}</td></tr>
-      <tr><th>Data folder</th><td class="path" title="${esc(a.data_dir)}">${esc(a.data_dir)}</td></tr>
+      <tr><th>${esc(t('about.version'))}</th><td>${esc(a.version)}</td></tr>
+      <tr><th>${esc(t('about.platform'))}</th><td>${esc(platform)} · Tauri ${esc(a.tauri)}</td></tr>
+      <tr><th>${esc(t('about.fileformat'))}</th><td>${esc(t('about.fileformat.value', { version: a.file_format }))}</td></tr>
+      <tr><th>${esc(t('about.datafolder'))}</th><td class="path" title="${esc(a.data_dir)}">${esc(a.data_dir)}</td></tr>
     </table>`;
-  openDialog('About Partita', body,
-    `<button type="button" data-copy>Copy version info</button>${sf.installed ? '<button type="button" data-reveal>Show SoundFont file</button>' : ''}`);
+  openDialog(esc(t('about.title')), body,
+    `<button type="button" data-copy>${esc(t('about.copy'))}</button>${sf.installed ? `<button type="button" data-reveal>${esc(t('about.reveal'))}</button>` : ''}`);
   const dlg = $('dialog');
   dlg.dataset.summary = summary;
   dlg.dataset.sfPath = sf.path;
@@ -1924,7 +1974,7 @@ dialogEl.addEventListener('click', (ev) => {
   if (ev.target.closest('[data-close]')) { dialogEl.close(); return; }
   const copy = ev.target.closest('[data-copy]');
   if (copy) {
-    navigator.clipboard.writeText(dialogEl.dataset.summary || '').then(() => { copy.textContent = 'Copied ✓'; }, showError);
+    navigator.clipboard.writeText(dialogEl.dataset.summary || '').then(() => { copy.textContent = t('about.copied'); }, showError);
     return;
   }
   if (ev.target.closest('[data-reveal]')) {
@@ -1951,84 +2001,93 @@ $('palette').addEventListener('click', onControlClick);
 const hasDoc = () => !!active();
 const hasSelection = () => !!active()?.selection;
 const MENUS = [
-  { label: 'File', items: [
-    { label: 'New', cmd: 'new', key: 'Ctrl+N' },
-    { label: 'Open…', cmd: 'open', key: 'Ctrl+O' },
+  { label: t('menu.file'), items: [
+    { label: t('menu.file.new'), cmd: 'new', key: 'Ctrl+N' },
+    { label: t('menu.file.open'), cmd: 'open', key: 'Ctrl+O' },
     { sep: true },
-    { label: 'Save', cmd: 'save', key: 'Ctrl+S', enabled: hasDoc },
-    { label: 'Save As…', cmd: 'saveas', key: 'Ctrl+Shift+S', enabled: hasDoc },
+    { label: t('menu.file.save'), cmd: 'save', key: 'Ctrl+S', enabled: hasDoc },
+    { label: t('menu.file.saveas'), cmd: 'saveas', key: 'Ctrl+Shift+S', enabled: hasDoc },
     { sep: true },
-    { label: 'Import MusicXML…', cmd: 'import-musicxml' },
-    { label: 'Export MusicXML…', cmd: 'export-musicxml', enabled: hasDoc },
+    { label: t('menu.file.import'), cmd: 'import-musicxml' },
+    { label: t('menu.file.export'), cmd: 'export-musicxml', enabled: hasDoc },
     { sep: true },
-    { label: 'Print…', cmd: 'print', key: 'Ctrl+P', enabled: hasDoc },
+    { label: t('menu.file.print'), cmd: 'print', key: 'Ctrl+P', enabled: hasDoc },
     { sep: true },
-    { label: 'Close Tab', cmd: 'close', key: 'Ctrl+W', enabled: hasDoc },
+    { label: t('menu.file.close'), cmd: 'close', key: 'Ctrl+W', enabled: hasDoc },
   ] },
-  { label: 'Edit', items: [
-    { label: 'Undo', cmd: 'undo', key: 'Ctrl+Z', enabled: () => !!active()?.can_undo },
-    { label: 'Redo', cmd: 'redo', key: 'Ctrl+Y', enabled: () => !!active()?.can_redo },
+  { label: t('menu.edit'), items: [
+    { label: t('menu.edit.undo'), cmd: 'undo', key: 'Ctrl+Z', enabled: () => !!active()?.can_undo },
+    { label: t('menu.edit.redo'), cmd: 'redo', key: 'Ctrl+Y', enabled: () => !!active()?.can_redo },
     { sep: true },
-    { label: 'Cut', cmd: 'cut', key: 'Ctrl+X', enabled: hasSelection },
-    { label: 'Copy', cmd: 'copy', key: 'Ctrl+C', enabled: hasSelection },
-    { label: 'Paste', cmd: 'paste', key: 'Ctrl+V', enabled: hasDoc },
-    { label: 'Delete', cmd: 'delete', key: 'Del', enabled: hasDoc },
+    { label: t('menu.edit.cut'), cmd: 'cut', key: 'Ctrl+X', enabled: hasSelection },
+    { label: t('menu.edit.copy'), cmd: 'copy', key: 'Ctrl+C', enabled: hasSelection },
+    { label: t('menu.edit.paste'), cmd: 'paste', key: 'Ctrl+V', enabled: hasDoc },
+    { label: t('menu.edit.delete'), cmd: 'delete', key: 'Del', enabled: hasDoc },
     { sep: true },
-    { label: 'Select All', cmd: 'selectall', key: 'Ctrl+A', enabled: hasDoc },
+    { label: t('menu.edit.selectall'), cmd: 'selectall', key: 'Ctrl+A', enabled: hasDoc },
   ] },
-  { label: 'View', items: [
-    { label: 'Page (as printed)', cmd: 'view:page', radio: true, checked: () => state.view === 'page' },
-    { label: 'Wrap to Window', cmd: 'view:wrap', radio: true, checked: () => state.view === 'wrap' },
-    { label: 'Continuous (one line)', cmd: 'view:continuous', radio: true, checked: () => state.view === 'continuous' },
+  { label: t('menu.view'), items: [
+    { label: t('menu.view.page'), cmd: 'view:page', radio: true, checked: () => state.view === 'page' },
+    { label: t('menu.view.wrap'), cmd: 'view:wrap', radio: true, checked: () => state.view === 'wrap' },
+    { label: t('menu.view.continuous'), cmd: 'view:continuous', radio: true, checked: () => state.view === 'continuous' },
     { sep: true },
-    { label: 'Paper: A4', cmd: 'paper:a4', radio: true, checked: () => state.paper === 'a4' },
-    { label: 'Paper: Letter', cmd: 'paper:letter', radio: true, checked: () => state.paper === 'letter' },
+    { label: t('menu.view.a4'), cmd: 'paper:a4', radio: true, checked: () => state.paper === 'a4' },
+    { label: t('menu.view.letter'), cmd: 'paper:letter', radio: true, checked: () => state.paper === 'letter' },
     { sep: true },
-    { label: 'Zoom In', cmd: 'zoom-in', key: 'Ctrl+=', enabled: () => state.zoom < ZOOM_MAX },
-    { label: 'Zoom Out', cmd: 'zoom-out', key: 'Ctrl+−', enabled: () => state.zoom > ZOOM_MIN },
-    { label: 'Actual Size (100%)', cmd: 'zoom-reset', key: 'Ctrl+0', enabled: () => state.zoom !== 1 },
-    { label: 'Fit Page Width', cmd: 'zoom-fit', enabled: () => state.view === 'page' },
+    { label: t('menu.view.zoomin'), cmd: 'zoom-in', key: 'Ctrl+=', enabled: () => state.zoom < ZOOM_MAX },
+    { label: t('menu.view.zoomout'), cmd: 'zoom-out', key: 'Ctrl+−', enabled: () => state.zoom > ZOOM_MIN },
+    { label: t('menu.view.zoomreset'), cmd: 'zoom-reset', key: 'Ctrl+0', enabled: () => state.zoom !== 1 },
+    { label: t('menu.view.zoomfit'), cmd: 'zoom-fit', enabled: () => state.view === 'page' },
     { sep: true },
-    { label: 'Multi-measure Rests', cmd: 'multirest', checked: () => state.multiRest },
-    { label: 'Breve and 128th Notes', cmd: 'extended-values', checked: () => state.extendedValues },
+    { label: t('menu.view.multirest'), cmd: 'multirest', checked: () => state.multiRest },
+    { label: t('menu.view.extended'), cmd: 'extended-values', checked: () => state.extendedValues },
     { sep: true },
-    { label: 'Theme: System', cmd: 'theme:system', radio: true, checked: () => state.theme === 'system' },
-    { label: 'Theme: Light', cmd: 'theme:light', radio: true, checked: () => state.theme === 'light' },
-    { label: 'Theme: Dark', cmd: 'theme:dark', radio: true, checked: () => state.theme === 'dark' },
+    { label: t('menu.view.themesystem'), cmd: 'theme:system', radio: true, checked: () => state.theme === 'system' },
+    { label: t('menu.view.themelight'), cmd: 'theme:light', radio: true, checked: () => state.theme === 'light' },
+    { label: t('menu.view.themedark'), cmd: 'theme:dark', radio: true, checked: () => state.theme === 'dark' },
+    { sep: true },
+    { label: t('menu.view.languagesystem'), cmd: 'language:system', radio: true, checked: () => languageChoice === 'system' },
+    // Each language is offered under its own name.
+    ...LANGUAGES.map((code) => ({
+      label: t('menu.view.language', { name: LANGUAGE_NAMES[code] }),
+      cmd: `language:${code}`,
+      radio: true,
+      checked: () => languageChoice === code,
+    })),
   ] },
-  { label: 'Insert', items: [
-    { label: 'Measure After Current', cmd: 'add-measure', key: 'Ctrl+Enter', enabled: hasDoc },
-    { label: 'Staff…', cmd: 'add-staff', enabled: hasDoc },
-    { label: 'Staff Name, Sound and Clef…', cmd: 'staff-properties', enabled: hasDoc },
-    { label: 'Bracket Selected Staves', cmd: 'group-bracket', enabled: hasDoc },
-    { label: 'Brace Selected Staves', cmd: 'group-brace', enabled: hasDoc },
-    { label: 'Remove Bracket or Brace', cmd: 'group-none', enabled: hasDoc },
+  { label: t('menu.insert'), items: [
+    { label: t('menu.insert.measure'), cmd: 'add-measure', key: 'Ctrl+Enter', enabled: hasDoc },
+    { label: t('menu.insert.staff'), cmd: 'add-staff', enabled: hasDoc },
+    { label: t('menu.insert.staffprops'), cmd: 'staff-properties', enabled: hasDoc },
+    { label: t('menu.insert.bracket'), cmd: 'group-bracket', enabled: hasDoc },
+    { label: t('menu.insert.brace'), cmd: 'group-brace', enabled: hasDoc },
+    { label: t('menu.insert.ungroup'), cmd: 'group-none', enabled: hasDoc },
     { sep: true },
-    { label: 'Tie', cmd: 'tie', key: 'T', enabled: hasDoc },
-    { label: 'Slur over Selection', cmd: 'slur', key: 'S', enabled: hasSelection },
-    { label: 'Lyrics', cmd: 'lyrics', key: 'Ctrl+L', enabled: hasDoc, checked: () => !!state.lyric },
+    { label: t('menu.insert.tie'), cmd: 'tie', key: 'T', enabled: hasDoc },
+    { label: t('menu.insert.slur'), cmd: 'slur', key: 'S', enabled: hasSelection },
+    { label: t('menu.insert.lyrics'), cmd: 'lyrics', key: 'Ctrl+L', enabled: hasDoc, checked: () => !!state.lyric },
     { sep: true },
-    { label: 'Delete Current Measure', cmd: 'remove-measure', enabled: hasDoc },
-    { label: 'Delete Current Staff', cmd: 'remove-staff', enabled: hasDoc },
+    { label: t('menu.insert.removemeasure'), cmd: 'remove-measure', enabled: hasDoc },
+    { label: t('menu.insert.removestaff'), cmd: 'remove-staff', enabled: hasDoc },
   ] },
-  { label: 'Play', items: [
-    { label: 'Play / Pause', cmd: 'play', key: 'Space', enabled: hasDoc },
-    { label: 'Play from Beginning', cmd: 'play-start', key: 'Shift+Space', enabled: hasDoc },
-    { label: 'Stop', cmd: 'stop', key: 'Esc', enabled: () => playback.playing },
+  { label: t('menu.play'), items: [
+    { label: t('menu.play.toggle'), cmd: 'play', key: 'Space', enabled: hasDoc },
+    { label: t('menu.play.start'), cmd: 'play-start', key: 'Shift+Space', enabled: hasDoc },
+    { label: t('menu.play.stop'), cmd: 'stop', key: 'Esc', enabled: () => playback.playing },
   ] },
-  { label: 'Help', items: [
-    { label: 'Keyboard Shortcuts', cmd: 'shortcuts', key: 'F1' },
+  { label: t('menu.help'), items: [
+    { label: t('menu.help.shortcuts'), cmd: 'shortcuts', key: 'F1' },
     { sep: true },
-    { label: 'What’s New', cmd: 'changelog' },
-    { label: 'Report a Problem…', cmd: 'report-problem' },
-    { label: 'Source Code on GitHub', cmd: 'open-repo' },
-    { label: 'Support Partita…', cmd: 'support' },
+    { label: t('menu.help.changelog'), cmd: 'changelog' },
+    { label: t('menu.help.report'), cmd: 'report-problem' },
+    { label: t('menu.help.repo'), cmd: 'open-repo' },
+    { label: t('menu.help.support'), cmd: 'support' },
     { sep: true },
-    { label: 'Check for Updates…', cmd: 'check-updates' },
-    { label: 'Automatic Updates', cmd: 'auto-updates', checked: () => loadPref('updates.auto', true) },
+    { label: t('menu.help.updates'), cmd: 'check-updates' },
+    { label: t('menu.help.autoupdates'), cmd: 'auto-updates', checked: () => loadPref('updates.auto', true) },
     { sep: true },
-    { label: 'Credits and Licenses', cmd: 'credits' },
-    { label: 'About Partita', cmd: 'about' },
+    { label: t('menu.help.credits'), cmd: 'credits' },
+    { label: t('menu.help.about'), cmd: 'about' },
   ] },
 ];
 installMenuBar($('menubar'), MENUS, runCommand, () => page.focus());
@@ -2044,20 +2103,22 @@ for (const d of document.querySelectorAll('.palette details')) {
   d.addEventListener('toggle', () => savePref(name, d.open));
 }
 
-$('key').innerHTML = KEY_NAMES.map((n, i) => `<option value="${i - 7}">${n} major</option>`).join('');
+// The key names' letter is translated (C → Do); the accidental is kept.
+$('key').innerHTML = KEY_NAMES.map((n, i) =>
+  `<option value="${i - 7}">${esc(t('keysig.major', { note: t(`note.${n[0]}`) + n.slice(1) }))}</option>`).join('');
 $('key').addEventListener('change', (ev) => { act({ type: 'set_key', fifths: Number(ev.target.value) }); page.focus(); });
 $('clef').addEventListener('change', (ev) => { act({ type: 'set_clef', clef: ev.target.value }); page.focus(); });
 $('tempo').addEventListener('keydown', (ev) => {
   if (ev.key !== 'Enter') return;
   const bpm = Number(ev.target.value);
-  if (!Number.isInteger(bpm) || bpm < 20 || bpm > 400) { showError('Tempo must be a whole number from 20 to 400'); return; }
+  if (!Number.isInteger(bpm) || bpm < 20 || bpm > 400) { showError(t('error.tempo')); return; }
   act({ type: 'set_tempo', bpm });
   page.focus();
 });
 $('time').addEventListener('keydown', (ev) => {
   if (ev.key !== 'Enter') return;
   const m = ev.target.value.match(/^\s*(\d+)\s*\/\s*(\d+)\s*$/);
-  if (!m) { showError('Time signature must look like 3/4'); return; }
+  if (!m) { showError(t('error.time')); return; }
   act({ type: 'set_time', beats: Number(m[1]), beat_type: Number(m[2]) });
   page.focus();
 });
@@ -2077,9 +2138,9 @@ window.addEventListener('resize', () => render());
 
 // Closing the window with unsaved work.
 tauri.event.listen('close-requested', async ({ payload }) => {
-  const names = payload.map((n) => `“${n}”`).join(', ');
-  const quit = await dialog.ask(`You have unsaved changes in ${names}.\n\nQuit and discard them?`, {
-    title: 'Partita', kind: 'warning', okLabel: 'Quit without saving', cancelLabel: 'Cancel',
+  const names = payload.map((name) => t('quoted', { name })).join(t('list.separator'));
+  const quit = await dialog.ask(t('quit.unsaved', { names }), {
+    title: 'Partita', kind: 'warning', okLabel: t('quit.ok'), cancelLabel: t('button.cancel'),
   });
   if (quit) await invoke('quit');
 });
@@ -2091,13 +2152,30 @@ serial(async () => {
   // fallback glyphs in the wrong places.
   try { await document.fonts.load('40px Bravura', ''); } catch { /* render anyway */ }
   await checkRecovery();
+  // The names Rust gives new documents and staves, in this language.
+  await invoke('set_default_names', { untitled: t('default.untitled'), nameless: t('default.nameless'), staff: t('default.staff') });
   for (const tab of await invoke('list_documents')) adopt(await invoke('get_document', { id: tab.id }));
-  if (state.order.length) state.active = state.order[0];
+  // After View → Language the page reloads: go back to the tab that was open.
+  let previous = null;
+  try {
+    previous = sessionStorage.getItem('partita.activeTab');
+    sessionStorage.removeItem('partita.activeTab');
+  } catch { /* ignore */ }
+  if (state.docs.has(previous)) state.active = previous;
+  else if (state.order.length) state.active = state.order[0];
   else await newDocument();
   render();
   // First run of page view: start with the page fitted to the window.
   if (state.view === 'page' && loadPref('zoom', null) === null) fitWidth();
   page.focus();
+  // An update may already be downloading or waiting (the page was reloaded):
+  // show it again in the status bar.
+  const u = await invoke('update_status');
+  if (u.state === 'downloading' || u.state === 'ready') {
+    updates.status = u;
+    if (u.state === 'downloading') pollUpdate();
+    else renderStatus();
+  }
   // Look for a new version a little after start-up, at most once a day.
   setTimeout(() => serial(() => checkForUpdates(false)), 5000);
 });

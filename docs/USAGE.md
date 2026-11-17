@@ -62,6 +62,8 @@ All views edit the same way. Clicking, selecting and the pointer figure work ide
 
 **Theme:** **System** (default) follows your computer's light or dark setting. **Light** or **Dark** fix it for Partita only.
 
+**Language:** Partita speaks English and Spanish. **View → Language: System** (default) follows your computer's language; choosing **English** or **Español** fixes it for Partita only. The window reloads in the new language; open scores and their undo history stay as they are.
+
 ## Entering music with the mouse
 
 This works like the note palette in Encore. The **palette** on the left holds the tools for entering music.

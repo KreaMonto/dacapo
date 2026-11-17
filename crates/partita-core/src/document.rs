@@ -44,8 +44,10 @@ pub enum EditError {
     Op(#[from] OpError),
     #[error("invalid time signature")]
     InvalidTime,
-    #[error("{0}")]
-    NeedsSelection(&'static str),
+    #[error("Select the notes to slur first (Shift+arrows or drag)")]
+    SlurNeedsSelection,
+    #[error("A slur needs at least two notes")]
+    SlurTooShort,
 }
 
 /// Music copied with Ctrl+C: one list of events per selected staff.
@@ -1128,9 +1130,7 @@ impl Document {
     /// removes it if exactly that slur exists.
     pub fn toggle_slur(&mut self, now_ms: u64) -> Result<(), EditError> {
         let Some(range) = self.selection() else {
-            return Err(EditError::NeedsSelection(
-                "Select the notes to slur first (Shift+arrows or drag)",
-            ));
+            return Err(EditError::SlurNeedsSelection);
         };
         let ids: Vec<u64> = cursor::events_in_range(&self.score, &range)
             .into_iter()
@@ -1144,7 +1144,7 @@ impl Document {
             return Ok(());
         };
         if start == end {
-            return Err(EditError::NeedsSelection("A slur needs at least two notes"));
+            return Err(EditError::SlurTooShort);
         }
         let op = match self
             .score
@@ -1973,7 +1973,7 @@ mod tests {
         // No selection: a slur needs one.
         assert!(matches!(
             doc.toggle_slur(1_000),
-            Err(EditError::NeedsSelection(_))
+            Err(EditError::SlurNeedsSelection)
         ));
         doc.set_caret(at(0, 0, 0), false);
         doc.set_caret(at(0, 0, 3), true);

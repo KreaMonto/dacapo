@@ -47,7 +47,7 @@ These rules protect the editor's reliability:
 
 ## Documentation
 
-- All documentation is written in English. The application itself will be translated into other languages.
+- All documentation is written in English. The application is translated: its texts live in `src/locales/` (see "Languages" in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). A new user-facing text needs a key in `en.js`, and in `es.js` too.
 - Update `docs/` whenever a change affects usage or architecture.
 
 ## License of contributions

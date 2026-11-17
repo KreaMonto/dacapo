@@ -29,151 +29,151 @@
     </defs>
   </svg>
 
-  <nav id="menubar" class="menubar" aria-label="Main menu"></nav>
+  <nav id="menubar" class="menubar" data-i18n-aria="menu.label"></nav>
 
-  <header class="toolbar" role="toolbar" aria-label="Main toolbar">
+  <header class="toolbar" role="toolbar" data-i18n-aria="toolbar.label">
     <div class="group">
-      <button data-cmd="new" class="ibtn" aria-label="New score" data-tip="New score" data-desc="Open an empty score in a new tab." data-key="Ctrl+N"><svg class="icon"><use href="#i-new"/></svg></button>
-      <button data-cmd="open" class="ibtn" aria-label="Open" data-tip="Open…" data-desc="Open a .partita file." data-key="Ctrl+O"><svg class="icon"><use href="#i-open"/></svg></button>
-      <button data-cmd="save" class="ibtn" aria-label="Save" data-tip="Save" data-desc="Save the score. Ctrl+Shift+S saves a copy under another name." data-key="Ctrl+S"><svg class="icon"><use href="#i-save"/></svg></button>
+      <button data-cmd="new" class="ibtn" data-i18n-aria="toolbar.new" data-i18n-tip="toolbar.new" data-i18n-desc="toolbar.new.desc" data-key="Ctrl+N"><svg class="icon"><use href="#i-new"/></svg></button>
+      <button data-cmd="open" class="ibtn" data-i18n-aria="toolbar.open" data-i18n-tip="toolbar.open.tip" data-i18n-desc="toolbar.open.desc" data-key="Ctrl+O"><svg class="icon"><use href="#i-open"/></svg></button>
+      <button data-cmd="save" class="ibtn" data-i18n-aria="toolbar.save" data-i18n-tip="toolbar.save" data-i18n-desc="toolbar.save.desc" data-key="Ctrl+S"><svg class="icon"><use href="#i-save"/></svg></button>
     </div>
     <div class="group">
-      <button data-cmd="undo" class="ibtn" aria-label="Undo" data-tip="Undo" data-desc="A burst of typing is undone in one step, as in a word processor." data-key="Ctrl+Z"><svg class="icon"><use href="#i-undo"/></svg></button>
-      <button data-cmd="redo" class="ibtn" aria-label="Redo" data-tip="Redo" data-key="Ctrl+Y"><svg class="icon"><use href="#i-redo"/></svg></button>
+      <button data-cmd="undo" class="ibtn" data-i18n-aria="toolbar.undo" data-i18n-tip="toolbar.undo" data-i18n-desc="toolbar.undo.desc" data-key="Ctrl+Z"><svg class="icon"><use href="#i-undo"/></svg></button>
+      <button data-cmd="redo" class="ibtn" data-i18n-aria="toolbar.redo" data-i18n-tip="toolbar.redo" data-key="Ctrl+Y"><svg class="icon"><use href="#i-redo"/></svg></button>
     </div>
-    <div class="group transport" aria-label="Playback">
-      <button data-cmd="play-start" class="ibtn" aria-label="Play from the beginning" data-tip="Play from the beginning" data-key="Shift+Space"><svg class="icon"><use href="#i-start"/></svg></button>
-      <button data-cmd="play" id="play-btn" class="ibtn play" aria-label="Play" data-tip="Play / pause" data-desc="Plays from the caret. Pausing leaves the caret where the music stopped, so the next Play continues from there." data-key="Space"><svg class="icon"><use href="#i-play"/></svg></button>
-      <button data-cmd="stop" class="ibtn" aria-label="Stop" data-tip="Stop" data-desc="Stops playback without moving the caret." data-key="Esc"><svg class="icon"><use href="#i-stop"/></svg></button>
-      <label class="tempo" data-tip="Tempo" data-desc="Quarter notes per minute (20–400). Press Enter to apply.">
+    <div class="group transport" data-i18n-aria="toolbar.playback">
+      <button data-cmd="play-start" class="ibtn" data-i18n-aria="toolbar.playstart" data-i18n-tip="toolbar.playstart" data-key="Shift+Space"><svg class="icon"><use href="#i-start"/></svg></button>
+      <button data-cmd="play" id="play-btn" class="ibtn play" data-i18n-aria="toolbar.play" data-i18n-tip="toolbar.play.tip" data-i18n-desc="toolbar.play.desc" data-key="Space"><svg class="icon"><use href="#i-play"/></svg></button>
+      <button data-cmd="stop" class="ibtn" data-i18n-aria="toolbar.stop" data-i18n-tip="toolbar.stop" data-i18n-desc="toolbar.stop.desc" data-key="Esc"><svg class="icon"><use href="#i-stop"/></svg></button>
+      <label class="tempo" data-i18n-tip="toolbar.tempo" data-i18n-desc="toolbar.tempo.desc">
         <span class="m tempo-note">&#xE1D5;</span> =
-        <input id="tempo" size="3" inputmode="numeric" aria-label="Tempo in quarter notes per minute">
+        <input id="tempo" size="3" inputmode="numeric" data-i18n-aria="toolbar.tempo.aria">
       </label>
     </div>
     <div class="group">
-      <label data-tip="Clef" data-desc="Clef of the staff where the caret is.">Clef
+      <label data-i18n-tip="toolbar.clef" data-i18n-desc="toolbar.clef.desc"><span data-i18n="toolbar.clef"></span>
         <select id="clef">
-          <option value="treble">Treble</option>
-          <option value="bass">Bass</option>
-          <option value="alto">Alto</option>
-          <option value="tenor">Tenor</option>
+          <option value="treble" data-i18n="clef.treble"></option>
+          <option value="bass" data-i18n="clef.bass"></option>
+          <option value="alto" data-i18n="clef.alto"></option>
+          <option value="tenor" data-i18n="clef.tenor"></option>
         </select>
       </label>
-      <label data-tip="Key signature" data-desc="Applies from the caret's measure until the next key change.">Key
+      <label data-i18n-tip="toolbar.key.tip" data-i18n-desc="toolbar.key.desc"><span data-i18n="toolbar.key"></span>
         <select id="key"></select>
       </label>
-      <label data-tip="Time signature" data-desc="Type e.g. 3/4 and press Enter. Applies from the caret's measure until the next change.">Time
+      <label data-i18n-tip="toolbar.time.tip" data-i18n-desc="toolbar.time.desc"><span data-i18n="toolbar.time"></span>
         <input id="time" size="4">
       </label>
     </div>
     <div class="group">
-      <button data-cmd="add-measure" class="ibtn" aria-label="Insert measure" data-tip="Insert measure" data-desc="Adds an empty measure after the current one." data-key="Ctrl+Enter"><svg class="icon"><use href="#i-measure-add"/></svg></button>
-      <button data-cmd="remove-measure" class="ibtn" aria-label="Delete measure" data-tip="Delete measure" data-desc="Removes the measure where the caret is, on every staff."><svg class="icon"><use href="#i-measure-remove"/></svg></button>
-      <button data-cmd="add-staff" class="ibtn" aria-label="Add staff" data-tip="Add staff" data-desc="Adds a staff at the bottom of the system."><svg class="icon"><use href="#i-staff-add"/></svg></button>
-      <button data-cmd="remove-staff" class="ibtn" aria-label="Delete staff" data-tip="Delete staff" data-desc="Removes the staff where the caret is."><svg class="icon"><use href="#i-staff-remove"/></svg></button>
+      <button data-cmd="add-measure" class="ibtn" data-i18n-aria="toolbar.addmeasure" data-i18n-tip="toolbar.addmeasure" data-i18n-desc="toolbar.addmeasure.desc" data-key="Ctrl+Enter"><svg class="icon"><use href="#i-measure-add"/></svg></button>
+      <button data-cmd="remove-measure" class="ibtn" data-i18n-aria="toolbar.removemeasure" data-i18n-tip="toolbar.removemeasure" data-i18n-desc="toolbar.removemeasure.desc"><svg class="icon"><use href="#i-measure-remove"/></svg></button>
+      <button data-cmd="add-staff" class="ibtn" data-i18n-aria="toolbar.addstaff" data-i18n-tip="toolbar.addstaff" data-i18n-desc="toolbar.addstaff.desc"><svg class="icon"><use href="#i-staff-add"/></svg></button>
+      <button data-cmd="remove-staff" class="ibtn" data-i18n-aria="toolbar.removestaff" data-i18n-tip="toolbar.removestaff" data-i18n-desc="toolbar.removestaff.desc"><svg class="icon"><use href="#i-staff-remove"/></svg></button>
     </div>
     <div class="group">
-      <button data-cmd="multirest" class="ibtn" aria-pressed="true" aria-label="Multi-measure rests" data-tip="Multi-measure rests" data-desc="Show consecutive empty measures as a single rest with a count, as in printed parts."><svg class="icon"><use href="#i-multirest"/></svg></button>
+      <button data-cmd="multirest" class="ibtn" aria-pressed="true" data-i18n-aria="toolbar.multirest" data-i18n-tip="toolbar.multirest" data-i18n-desc="toolbar.multirest.desc"><svg class="icon"><use href="#i-multirest"/></svg></button>
     </div>
   </header>
 
   <div class="workspace">
-    <aside class="palette" id="palette" aria-label="Palette">
+    <aside class="palette" id="palette" data-i18n-aria="palette.label">
       <div class="tools">
-        <button data-cmd="select" class="tool" data-tip="Select tool" data-desc="Click to place the caret, drag or Shift+click to select." data-key="Esc" aria-label="Select tool"><svg class="icon"><use href="#i-select"/></svg></button>
-        <button data-cmd="erase" class="tool" data-tip="Eraser" data-desc="Aim at a note and click to erase just that note (in a chord, just that tone). Drag a box to erase everything inside." data-key="X" aria-label="Eraser"><svg class="icon"><use href="#i-erase"/></svg></button>
+        <button data-cmd="select" class="tool" data-i18n-tip="palette.select" data-i18n-desc="palette.select.desc" data-key="Esc" data-i18n-aria="palette.select"><svg class="icon"><use href="#i-select"/></svg></button>
+        <button data-cmd="erase" class="tool" data-i18n-tip="palette.erase" data-i18n-desc="palette.erase.desc" data-key="X" data-i18n-aria="palette.erase"><svg class="icon"><use href="#i-erase"/></svg></button>
       </div>
 
       <!-- Each category is collapsible; app.js remembers which are open.
            Glyphs are SMuFL code points in Bravura. Marks apply to the note
            before the caret, or to every note in the selection. -->
       <details data-section="figures" open>
-        <summary>Figures</summary>
-        <div class="switch" role="radiogroup" aria-label="Notes or rests">
-          <button data-kind="note" role="radio" data-tip="Notes" data-desc="The figures below place notes.">Notes</button>
-          <button data-kind="rest" role="radio" data-tip="Rests" data-desc="The figures below place rests.">Rests</button>
+        <summary data-i18n="palette.figures"></summary>
+        <div class="switch" role="radiogroup" data-i18n-aria="palette.kind">
+          <button data-kind="note" role="radio" data-i18n-tip="palette.notes" data-i18n-desc="palette.notes.desc" data-i18n="palette.notes"></button>
+          <button data-kind="rest" role="radio" data-i18n-tip="palette.rests" data-i18n-desc="palette.rests.desc" data-i18n="palette.rests"></button>
         </div>
-        <div class="figures" aria-label="Note value">
-          <button data-dur="Breve" data-note="&#xE1D0;" data-rest="&#xE4E2;" data-name="Breve" data-key="8" class="glyph extended"></button>
-          <button data-dur="Whole" data-note="&#xE1D2;" data-rest="&#xE4E3;" data-name="Whole" data-key="7" class="glyph"></button>
-          <button data-dur="Half" data-note="&#xE1D3;" data-rest="&#xE4E4;" data-name="Half" data-key="6" class="glyph"></button>
-          <button data-dur="Quarter" data-note="&#xE1D5;" data-rest="&#xE4E5;" data-name="Quarter" data-key="5" class="glyph"></button>
-          <button data-dur="Eighth" data-note="&#xE1D7;" data-rest="&#xE4E6;" data-name="Eighth" data-key="4" class="glyph"></button>
-          <button data-dur="Sixteenth" data-note="&#xE1D9;" data-rest="&#xE4E7;" data-name="16th" data-key="3" class="glyph"></button>
-          <button data-dur="ThirtySecond" data-note="&#xE1DB;" data-rest="&#xE4E8;" data-name="32nd" data-key="2" class="glyph"></button>
-          <button data-dur="SixtyFourth" data-note="&#xE1DD;" data-rest="&#xE4E9;" data-name="64th" data-key="1" class="glyph extended"></button>
-          <button data-dur="HundredTwentyEighth" data-note="&#xE1DF;" data-rest="&#xE4EA;" data-name="128th" data-key="9" class="glyph extended"></button>
+        <div class="figures" data-i18n-aria="palette.value">
+          <button data-dur="Breve" data-note="&#xE1D0;" data-rest="&#xE4E2;" data-key="8" class="glyph extended"></button>
+          <button data-dur="Whole" data-note="&#xE1D2;" data-rest="&#xE4E3;" data-key="7" class="glyph"></button>
+          <button data-dur="Half" data-note="&#xE1D3;" data-rest="&#xE4E4;" data-key="6" class="glyph"></button>
+          <button data-dur="Quarter" data-note="&#xE1D5;" data-rest="&#xE4E5;" data-key="5" class="glyph"></button>
+          <button data-dur="Eighth" data-note="&#xE1D7;" data-rest="&#xE4E6;" data-key="4" class="glyph"></button>
+          <button data-dur="Sixteenth" data-note="&#xE1D9;" data-rest="&#xE4E7;" data-key="3" class="glyph"></button>
+          <button data-dur="ThirtySecond" data-note="&#xE1DB;" data-rest="&#xE4E8;" data-key="2" class="glyph"></button>
+          <button data-dur="SixtyFourth" data-note="&#xE1DD;" data-rest="&#xE4E9;" data-key="1" class="glyph extended"></button>
+          <button data-dur="HundredTwentyEighth" data-note="&#xE1DF;" data-rest="&#xE4EA;" data-key="9" class="glyph extended"></button>
         </div>
-        <button data-cmd="dot" class="wide" data-tip="Dot" data-desc="Makes the figure half as long again." data-key=".">• Dot</button>
+        <button data-cmd="dot" class="wide" data-i18n-tip="palette.dot" data-i18n-desc="palette.dot.desc" data-key="." data-i18n="palette.dot.button"></button>
       </details>
 
       <details data-section="accidentals" open>
-        <summary>Accidentals</summary>
+        <summary data-i18n="palette.accidentals"></summary>
         <div class="row">
-          <button data-alter="1" class="glyph" aria-label="Sharp" data-tip="Sharp" data-desc="Raises the previous note (or the selection) a semitone." data-key="+">&#xE262;</button>
-          <button data-alter="-1" class="glyph" aria-label="Flat" data-tip="Flat" data-desc="Lowers the previous note (or the selection) a semitone." data-key="-">&#xE260;</button>
-          <button data-alter="0" class="glyph" aria-label="Natural" data-tip="Natural" data-desc="Cancels sharps and flats on the previous note (or the selection).">&#xE261;</button>
+          <button data-alter="1" class="glyph" data-i18n-aria="palette.sharp" data-i18n-tip="palette.sharp" data-i18n-desc="palette.sharp.desc" data-key="+">&#xE262;</button>
+          <button data-alter="-1" class="glyph" data-i18n-aria="palette.flat" data-i18n-tip="palette.flat" data-i18n-desc="palette.flat.desc" data-key="-">&#xE260;</button>
+          <button data-alter="0" class="glyph" data-i18n-aria="palette.natural" data-i18n-tip="palette.natural" data-i18n-desc="palette.natural.desc">&#xE261;</button>
         </div>
       </details>
 
       <details data-section="lines" open>
-        <summary>Ties &amp; slurs</summary>
+        <summary data-i18n="palette.lines"></summary>
         <div class="row">
-          <button data-cmd="tie" class="icon-btn" aria-label="Tie" data-tip="Tie" data-desc="Joins the previous note to the next one of the same pitch: it sounds as one longer note." data-key="T">
+          <button data-cmd="tie" class="icon-btn" data-i18n-aria="palette.tie" data-i18n-tip="palette.tie" data-i18n-desc="palette.tie.desc" data-key="T">
             <svg viewBox="0 0 40 24" aria-hidden="true"><ellipse cx="9" cy="9" rx="5" ry="3.6" transform="rotate(-20 9 9)"/><ellipse cx="31" cy="9" rx="5" ry="3.6" transform="rotate(-20 31 9)"/><path d="M10 14 Q20 22 30 14 Q20 19 10 14Z"/></svg>
           </button>
-          <button data-cmd="slur" class="icon-btn" aria-label="Slur" data-tip="Slur" data-desc="Phrase mark over the selected notes: play them smoothly connected. Select the notes first." data-key="S">
+          <button data-cmd="slur" class="icon-btn" data-i18n-aria="palette.slur" data-i18n-tip="palette.slur" data-i18n-desc="palette.slur.desc" data-key="S">
             <svg viewBox="0 0 40 24" aria-hidden="true"><path d="M5 18 Q20 0 35 18 Q20 5 5 18Z"/></svg>
           </button>
         </div>
       </details>
 
       <details data-section="articulations" open>
-        <summary>Articulations</summary>
+        <summary data-i18n="palette.articulations"></summary>
         <div class="grid3">
-          <button data-artic="staccato" class="glyph mark-btn" aria-label="Staccato" data-tip="Staccato" data-desc="Short and detached.">&#xE4A2;</button>
-          <button data-artic="staccatissimo" class="glyph mark-btn" aria-label="Staccatissimo" data-tip="Staccatissimo" data-desc="Very short.">&#xE4A6;</button>
-          <button data-artic="tenuto" class="glyph mark-btn" aria-label="Tenuto" data-tip="Tenuto" data-desc="Held for its full value, slightly stressed.">&#xE4A4;</button>
-          <button data-artic="accent" class="glyph mark-btn" aria-label="Accent" data-tip="Accent" data-desc="Played with emphasis.">&#xE4A0;</button>
-          <button data-artic="marcato" class="glyph mark-btn" aria-label="Marcato" data-tip="Marcato" data-desc="Strongly accented.">&#xE4AC;</button>
-          <button data-artic="fermata" class="glyph mark-btn" aria-label="Fermata" data-tip="Fermata" data-desc="Hold longer than written. Also works on rests.">&#xE4C0;</button>
+          <button data-artic="staccato" class="glyph mark-btn" data-i18n-aria="palette.staccato" data-i18n-tip="palette.staccato" data-i18n-desc="palette.staccato.desc">&#xE4A2;</button>
+          <button data-artic="staccatissimo" class="glyph mark-btn" data-i18n-aria="palette.staccatissimo" data-i18n-tip="palette.staccatissimo" data-i18n-desc="palette.staccatissimo.desc">&#xE4A6;</button>
+          <button data-artic="tenuto" class="glyph mark-btn" data-i18n-aria="palette.tenuto" data-i18n-tip="palette.tenuto" data-i18n-desc="palette.tenuto.desc">&#xE4A4;</button>
+          <button data-artic="accent" class="glyph mark-btn" data-i18n-aria="palette.accent" data-i18n-tip="palette.accent" data-i18n-desc="palette.accent.desc">&#xE4A0;</button>
+          <button data-artic="marcato" class="glyph mark-btn" data-i18n-aria="palette.marcato" data-i18n-tip="palette.marcato" data-i18n-desc="palette.marcato.desc">&#xE4AC;</button>
+          <button data-artic="fermata" class="glyph mark-btn" data-i18n-aria="palette.fermata" data-i18n-tip="palette.fermata" data-i18n-desc="palette.fermata.desc">&#xE4C0;</button>
         </div>
       </details>
 
       <details data-section="dynamics">
-        <summary>Dynamics</summary>
+        <summary data-i18n="palette.dynamics"></summary>
         <div class="grid3 dynamics">
-          <button data-dyn="ppp" class="glyph" aria-label="ppp" data-tip="Pianississimo" data-desc="As soft as possible.">&#xE52A;</button>
-          <button data-dyn="pp" class="glyph" aria-label="pp" data-tip="Pianissimo" data-desc="Very soft.">&#xE52B;</button>
-          <button data-dyn="p" class="glyph" aria-label="p" data-tip="Piano" data-desc="Soft.">&#xE520;</button>
-          <button data-dyn="mp" class="glyph" aria-label="mp" data-tip="Mezzo-piano" data-desc="Moderately soft.">&#xE52C;</button>
-          <button data-dyn="mf" class="glyph" aria-label="mf" data-tip="Mezzo-forte" data-desc="Moderately loud.">&#xE52D;</button>
-          <button data-dyn="f" class="glyph" aria-label="f" data-tip="Forte" data-desc="Loud.">&#xE522;</button>
-          <button data-dyn="ff" class="glyph" aria-label="ff" data-tip="Fortissimo" data-desc="Very loud.">&#xE52F;</button>
-          <button data-dyn="fff" class="glyph" aria-label="fff" data-tip="Fortississimo" data-desc="As loud as possible.">&#xE530;</button>
-          <button data-dyn="sfz" class="glyph" aria-label="sfz" data-tip="Sforzato" data-desc="Sudden strong accent.">&#xE539;</button>
-          <button data-dyn="fp" class="glyph" aria-label="fp" data-tip="Forte-piano" data-desc="Loud, then immediately soft.">&#xE534;</button>
+          <button data-dyn="ppp" class="glyph" aria-label="ppp" data-i18n-tip="palette.ppp" data-i18n-desc="palette.ppp.desc">&#xE52A;</button>
+          <button data-dyn="pp" class="glyph" aria-label="pp" data-i18n-tip="palette.pp" data-i18n-desc="palette.pp.desc">&#xE52B;</button>
+          <button data-dyn="p" class="glyph" aria-label="p" data-i18n-tip="palette.p" data-i18n-desc="palette.p.desc">&#xE520;</button>
+          <button data-dyn="mp" class="glyph" aria-label="mp" data-i18n-tip="palette.mp" data-i18n-desc="palette.mp.desc">&#xE52C;</button>
+          <button data-dyn="mf" class="glyph" aria-label="mf" data-i18n-tip="palette.mf" data-i18n-desc="palette.mf.desc">&#xE52D;</button>
+          <button data-dyn="f" class="glyph" aria-label="f" data-i18n-tip="palette.f" data-i18n-desc="palette.f.desc">&#xE522;</button>
+          <button data-dyn="ff" class="glyph" aria-label="ff" data-i18n-tip="palette.ff" data-i18n-desc="palette.ff.desc">&#xE52F;</button>
+          <button data-dyn="fff" class="glyph" aria-label="fff" data-i18n-tip="palette.fff" data-i18n-desc="palette.fff.desc">&#xE530;</button>
+          <button data-dyn="sfz" class="glyph" aria-label="sfz" data-i18n-tip="palette.sfz" data-i18n-desc="palette.sfz.desc">&#xE539;</button>
+          <button data-dyn="fp" class="glyph" aria-label="fp" data-i18n-tip="palette.fp" data-i18n-desc="palette.fp.desc">&#xE534;</button>
         </div>
       </details>
 
       <details data-section="voice" open>
-        <summary>Voice</summary>
-        <div class="voices" id="voices" aria-label="Voice"></div>
+        <summary data-i18n="palette.voice"></summary>
+        <div class="voices" id="voices" data-i18n-aria="palette.voice"></div>
       </details>
     </aside>
 
     <!-- The document area: tabs and the recovery banner sit above the page,
          to the right of the palette, which runs from the toolbar down. -->
     <div class="document">
-    <nav class="tabs" id="tabs" role="tablist" aria-label="Open documents"></nav>
+    <nav class="tabs" id="tabs" role="tablist" data-i18n-aria="tabs.label"></nav>
 
     <div id="recovery" class="recovery" hidden></div>
 
-    <main id="page" class="page" tabindex="0" aria-label="Score">
+    <main id="page" class="page" tabindex="0" data-i18n-aria="score.label">
       <div class="sheet">
         <div class="meta" id="meta">
-          <input id="title" class="title" placeholder="Title" aria-label="Title">
-          <input id="composer" class="composer" placeholder="Composer" aria-label="Composer">
+          <input id="title" class="title" data-i18n-placeholder="meta.title" data-i18n-aria="meta.title">
+          <input id="composer" class="composer" data-i18n-placeholder="meta.composer" data-i18n-aria="meta.composer">
         </div>
         <div id="score" class="score"></div>
       </div>

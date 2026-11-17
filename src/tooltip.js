@@ -3,6 +3,8 @@
 // browser's native `title` tooltips, which are slow, unstyled and cannot
 // show shortcuts.
 
+import { keyLabel } from './i18n.js';
+
 const DELAY_MS = 450;
 
 export function installTooltips(root = document) {
@@ -22,7 +24,7 @@ export function installTooltips(root = document) {
     const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
     const { tip: title, desc, key } = el.dataset;
     // On figure buttons data-key is the duration digit; show it as a key too.
-    tip.innerHTML = `<div class="tt-head"><strong>${esc(title)}</strong>${key ? `<kbd>${esc(key)}</kbd>` : ''}</div>`
+    tip.innerHTML = `<div class="tt-head"><strong>${esc(title)}</strong>${key ? `<kbd>${esc(keyLabel(key))}</kbd>` : ''}</div>`
       + (desc ? `<div class="tt-desc">${esc(desc)}</div>` : '');
     tip.hidden = false;
     // Below the element, or above when there is no room; kept on screen.

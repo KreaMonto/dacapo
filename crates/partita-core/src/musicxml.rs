@@ -10,10 +10,12 @@
 //! is kept.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::fmt::Write as _;
 use std::io::Read;
 use std::path::Path;
 
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::model::*;
@@ -473,9 +475,75 @@ fn dynamic_name(d: Dynamic) -> &'static str {
 #[derive(Debug)]
 pub struct Import {
     pub score: Score,
-    /// Plain-English remarks for the user, e.g. "3 tuplets were imported
-    /// with their written values." Empty when nothing was lost.
-    pub notes: Vec<String>,
+    /// What had to be simplified, for the user to read. Empty when nothing
+    /// was lost.
+    pub notes: Vec<ImportNote>,
+    /// Staves the file gave no name, called "Staff 1", "Staff 2"… here;
+    /// the app may rename them in the user's language.
+    pub unnamed_staves: Vec<usize>,
+}
+
+/// Something an import simplified, `count` times. The app words it in the
+/// user's language from `kind`; `Display` gives the English text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ImportNote {
+    pub kind: ImportNoteKind,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportNoteKind {
+    /// Tuplet notes kept their written values.
+    Tuplets,
+    /// Grace notes were left out.
+    GraceNotes,
+    /// Notes beyond the fourth voice of a staff were left out.
+    ExtraVoices,
+    /// Clef changes after the first clef were left out.
+    ClefChanges,
+    /// Notes overlapping the previous one were moved after it.
+    Overlaps,
+}
+
+impl fmt::Display for ImportNote {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let n = self.count;
+        let plural = |one: &str, many: &str| {
+            if n == 1 {
+                one.to_string()
+            } else {
+                format!("{n} {many}")
+            }
+        };
+        match self.kind {
+            ImportNoteKind::Tuplets => write!(
+                f,
+                "{} kept their written values, because tuplets are not supported yet. Those measures may show as too full.",
+                plural("One tuplet note", "tuplet notes")
+            ),
+            ImportNoteKind::GraceNotes => write!(
+                f,
+                "{} left out (not supported yet).",
+                plural("One grace note was", "grace notes were")
+            ),
+            ImportNoteKind::ExtraVoices => write!(
+                f,
+                "{} beyond the fourth voice of a staff left out.",
+                plural("One note was", "notes were")
+            ),
+            ImportNoteKind::ClefChanges => write!(
+                f,
+                "Staves kept the clef they start with; {} left out.",
+                plural("one clef change was", "clef changes were")
+            ),
+            ImportNoteKind::Overlaps => write!(
+                f,
+                "{} overlapped the previous note in their voice and were placed right after it.",
+                plural("One note", "notes")
+            ),
+        }
+    }
 }
 
 /// Reads a `.musicxml`, `.xml` or `.mxl` file.
@@ -635,6 +703,8 @@ struct Importer {
     dropped_voices: usize,
     extra_clefs: usize,
     overlaps: usize,
+    /// Staves named "Staff N" because the file gave them no name.
+    unnamed: Vec<usize>,
 }
 
 impl Importer {
@@ -759,45 +829,17 @@ impl Importer {
             staff.measures.resize_with(count, StaffMeasure::default);
         }
 
-        let mut notes = Vec::new();
-        let plural = |n: usize, one: &str, many: &str| {
-            if n == 1 {
-                one.to_string()
-            } else {
-                format!("{n} {many}")
-            }
-        };
-        if self.tuplets > 0 {
-            notes.push(format!(
-                "{} kept their written values, because tuplets are not supported yet. Those measures may show as too full.",
-                plural(self.tuplets, "One tuplet note", "tuplet notes")
-            ));
-        }
-        if self.grace > 0 {
-            notes.push(format!(
-                "{} left out (not supported yet).",
-                plural(self.grace, "One grace note was", "grace notes were")
-            ));
-        }
-        if self.dropped_voices > 0 {
-            notes.push(format!(
-                "{} beyond the fourth voice of a staff left out.",
-                plural(self.dropped_voices, "One note was", "notes were")
-            ));
-        }
-        if self.extra_clefs > 0 {
-            notes.push(format!(
-                "{} kept the clef they start with; {} left out.",
-                "Staves",
-                plural(self.extra_clefs, "one clef change was", "clef changes were")
-            ));
-        }
-        if self.overlaps > 0 {
-            notes.push(format!(
-                "{} overlapped the previous note in their voice and were placed right after it.",
-                plural(self.overlaps, "One note", "notes")
-            ));
-        }
+        let notes: Vec<ImportNote> = [
+            (ImportNoteKind::Tuplets, self.tuplets),
+            (ImportNoteKind::GraceNotes, self.grace),
+            (ImportNoteKind::ExtraVoices, self.dropped_voices),
+            (ImportNoteKind::ClefChanges, self.extra_clefs),
+            (ImportNoteKind::Overlaps, self.overlaps),
+        ]
+        .into_iter()
+        .filter(|&(_, count)| count > 0)
+        .map(|(kind, count)| ImportNote { kind, count })
+        .collect();
 
         let mut score = Score {
             metadata: Metadata { title, composer },
@@ -810,11 +852,17 @@ impl Importer {
                 .map(|t| t.clamp(*TEMPO_RANGE.start(), *TEMPO_RANGE.end()))
                 .unwrap_or(DEFAULT_TEMPO),
         };
+        let mut unnamed_staves = self.unnamed;
         if score.staves.is_empty() {
             let staff = score.blank_staff("Staff 1", Clef::Treble);
             score.staves.push(staff);
+            unnamed_staves = vec![0];
         }
-        Ok(Import { score, notes })
+        Ok(Import {
+            score,
+            notes,
+            unnamed_staves,
+        })
     }
 
     fn read_part(&mut self, part: roxmltree::Node, first_part: bool, info: &PartInfo) {
@@ -848,6 +896,7 @@ impl Importer {
         for n in 1..=staves_in_part {
             let index = self.score_staves.len();
             let label = if name.is_empty() {
+                self.unnamed.push(index);
                 format!("Staff {}", index + 1)
             } else {
                 name.to_string()
@@ -1485,8 +1534,46 @@ mod tests {
         assert_eq!(low.duration, Duration::dotted(DurationBase::Half, 1));
         assert_eq!(s.slurs.len(), 1);
         assert!(s.staves[0].measures[1].voices[0][0].is_rest());
-        assert_eq!(imp.notes.len(), 2, "{:?}", imp.notes); // tuplet, grace note
+        assert_eq!(
+            imp.notes,
+            [
+                ImportNote {
+                    kind: ImportNoteKind::Tuplets,
+                    count: 1
+                },
+                ImportNote {
+                    kind: ImportNoteKind::GraceNotes,
+                    count: 1
+                },
+            ]
+        );
+        assert_eq!(
+            imp.notes[1].to_string(),
+            "One grace note was left out (not supported yet)."
+        );
+        assert!(imp.unnamed_staves.is_empty(), "the part is named Piano");
         assert!(s.validate().is_empty());
+    }
+
+    #[test]
+    fn names_unnamed_parts_and_says_which() {
+        let xml = r#"<score-partwise>
+  <part-list><score-part id="P1"><part-name></part-name></score-part></part-list>
+  <part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes>
+    <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note>
+  </measure></part>
+</score-partwise>"#;
+        let imp = import(xml, "x").unwrap();
+        assert_eq!(imp.score.staves[0].name, "Staff 1");
+        assert_eq!(imp.unnamed_staves, [0]);
+        let notes = ImportNote {
+            kind: ImportNoteKind::Overlaps,
+            count: 3,
+        };
+        assert_eq!(
+            serde_json::to_value(notes).unwrap(),
+            serde_json::json!({ "kind": "overlaps", "count": 3 })
+        );
     }
 
     #[test]

@@ -8,6 +8,8 @@
 // position (a G clef's baseline is the G line, a notehead's baseline is its
 // center…), which makes placement exact without measuring anything.
 
+import { t } from './i18n.js';
+
 export const SP = 10; // one staff space, in px (CSS .m uses font-size 4·SP)
 const STAFF_GAP = 10 * SP; // staff top to next staff top inside a system
 const SYSTEM_GAP = 7 * SP;
@@ -609,7 +611,7 @@ export function renderScore(view, width, opts = {}) {
       if (ms.overfull.has(st)) {
         const beatTicks = TICKS_WHOLE / ms.attrs.time.beat_type;
         const beats = +(ms.overfull.get(st) / beatTicks).toFixed(2);
-        const label = `Too many beats: ${beats} of ${ms.attrs.time.beats}`;
+        const label = esc(t('score.overfull', { beats, total: ms.attrs.time.beats }));
         push(`<rect class="overfull" x="${ms.x + 2}" y="${top - 0.5 * SP}" width="${ms.w - 4}" height="${5 * SP}"><title>${label}</title></rect>`);
         push(`<text class="errlabel" x="${ms.x + (ms.systemStart ? ms.prefix : 0) + 5}" y="${top - 1.1 * SP}">⚠ ${label}</text>`);
       }
@@ -653,7 +655,7 @@ export function renderScore(view, width, opts = {}) {
       if (ms.multi) {
         const x0 = ms.contentX + 0.4 * SP;
         const x1 = ms.contentX + ms.contentW - 0.4 * SP;
-        push(`<g class="ev v0 mrest" data-measures="${ms.m + 1}-${ms.mEnd + 1}"><title>Measures ${ms.m + 1}–${ms.mEnd + 1}: ${ms.multi} measures of rest</title>`);
+        push(`<g class="ev v0 mrest" data-measures="${ms.m + 1}-${ms.mEnd + 1}"><title>${esc(t('score.multirest', { from: ms.m + 1, to: ms.mEnd + 1, n: ms.multi }))}</title>`);
         push(`<rect x="${x0}" y="${top + 1.6 * SP}" width="${x1 - x0}" height="${0.8 * SP}"/>`);
         push(`<rect x="${x0}" y="${top + SP}" width="${0.16 * SP}" height="${2 * SP}"/><rect x="${x1 - 0.16 * SP}" y="${top + SP}" width="${0.16 * SP}" height="${2 * SP}"/>`);
         push(`<text class="m tsig" x="${(x0 + x1) / 2}" y="${top - 1.2 * SP}">${timeDigits(ms.multi)}</text></g>`);

@@ -190,6 +190,8 @@
       },
       set_dynamic({ dynamic }) { const e = voiceOf(view.caret)[view.caret.index - 1]; if (e) { snapshot(); e.dynamic = e.dynamic === dynamic ? null : dynamic; } },
       toggle_slur() {
+        // Errors look like the real ones (src-tauri/src/ui_error.rs).
+        if (!view.selection) throw { code: 'edit.slur_needs_selection', message: 'Select the notes to slur first (Shift+arrows or drag)' };
         const v = voiceOf(view.caret);
         const i = view.caret.index;
         if (i < 2) return;
