@@ -231,10 +231,9 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .palette .text-btn .boxed { border: 1.5px solid currentColor; border-radius: 2px; padding: 0 5px; font-weight: 700; }
 /* Words on notes and rehearsal marks in the score: click to change them. */
 .score .ntext { cursor: text; }
-.score .ntext-expression { font-style: italic; }
 .score .ntext.placeholder { opacity: 0.5; }
 .score .rehearsal rect { fill: none; stroke: var(--ink); stroke-width: 1.4; }
-.score .rehearsal text { fill: var(--ink); font-weight: 700; }
+.score .rehearsal text { fill: var(--ink); }
 .score .rehearsal { cursor: text; }
 .score .rehearsal:hover rect { stroke: var(--accent); }
 .score .rehearsal:hover text { fill: var(--accent); }
@@ -252,7 +251,7 @@ button.on { background: var(--button-active); border-color: var(--accent); color
   color: var(--muted);
 }
 .palette .wide { width: 100%; }
-.palette .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.palette .tools { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
 .palette .tools .tool { height: 32px; padding: 0; }
 .palette .tools .icon { width: 17px; height: 17px; }
 .palette .row { display: flex; gap: 4px; }
@@ -341,17 +340,51 @@ button.on { background: var(--button-active); border-color: var(--accent); color
    render.js; a click edits them. Placeholders are hints, never printed. */
 .score .ptext { fill: var(--ink); cursor: text; }
 .score .ptext:hover { fill: var(--accent); }
-.score .ptext-title { font-weight: 600; }
-.score .ptext-dedication { font-style: italic; }
+/* Fonts, sizes, bold and italic come from the text styles (render.js). */
 .score .ptext-composer, .score .ptext-lyricist, .score .ptext-part { fill: var(--ink); }
 .score .ptext-header, .score .ptext-footer, .score .ptext-copyright, .score .ptext-pnum { fill: var(--muted); }
 .score .ptext-pnum { cursor: pointer; }
 .score .ptext.placeholder { fill: var(--muted); opacity: 0.55; font-weight: normal; }
 .text-input { text-align: center; }
+.text-area { resize: none; overflow: hidden; white-space: pre; }
+/* Text boxes: grabbed anywhere in their area; dashed while hovered. */
+.score .tbox { cursor: move; }
+.score .tbox text { fill: var(--ink); }
+.score .tbox-area { fill: transparent; stroke: none; }
+.score .tbox.framed .tbox-area { stroke: var(--ink); stroke-width: 1.2; }
+.score .tbox:hover .tbox-area { stroke: var(--accent); stroke-dasharray: 4 3; stroke-width: 1; }
+.score .tbox.placeholder text { opacity: 0.5; }
+.score.texting { cursor: text; }
+@media print {
+  .score .tbox:hover .tbox-area { stroke: none; }
+  .score .tbox.framed .tbox-area { stroke: #000 !important; stroke-dasharray: none; }
+  .score .tbox text { fill: #000 !important; }
+  .score .tbox.placeholder, .format-bar { display: none !important; }
+}
+/* The format bar over a text being typed. */
+.format-bar {
+  position: fixed; z-index: 6; display: flex; align-items: center; gap: 4px; padding: 4px 6px;
+  background: var(--chrome); border: 1px solid var(--chrome-border); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+}
+.format-bar[hidden] { display: none; }
+.format-bar select, .format-bar input { font: 12px "Segoe UI", system-ui, sans-serif; padding: 3px 5px; border: 1px solid var(--chrome-border); border-radius: 5px; background: var(--button); color: var(--text); }
+.format-bar .fb-font { max-width: 150px; }
+.format-bar .fb-size { width: 52px; }
+.format-bar .fb-pt { font-size: 11px; color: var(--muted); margin-right: 4px; }
+.format-bar button { min-width: 26px; height: 26px; padding: 0 5px; border-radius: 5px; font: 14px Georgia, serif; }
+.format-bar button.on { background: var(--accent); color: #fff; }
+.format-bar .icon { width: 15px; height: 15px; }
+/* Text Styles dialog. */
+.styles-table { border-collapse: collapse; font-size: 13px; }
+.styles-table th { text-align: left; font-weight: 600; padding: 3px 10px 3px 0; white-space: nowrap; }
+.styles-table td { padding: 3px 6px 3px 0; white-space: nowrap; }
+.styles-table select, .styles-table input[type=number] { font: inherit; padding: 2px 5px; border: 1px solid var(--chrome-border); border-radius: 5px; background: var(--button); color: var(--text); }
+.styles-table input[type=number] { width: 56px; }
+.styles-table .check { display: flex; align-items: center; gap: 4px; font-weight: normal; }
 /* Tempo markings: words in bold, then the metronome mark. A click opens them. */
 .score .tempo { fill: var(--ink); cursor: pointer; }
 .score .tempo:hover { fill: var(--accent); }
-.score .tempo-words { font-weight: 700; }
 @media print { .score .tempo { fill: #000 !important; } }
 .tempo-form .check { display: flex; align-items: center; gap: 8px; font-weight: normal; }
 .tempo-form .disabled { opacity: 0.45; }

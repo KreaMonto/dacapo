@@ -364,9 +364,9 @@ thread_local! {
 /// Runs `f` with the document types read in the binary layout of recovery
 /// format `version`: 3 (Da Capo 0.2.0 and 0.2.1: no lyrics, no staff
 /// instruments, no page texts), 4 (Da Capo 0.2.2: no staff instruments, no
-/// page texts), 5 (Partita 0.3.0: no page texts), or 6 and 7 (development
+/// page texts), 5 (Partita 0.3.0: no page texts), or 6 to 8 (development
 /// builds before 0.4.0: no tempo markings in 6; no note texts or rehearsal
-/// marks in either).
+/// marks in 6 and 7; no text styles or text boxes in any of them).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
@@ -1047,8 +1047,83 @@ pub enum Issue {
     Structure { message: String },
 }
 
-/// A complete piece of music.
+/// The kinds of text in a score. Each is drawn in its own style (see
+/// [`Score::text_styles`]), so changing one changes every text of that kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextKind {
+    Title,
+    Subtitle,
+    Composer,
+    Lyricist,
+    Dedication,
+    Part,
+    Copyright,
+    Header,
+    Footer,
+    PageNumber,
+    Tempo,
+    Expression,
+    Technique,
+    Rehearsal,
+    Lyrics,
+    StaffName,
+}
+
+/// How a text looks. What is left at its default keeps Partita's look for
+/// that kind of text (a bold title, an italic expression…).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TextStyle {
+    /// Font family, or empty for the default.
+    pub font: String,
+    /// Size in tenths of a point, or 0 for the default.
+    pub size: u16,
+    pub bold: Option<bool>,
+    pub italic: Option<bool>,
+}
+
+/// Font sizes accepted, in tenths of a point (4 to 72 pt).
+pub const TEXT_SIZE_RANGE: std::ops::RangeInclusive<u16> = 40..=720;
+
+/// How the lines of a text box line up.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextAlign {
+    #[default]
+    Left,
+    Center,
+    Right,
+}
+
+/// A text placed freely on a page. It stays where it was put, whatever the
+/// music does.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextBox {
+    pub id: u64,
+    /// The page, from 0.
+    pub page: u32,
+    /// Where it is on the page, in tenths of a millimetre from the top left
+    /// corner: `x` is where its lines align (left edge, centre or right
+    /// edge), `y` the baseline of its first line.
+    pub x: i32,
+    pub y: i32,
+    /// The words; lines are separated by `\n`.
+    pub text: String,
+    #[serde(default)]
+    pub style: TextStyle,
+    #[serde(default)]
+    pub align: TextAlign,
+    /// Drawn with a frame around it.
+    #[serde(default)]
+    pub frame: bool,
+}
+
+/// Longest text box, in characters.
+pub const MAX_TEXT_BOX_CHARS: usize = 2000;
+
+/// A complete piece of music.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Score {
     pub metadata: Metadata,
     pub measures: Vec<MeasureAttrs>,
@@ -1061,6 +1136,69 @@ pub struct Score {
     /// Playback tempo in quarter notes per minute.
     #[serde(default = "default_tempo")]
     pub tempo: u16,
+    /// The styles changed from their default, by kind of text. Since file
+    /// format 7 (recovery format 9).
+    pub text_styles: std::collections::BTreeMap<TextKind, TextStyle>,
+    /// Texts placed freely on the pages. Since file format 7 (recovery
+    /// format 9).
+    pub text_boxes: Vec<TextBox>,
+}
+
+#[derive(Deserialize)]
+struct ScoreFields {
+    metadata: Metadata,
+    measures: Vec<MeasureAttrs>,
+    staves: Vec<Staff>,
+    next_id: u64,
+    #[serde(default)]
+    slurs: Vec<Slur>,
+    #[serde(default = "default_tempo")]
+    tempo: u16,
+    #[serde(default)]
+    text_styles: std::collections::BTreeMap<TextKind, TextStyle>,
+    #[serde(default)]
+    text_boxes: Vec<TextBox>,
+}
+
+/// [`Score`] as written to recovery data before text styles and text boxes
+/// (formats 3 to 8).
+#[derive(Deserialize)]
+struct ScorePreStyles {
+    metadata: Metadata,
+    measures: Vec<MeasureAttrs>,
+    staves: Vec<Staff>,
+    next_id: u64,
+    slurs: Vec<Slur>,
+    tempo: u16,
+}
+
+impl<'de> Deserialize<'de> for Score {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        if matches!(legacy_format(), 3..=8) {
+            let s = ScorePreStyles::deserialize(deserializer)?;
+            return Ok(Score {
+                metadata: s.metadata,
+                measures: s.measures,
+                staves: s.staves,
+                next_id: s.next_id,
+                slurs: s.slurs,
+                tempo: s.tempo,
+                text_styles: Default::default(),
+                text_boxes: Vec::new(),
+            });
+        }
+        let s = ScoreFields::deserialize(deserializer)?;
+        Ok(Score {
+            metadata: s.metadata,
+            measures: s.measures,
+            staves: s.staves,
+            next_id: s.next_id,
+            slurs: s.slurs,
+            tempo: s.tempo,
+            text_styles: s.text_styles,
+            text_boxes: s.text_boxes,
+        })
+    }
 }
 
 /// Tempo of new scores and of files written before tempo existed.
@@ -1115,10 +1253,12 @@ impl Score {
         self.measures.iter().any(|a| a.tempo.is_some())
     }
 
-    /// Whether the score has tempo markings, rehearsal marks or texts on
-    /// notes (which need file format 7).
+    /// Whether the score has tempo markings, rehearsal marks, texts on
+    /// notes, text styles or text boxes (which need file format 7).
     pub fn has_markings(&self) -> bool {
         self.has_tempo_marks()
+            || !self.text_styles.is_empty()
+            || !self.text_boxes.is_empty()
             || self.measures.iter().any(|a| a.rehearsal.is_some())
             || self
                 .staves
@@ -1142,6 +1282,8 @@ impl Score {
             next_id: 1,
             slurs: Vec::new(),
             tempo: DEFAULT_TEMPO,
+            text_styles: Default::default(),
+            text_boxes: Vec::new(),
         };
         let staff = score.blank_staff("Staff 1", Clef::Treble);
         score.staves.push(staff);

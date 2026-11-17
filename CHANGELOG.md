@@ -5,6 +5,8 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 ## [Unreleased]
 
 ### Added
+- **Text boxes**: the **T** tool writes anywhere on a page; a box stays where it is put, whatever the music does. Drag it to move it, click it to change it; several lines, alignment and an optional frame.
+- **Text styles**: every kind of text (title, tempo markings, expressions, lyrics, staff names, header, page numbers…) has its font, size, bold and italic. A format bar appears above any text being typed, and **Score → Text Styles…** shows them all. Sizes are in points; spacing follows them.
 - **Words in the music**: expressions under the staff (*dolce*, *espressivo*; **Ctrl+E**) and techniques over it (*pizz.*, *arco*), attached to a note so they move, copy and delete with it; and boxed **rehearsal marks** (A, B, C… in order). A new **Indications** section in the palette has them with the tempo marking; click any of them in the score to change it. MusicXML keeps them.
 - **A staff can become a grand staff**: choosing a piano (or harp, organ…) for an existing staff offers two braced staves and adds the bass staff below it. Changing a braced instrument's name, sound or transposition now changes all its staves.
 - **Tempo markings** such as *Andante con moto ♩ = 76*, at the start of any measure (**Score → Tempo Marking…**, the palette, or click a printed one). Print words and metronome mark, either one, or nothing; hidden ones still set the tempo. A marking later in the piece can change the tempo from its measure on, and playback follows it. The metronome mark can count eighths, quarters, halves or dotted values. MusicXML import and export keep them.

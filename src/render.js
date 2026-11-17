@@ -33,22 +33,30 @@ const LYRIC_LEAD = 1.1 * SP; // a measure's first note is this far right of wher
 
 let measureCtx;
 const widthCache = new Map();
-/** Width of a syllable in layout units (estimated where no canvas exists). */
-function textWidth(text) {
-  let w = widthCache.get(text);
+/**
+ * Width of a text in layout units, in a style (the lyrics' by default);
+ * estimated where no canvas exists.
+ */
+function textWidth(text, st = currentStyle('lyrics')) {
+  const font = cssFont(st);
+  const key = `${font}\u0000${text}`;
+  let w = widthCache.get(key);
   if (w !== undefined) return w;
   if (measureCtx === undefined) {
-    try {
-      measureCtx = document.createElement('canvas').getContext('2d');
-      measureCtx.font = `${LYRIC_PX}px ${LYRIC_FONT}`;
-    } catch {
-      measureCtx = null;
-    }
+    try { measureCtx = document.createElement('canvas').getContext('2d'); } catch { measureCtx = null; }
   }
-  w = measureCtx ? measureCtx.measureText(text).width : text.length * LYRIC_PX * 0.5;
-  widthCache.set(text, w);
+  if (measureCtx) {
+    measureCtx.font = font;
+    w = measureCtx.measureText(text).width;
+  } else {
+    w = text.length * st.size * 0.5;
+  }
+  widthCache.set(key, w);
   return w;
 }
+/** Lyrics font size and the distance between verses, as the lyrics style says. */
+const lyricPx = () => currentStyle('lyrics').size;
+const lyricLine = () => (LYRIC_LINE * lyricPx()) / LYRIC_PX;
 /**
  * The name shown at the start of a staff, or '' for none: a single staff
  * with the automatic name ("Staff 1") shows nothing, as in a lead sheet.
@@ -112,12 +120,60 @@ const PAGE_MARGIN_MM = 15;
 // model.rs). Drawn in the SVG so they print exactly as shown; clicking one
 // edits it (app.js), which `data-text` names.
 
-/** Font size of each text, in layout units. */
-export const TEXT_SIZE = {
-  part: 1.6 * SP, dedication: 1.6 * SP, title: 4.2 * SP, subtitle: 2.3 * SP, composer: 1.8 * SP,
-  lyricist: 1.8 * SP, header: 1.5 * SP, footer: 1.5 * SP, copyright: 1.4 * SP, pnum: 1.5 * SP,
-};
 export const TEXT_FONT = 'Georgia, "Times New Roman", serif';
+
+// ----- text styles ---------------------------------------------------------------
+// Every kind of text has a style (TextKind and TextStyle in model.rs): the
+// defaults below, with what the score changed. Text boxes have their own.
+
+/** Layout units in a typographic point (a staff space is 1.75 mm). */
+export const UNITS_PER_PT = (SP / 1.75) * (25.4 / 72);
+/** The default look of each kind of text: size in layout units. */
+export const TEXT_DEFAULTS = {
+  title: { size: 4.2 * SP, bold: true },
+  subtitle: { size: 2.3 * SP },
+  composer: { size: 1.8 * SP },
+  lyricist: { size: 1.8 * SP },
+  dedication: { size: 1.6 * SP, italic: true },
+  part: { size: 1.6 * SP },
+  copyright: { size: 1.4 * SP },
+  header: { size: 1.5 * SP },
+  footer: { size: 1.5 * SP },
+  page_number: { size: 1.5 * SP },
+  tempo: { size: 2 * SP, bold: true },
+  expression: { size: 1.7 * SP, italic: true },
+  technique: { size: 1.7 * SP },
+  rehearsal: { size: 2 * SP, bold: true },
+  lyrics: { size: LYRIC_PX },
+  staff_name: { size: LYRIC_PX },
+  text_box: { size: 2 * SP },
+};
+/** The kinds whose style the score keeps (text boxes keep their own). */
+export const TEXT_KINDS = Object.keys(TEXT_DEFAULTS).filter((k) => k !== 'text_box');
+
+/** How a text looks: a kind's default with what `style` changes. */
+export function resolveStyle(kind, style = {}) {
+  const d = TEXT_DEFAULTS[kind] || TEXT_DEFAULTS.text_box;
+  const font = (style.font || '').replace(/["'\\<>]/g, '');
+  return {
+    font,
+    family: font ? `"${font}", ${TEXT_FONT}` : TEXT_FONT,
+    size: style.size ? (style.size / 10) * UNITS_PER_PT : d.size,
+    bold: style.bold ?? !!d.bold,
+    italic: style.italic ?? !!d.italic,
+  };
+}
+let styles = {}; // the styles of the score being laid out and drawn, resolved
+function useStyles(score) {
+  styles = Object.fromEntries(TEXT_KINDS.map((k) => [k, resolveStyle(k, score.text_styles?.[k])]));
+}
+/** The style of a kind of text in the score laid out last. */
+export const currentStyle = (kind) => styles[kind] || resolveStyle(kind);
+/** A style as a CSS `font` value (sizes in layout units, or `size`). */
+export const cssFont = (st, size = st.size) => `${st.italic ? 'italic ' : ''}${st.bold ? 700 : 400} ${size}px ${st.family}`;
+/** A style as SVG attributes. */
+const styleAttrs = (st) =>
+  `font-family='${st.family}' font-size="${st.size}" font-weight="${st.bold ? 700 : 400}" font-style="${st.italic ? 'italic' : 'normal'}"`;
 
 const PAGE_NUMBERS = { show: true, edge: 'top', align: 'right', first_page: false, format: '{page}' };
 
@@ -139,9 +195,7 @@ export const perMinute = (quarterBpm, beat) => Math.floor((quarterBpm * 2 + BEAT
 /** Quarter notes per minute for `n` beats of `beat` per minute. */
 export const toQuarterBpm = (n, beat) => Math.floor((n * BEATS[beat].eighths + 1) / 2);
 
-const TEMPO_SIZE = 2 * SP;
-const TEMPO_NOTE_SIZE = 3.2 * SP;
-const TEMPO_ROOM = 2.6 * SP; // above a system that shows a marking
+const TEMPO_ROOM = 2.6 * SP; // above a system that shows a marking, at the default size
 
 /** The metronome value a marking shows: the opening tempo in measure 1. */
 const markBpm = (mark, m, score) => (m === 0 ? score.tempo ?? 100 : mark.bpm);
@@ -175,17 +229,18 @@ function headingLayout(meta) {
   const lines = [];
   let y = 0;
   if (meta.part || meta.dedication) {
-    y += 1.6 * SP;
+    y += Math.max(currentStyle('part').size, currentStyle('dedication').size);
     lines.push({ key: 'part', align: 'left', y }, { key: 'dedication', align: 'center', y });
     y += 0.9 * SP;
   }
-  y += 0.85 * TEXT_SIZE.title;
+  const size = (k) => currentStyle(k).size;
+  y += 0.85 * size('title');
   lines.push({ key: 'title', align: 'center', y });
   if (meta.subtitle) {
-    y += 0.5 * SP + 0.9 * TEXT_SIZE.subtitle;
+    y += 0.5 * SP + 0.9 * size('subtitle');
     lines.push({ key: 'subtitle', align: 'center', y });
   }
-  y += 0.6 * SP + TEXT_SIZE.composer;
+  y += 0.6 * SP + Math.max(size('composer'), size('lyricist'));
   lines.push({ key: 'lyricist', align: 'left', y }, { key: 'composer', align: 'right', y });
   return { lines, height: y + 1.4 * SP };
 }
@@ -300,6 +355,7 @@ export function isMeasureRest(events, cap) {
  */
 export function layout(view, width, opts = {}) {
   const score = view.score;
+  useStyles(score);
   const nStaves = score.staves.length;
   const mode = opts.view || 'wrap';
   const geo = mode === 'page' ? pageGeometry(opts.paper) : null;
@@ -418,7 +474,7 @@ export function layout(view, width, opts = {}) {
   };
   const names = sharedName(score.staves.map((_, st) => shownStaffName(score, st)));
   const shortNames = sharedName(score.staves.map((_, st) => shownShortName(score, st)));
-  const widest = (list) => (list.some(Boolean) ? Math.max(...list.map((n) => (n ? textWidth(n) : 0))) + NAME_GAP : 0);
+  const widest = (list) => (list.some(Boolean) ? Math.max(...list.map((n) => (n ? textWidth(n, currentStyle('staff_name')) : 0))) + NAME_GAP : 0);
   const nameIndent = widest(names) + groupIndent;
   const shortIndent = widest(shortNames) + groupIndent;
 
@@ -485,10 +541,10 @@ export function layout(view, width, opts = {}) {
           });
         });
       }
-      return Math.max(LYRIC_Y0, low + 0.75 * LYRIC_PX + LYRIC_CLEAR);
+      return Math.max(LYRIC_Y0, low + 0.75 * lyricPx() + LYRIC_CLEAR);
     });
     // Bottom of each staff's block: the staff itself, or its last verse.
-    const bottom = (st) => (verses[st] ? s.lyricY[st] + (verses[st] - 1) * LYRIC_LINE + 0.7 * SP : 4 * SP);
+    const bottom = (st) => (verses[st] ? s.lyricY[st] + (verses[st] - 1) * lyricLine() + 0.7 * SP : 4 * SP);
     s.staffY = [0];
     for (let st = 0; st + 1 < nStaves; st++) s.staffY.push(s.staffY[st] + Math.max(STAFF_GAP, bottom(st) + 3.3 * SP));
     s.span = s.staffY[nStaves - 1] + 4 * SP; // first staff line to last staff line
@@ -502,7 +558,9 @@ export function layout(view, width, opts = {}) {
   let y = heading.top + heading.height + MARGIN_TOP;
   systems.forEach((s, i) => {
     // Room above for a tempo marking.
-    const above = s.measures.some((ms) => ms.tempoShown || ms.rehearsal) ? TEMPO_ROOM : 0;
+    const above = s.measures.some((ms) => ms.tempoShown || ms.rehearsal)
+      ? TEMPO_ROOM + Math.max(0, Math.max(currentStyle('tempo').size, currentStyle('rehearsal').size) - 2 * SP)
+      : 0;
     if (geo && i > 0 && y + above + s.height + 2 * SP > pageTop(page) + geo.h - geo.margin) {
       page++;
       y = pageTop(page) + geo.margin + MARGIN_TOP;
@@ -544,7 +602,7 @@ export function layout(view, width, opts = {}) {
     height: totalHeight,
     staffTop: (ms, staff) => ms.system.y + ms.system.staffY[staff],
     /** Baseline of a verse under a staff of a system. */
-    lyricY: (system, staff, verse) => system.y + system.staffY[staff] + system.lyricY[staff] + verse * LYRIC_LINE,
+    lyricY: (system, staff, verse) => system.y + system.staffY[staff] + system.lyricY[staff] + verse * lyricLine(),
     tickX: (ms, tick) => ms.contentX + (tick / ms.cap) * ms.contentW,
   };
 }
@@ -621,10 +679,11 @@ function drawTempoMarks(lay, score, push, onPage) {
     // A rehearsal mark sits in a box on the barline (over the clef at the
     // start of a system); the tempo marking follows it.
     if (ms.rehearsal) {
-      const w = tempoTextWidth(ms.rehearsal, true) + 1.2 * SP;
+      const st = currentStyle('rehearsal');
+      const w = textWidth(ms.rehearsal, st) + 0.6 * st.size;
       const bx = Math.max(ms.systemStart ? ms.system.x0 : ms.x - w / 2, right + 1.2 * SP);
-      push(`<g class="rehearsal" data-rehearsal="${ms.m}"><rect x="${bx}" y="${y - 2.1 * SP}" width="${w}" height="${2.8 * SP}" rx="2"/>`
-        + `<text font-family='${TEXT_FONT}' font-size="${TEMPO_SIZE}" text-anchor="middle" x="${bx + w / 2}" y="${y}">${esc(ms.rehearsal)}</text></g>`);
+      push(`<g class="rehearsal" data-rehearsal="${ms.m}"><rect x="${bx}" y="${y - 1.05 * st.size}" width="${w}" height="${1.4 * st.size}" rx="2"/>`
+        + `<text ${styleAttrs(st)} text-anchor="middle" x="${bx + w / 2}" y="${y}">${esc(ms.rehearsal)}</text></g>`);
       right = bx + w;
     }
     if (!ms.tempoShown) continue;
@@ -634,32 +693,69 @@ function drawTempoMarks(lay, score, push, onPage) {
     const x = Math.max(ms.systemStart ? ms.system.x0 : ms.x + 0.6 * SP, right + 1.2 * SP);
     const parts = [];
     let width = 0;
+    const st = currentStyle('tempo');
+    const plain = { ...st, bold: false, italic: false };
     if (mark.show_text && mark.text) {
-      parts.push(`<tspan class="tempo-words">${esc(mark.text)}</tspan>`);
-      width += tempoTextWidth(mark.text, true);
+      parts.push(`<tspan class="tempo-words" font-weight="${st.bold ? 700 : 400}" font-style="${st.italic ? 'italic' : 'normal'}">${esc(mark.text)}</tspan>`);
+      width += textWidth(mark.text, st);
     }
     const bpm = markBpm(mark, ms.m, score);
     if (mark.show_metronome && bpm) {
       const beat = BEATS[mark.beat] ? mark.beat : 'quarter';
       const value = `\u2009\u00a0=\u00a0${perMinute(bpm, beat)}`;
-      parts.push(`<tspan class="tempo-note" font-family="Bravura" font-size="${TEMPO_NOTE_SIZE}">${BEATS[beat].glyph}</tspan><tspan>${value}</tspan>`);
-      width += (parts.length > 1 ? tempoTextWidth('\u00a0\u00a0', false) : 0)
-        + (BEATS[beat].eighths % 3 === 0 ? 1.9 : 1.2) * SP + tempoTextWidth(value, false);
+      parts.push(`<tspan class="tempo-note" font-family="Bravura" font-size="${1.6 * st.size}">${BEATS[beat].glyph}</tspan><tspan>${value}</tspan>`);
+      width += (parts.length > 1 ? textWidth('\u00a0\u00a0', plain) : 0)
+        + (BEATS[beat].eighths % 3 === 0 ? 0.95 : 0.6) * st.size + textWidth(value, plain);
     }
     right = x + width;
-    push(`<text class="tempo" data-tempo="${ms.m}" font-family='${TEXT_FONT}' font-size="${TEMPO_SIZE}" x="${x}" y="${y}">${parts.join('\u00a0\u00a0')}</text>`);
+    push(`<text class="tempo" data-tempo="${ms.m}" font-family='${st.family}' font-size="${st.size}" font-weight="400" x="${x}" y="${y}">${parts.join('\u00a0\u00a0')}</text>`);
   }
 }
 
-let tempoCtx;
-/** Width of tempo words in layout units (estimated where no canvas exists). */
-function tempoTextWidth(text, bold) {
-  if (tempoCtx === undefined) {
-    try { tempoCtx = document.createElement('canvas').getContext('2d'); } catch { tempoCtx = null; }
+/** Layout units in a tenth of a millimetre (text boxes are placed in those). */
+export const UNITS_PER_TENTH_MM = SP / 17.5;
+
+/**
+ * Where a text box is drawn: its page (the last one if the music now has
+ * fewer pages) and the anchor of its first line, in layout units.
+ */
+export function textBoxAnchor(lay, box) {
+  const page = lay.pages[Math.min(box.page, lay.pages.length - 1)];
+  return { page: page.index, x: page.x + box.x * UNITS_PER_TENTH_MM, y: page.y + box.y * UNITS_PER_TENTH_MM };
+}
+
+/**
+ * Text boxes, in page view only: they belong to a place on a page. Each
+ * carries `data-box` (its id): a click edits it, a drag moves it. The box
+ * being typed (`opts.boxEdit`) shows its new look at once; a new one shows
+ * a hint where it goes.
+ */
+function drawTextBoxes(lay, score, push, onPage, opts) {
+  if (!lay.geo) return;
+  const edit = opts.boxEdit;
+  const boxes = (score.text_boxes || []).map((b) =>
+    (edit && edit.id === b.id ? { ...b, style: edit.style, align: edit.align, frame: edit.frame } : b));
+  if (edit && edit.id === 'new') boxes.push({ ...edit, text: edit.hint, hint: true });
+  for (const box of boxes) {
+    const at = textBoxAnchor(lay, box);
+    onPage(at.page);
+    const st = resolveStyle('text_box', box.style);
+    const lines = String(box.text).split('\n');
+    const lineH = 1.25 * st.size;
+    const align = box.align || 'left';
+    const anchor = { left: 'start', center: 'middle', right: 'end' }[align];
+    const widths = lines.map((l) => textWidth(l || ' ', st));
+    const w = Math.max(...widths, st.size);
+    const left = align === 'left' ? at.x : align === 'right' ? at.x - w : at.x - w / 2;
+    const pad = 0.35 * st.size;
+    const top = at.y - 0.95 * st.size;
+    const height = lineH * (lines.length - 1) + 1.3 * st.size;
+    push(`<g class="tbox${box.hint ? ' placeholder' : ''}${box.frame ? ' framed' : ''}" data-box="${box.id}">`
+      // The frame, or an invisible area to grab the box by.
+      + `<rect class="tbox-area" x="${left - pad}" y="${top - pad}" width="${w + 2 * pad}" height="${height + 2 * pad}"/>`
+      + `<text ${styleAttrs(st)} text-anchor="${anchor}" x="${at.x}" y="${at.y}">${lines.map((l, i) =>
+        `<tspan x="${at.x}" dy="${i ? lineH : 0}">${esc(l) || '\u00a0'}</tspan>`).join('')}</text></g>`);
   }
-  if (!tempoCtx) return text.length * TEMPO_SIZE * 0.55;
-  tempoCtx.font = `${bold ? '700 ' : ''}${TEMPO_SIZE}px ${TEXT_FONT}`;
-  return tempoCtx.measureText(text).width;
 }
 
 /**
@@ -674,7 +770,7 @@ function drawPageTexts(lay, push, onPage, opts) {
   const anchorOf = { left: 'start', center: 'middle', right: 'end' };
   const xOf = (align, left, right) => (align === 'left' ? left : align === 'right' ? right : (left + right) / 2);
   const text = (key, value, x, y, align, extra = '') => push(
-    `<text class="ptext ptext-${key}${extra}" data-text="${key}" font-family='${TEXT_FONT}' font-size="${TEXT_SIZE[key]}" `
+    `<text class="ptext ptext-${key}${extra}" data-text="${key}" ${styleAttrs(currentStyle(key === 'pnum' ? 'page_number' : key))} `
     + `text-anchor="${anchorOf[align]}" x="${x}" y="${y}">${esc(value)}</text>`);
   onPage(0);
   for (const line of h.lines) {
@@ -756,7 +852,7 @@ export function renderScore(view, width, opts = {}) {
       const shared = brace && (s.index === 0 ? lay.names : lay.shortNames).slice(st + 1, brace.last + 1).every((n) => !n);
       const top = s.y + s.staffY[st];
       const mid = shared ? (top + s.y + s.staffY[brace.last] + 4 * SP) / 2 : top + 2 * SP;
-      push(`<text class="sname" data-staff="${st}" font-family='${LYRIC_FONT}' font-size="${LYRIC_PX}" text-anchor="end" dominant-baseline="central" x="${s.x0 - lay.groupIndent - NAME_GAP}" y="${mid}">${esc(name)}</text>`);
+      push(`<text class="sname" data-staff="${st}" ${styleAttrs(currentStyle('staff_name'))} text-anchor="end" dominant-baseline="central" x="${s.x0 - lay.groupIndent - NAME_GAP}" y="${mid}">${esc(name)}</text>`);
     });
     // Brackets (instrument families) and braces (one instrument on
     // several staves) left of the system.
@@ -787,6 +883,7 @@ export function renderScore(view, width, opts = {}) {
     }
   }
   drawPageTexts(lay, push, onPage, opts);
+  drawTextBoxes(lay, score, push, onPage, opts);
   drawTempoMarks(lay, score, push, onPage);
 
   // Drawn events, for ties and slurs: per staff+voice in score order, and by id.
@@ -935,7 +1032,7 @@ export function renderScore(view, width, opts = {}) {
  * (the editor's input sits there) but still takes its room.
  */
 function drawLyrics(push, lay, seqs, onPage, edit) {
-  const attrs = `font-family='${LYRIC_FONT}' font-size="${LYRIC_PX}"`;
+  const attrs = styleAttrs(currentStyle('lyrics'));
   const hyphenW = textWidth('-');
   for (const seq of seqs.values()) {
     const nVerses = Math.max(0, ...seq.map((n) => (n.e.lyrics || []).length));
@@ -1006,9 +1103,9 @@ export function lyricTarget(lay, slots, x, y) {
     for (let st = 0; st < lay.nStaves; st++) {
       const n = lay.verses[st];
       const first = s.y + s.staffY[st] + s.lyricY[st];
-      const top = first - 0.72 * LYRIC_LINE;
+      const top = first - 0.72 * lyricLine();
       const lines = Math.min(n + 1, MAX_VERSES);
-      if (y < top || y > top + lines * LYRIC_LINE) continue;
+      if (y < top || y > top + lines * lyricLine()) continue;
       let best = null;
       for (const slot of slots) {
         if (slot.system !== s || slot.staff !== st || !slot.singable) continue;
@@ -1016,7 +1113,7 @@ export function lyricTarget(lay, slots, x, y) {
         if (d <= 4 * SP && (!best || d < best.d)) best = { d, slot };
       }
       if (!best) return null;
-      return { id: best.slot.id, staff: st, verse: Math.min(lines - 1, Math.floor((y - top) / LYRIC_LINE)) };
+      return { id: best.slot.id, staff: st, verse: Math.min(lines - 1, Math.floor((y - top) / lyricLine())) };
     }
   }
   return null;
@@ -1373,7 +1470,7 @@ function drawAttachments(push, info) {
   if (e.dynamic) push(`<text class="m mark" x="${x}" y="${dy}">${DYNAMIC[e.dynamic]}</text>`);
   for (const nt of texts) {
     const cls = `ntext ntext-${nt.kind}${nt.hint ? ' placeholder' : ''}`;
-    const attrs = `class="${cls}" data-ntext="${e.id}:${nt.kind}" font-family='${TEXT_FONT}' font-size="${NOTE_TEXT_SIZE}"`;
+    const attrs = `class="${cls}" data-ntext="${e.id}:${nt.kind}" ${styleAttrs(currentStyle(nt.kind))}`;
     if (nt.kind === 'expression') {
       // Italic, where the dynamic goes (after it, when there is one).
       const after = e.dynamic ? 1.4 * SP * e.dynamic.length + 0.6 * SP : -0.5 * SP;
@@ -1386,7 +1483,6 @@ function drawAttachments(push, info) {
   }
   if (open) push('</g>');
 }
-const NOTE_TEXT_SIZE = 1.7 * SP;
 
 /**
  * A tie or slur: a filled crescent from (x1,y1) to (x2,y2) that bulges by

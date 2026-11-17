@@ -35,8 +35,9 @@ pub const FILE_EXTENSION: &str = "partita";
 ///   braces. Only files that use one of them are written as version 6.
 /// - 7: page texts in the metadata (subtitle, dedication, lyricist, part,
 ///   copyright, running header and footer, and page numbering), tempo
-///   markings and rehearsal marks on measures, and texts on notes. Only
-///   files that use one of them are written as version 7.
+///   markings and rehearsal marks on measures, texts on notes, text styles
+///   and text boxes. Only files that use one of them are written as
+///   version 7.
 pub const FORMAT_VERSION: u32 = 7;
 const FORMAT_MARKER: &str = "partita";
 /// Marker written by Da Capo (the project's former name) up to 0.2.2.
@@ -375,6 +376,30 @@ mod tests {
         let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
         assert_eq!(v["format_version"], 7);
         assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
+    }
+
+    #[test]
+    fn text_styles_and_boxes_need_format_7() {
+        let mut score = Score::new("Etude", 1);
+        score.text_styles.insert(
+            crate::model::TextKind::Tempo,
+            crate::model::TextStyle {
+                size: 85,
+                ..Default::default()
+            },
+        );
+        let bytes = to_bytes(&score).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(v["format_version"], 7);
+        assert_eq!(v["score"]["text_styles"]["tempo"]["size"], 85);
+        assert_eq!(from_bytes(&bytes).unwrap(), score);
+        // Files from before have neither field.
+        let mut v = v;
+        let s = v["score"].as_object_mut().unwrap();
+        s.remove("text_styles");
+        s.remove("text_boxes");
+        let old = from_bytes(&serde_json::to_vec(&v).unwrap()).unwrap();
+        assert!(old.text_styles.is_empty() && old.text_boxes.is_empty());
     }
 
     #[test]

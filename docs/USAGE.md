@@ -79,6 +79,23 @@ The **Indications** section of the palette (also in the Notes and Score menus):
 
 A grey hint shows where the words go; type over it and press **Enter** (**Esc** leaves nothing). Words on a note move, copy and delete with it. Click any of them in the score to change them; leave the text empty to remove them. MusicXML keeps them (words from other programs become expressions when they are in italics or below the staff, techniques otherwise).
 
+## Text boxes
+
+The **T** tool (next to Select and the eraser in the palette, or **Score → Text Box**) writes anywhere on a page: click where the text should start and type. **Shift+Enter** starts a new line; **Enter** (or a click elsewhere) keeps it, **Esc** leaves nothing. A text box stays where it was put on its page, whatever the music does, so it is only shown in page layout.
+
+- **Drag** a box to move it; **click** it to change its words or look.
+- While typing, the format bar above the text sets its font, size, bold and italic, its alignment (left, centred, right) and a frame around it.
+- Leaving a box empty, or clicking it with the eraser, removes it.
+
+## Text styles
+
+Each kind of text (title, subtitle, composer, tempo markings, expressions, techniques, rehearsal marks, lyrics, staff names, header, footer, page numbers…) has one look, so that all the tempo markings, for example, match.
+
+- **While typing a text**, the format bar above it changes the look of every text of that kind: font, size in points, **bold** and *italic*; **↺** goes back to Partita's look.
+- **Score → Text Styles…** shows every kind at once (useful for kinds you do not type in place, such as tempo markings or lyrics). **All to Default** goes back to Partita's look.
+
+Changes can be undone like any other. Sizes and spacing follow: a bigger title moves the music down, bigger lyrics take more room between verses. Fonts are the ones installed on the computer; a file opened where a font is missing uses Georgia instead. MusicXML does not keep text boxes or styles.
+
 ## Titles, header and footer
 
 The texts around the music are part of the score and print as shown.

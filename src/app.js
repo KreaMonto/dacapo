@@ -3,7 +3,8 @@
 
 import {
   SP, renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, playheadMarkup, esc, eraserTarget, eventsInBox,
-  lyricTarget, LYRIC_PX, LYRIC_FONT, MAX_VERSES, fullMetadata, TEXT_FONT, TEXT_SIZE, BEATS, perMinute, toQuarterBpm,
+  lyricTarget, MAX_VERSES, fullMetadata, BEATS, perMinute, toQuarterBpm,
+  currentStyle, cssFont, resolveStyle, TEXT_KINDS, TEXT_DEFAULTS, UNITS_PER_PT, UNITS_PER_TENTH_MM,
 } from './render.js';
 import { installTooltips } from './tooltip.js';
 import { installMenuBar } from './menu.js';
@@ -386,6 +387,7 @@ function render() {
     // Grey hints where an empty title or composer can be clicked (not printed).
     placeholders: { title: t('pagetext.title'), composer: t('pagetext.composer') },
     noteTextEdit: state.noteTextEdit,
+    boxEdit: state.boxEdit,
   });
   if (layout.mode === 'page') {
     scoreEl.innerHTML = pages.map((svg, i) => {
@@ -402,6 +404,7 @@ function render() {
   placeTextInput();
   scoreEl.classList.toggle('entry', entering());
   scoreEl.classList.toggle('erasing', state.mode === 'erase');
+  scoreEl.classList.toggle('texting', state.mode === 'text');
   scoreEl.classList.toggle('marking', state.mode === 'mark');
   drawGhost();
   drawPlayhead();
@@ -581,6 +584,7 @@ function syncControls(doc) {
   });
   document.querySelector('[data-cmd=select]').classList.toggle('on', state.mode === 'select');
   document.querySelector('[data-cmd=erase]').classList.toggle('on', state.mode === 'erase');
+  document.querySelector('[data-cmd=text]').classList.toggle('on', state.mode === 'text');
   document.querySelectorAll('[data-alter], [data-artic], [data-dyn]').forEach((b) => {
     b.classList.toggle('armed', state.mode === 'mark' && state.mark?.key === markKey(b));
   });
@@ -827,6 +831,22 @@ function caretFromMouse(ev) {
 }
 $('score').addEventListener('mousedown', (ev) => {
   if (ev.button !== 0) return;
+  // Text boxes: the eraser removes one; otherwise a click edits it and a
+  // drag moves it (see boxDrag).
+  const tbox = ev.target.closest?.('[data-box]');
+  if (tbox && !tbox.classList.contains('placeholder')) {
+    ev.preventDefault();
+    const id = Number(tbox.dataset.box);
+    if (state.mode === 'erase') { act({ type: 'remove_text_box', id }); return; }
+    boxDrag = { id, el: tbox, cx: ev.clientX, cy: ev.clientY, moved: false };
+    return;
+  }
+  // The T tool: a click on a page starts a new text box there.
+  if (state.mode === 'text') {
+    ev.preventDefault();
+    startTextBox(ev);
+    return;
+  }
   // Texts around the music (title, header, footer...): a click edits the
   // text there; the page number opens the dialog with all of them.
   // Words on a note and rehearsal marks: typed over where they are.
@@ -934,6 +954,38 @@ $('score').addEventListener('mousemove', (ev) => {
   if (!entering()) return;
   state.pointer = { x: ev.clientX, y: ev.clientY };
   drawGhost();
+});
+
+// ----- dragging text boxes ------------------------------------------------------------
+
+let boxDrag = null; // { id, el, cx, cy, moved } while a text box is held
+
+/** Layout units per screen pixel in the page under an element. */
+function layoutPerPixel(el) {
+  const svg = el.ownerSVGElement || el.closest('svg');
+  return svg ? svg.viewBox.baseVal.width / svg.getBoundingClientRect().width : 1;
+}
+
+window.addEventListener('mousemove', (ev) => {
+  if (!boxDrag) return;
+  const dx = ev.clientX - boxDrag.cx;
+  const dy = ev.clientY - boxDrag.cy;
+  if (!boxDrag.moved && Math.hypot(dx, dy) < 4) return;
+  boxDrag.moved = true;
+  const k = layoutPerPixel(boxDrag.el);
+  boxDrag.el.setAttribute('transform', `translate(${dx * k} ${dy * k})`);
+});
+window.addEventListener('mouseup', (ev) => {
+  const d = boxDrag;
+  if (!d || ev.button !== 0) return;
+  boxDrag = null;
+  const doc = active();
+  const box = doc?.score.text_boxes?.find((b) => b.id === d.id);
+  if (!box) return;
+  if (!d.moved) { openTextEdit(`box:${d.id}`); return; }
+  // Moved: one undo step, in tenths of a millimetre on its page.
+  const k = layoutPerPixel(d.el) / UNITS_PER_TENTH_MM;
+  act({ type: 'set_text_box', text_box: { ...box, x: Math.round(box.x + (ev.clientX - d.cx) * k), y: Math.round(box.y + (ev.clientY - d.cy) * k) } });
 });
 
 // ----- dragging notes ------------------------------------------------------------
@@ -1232,6 +1284,8 @@ const commands = {
   lyrics: () => (state.lyric ? closeLyric() : startLyricsAtCaret()),
   select: () => setMode('select'),
   erase: () => setMode(state.mode === 'erase' ? 'select' : 'erase'),
+  text: () => setMode(state.mode === 'text' ? 'select' : 'text'),
+  'text-styles': () => textStylesDialog(),
   dot: () => { state.duration = { ...state.duration, dots: state.duration.dots ? 0 : 1 }; render(); },
   // Playback
   play: () => togglePlayback(),
@@ -1485,17 +1539,17 @@ function placeLyricInput() {
   const unit = layoutToClient(lay, scoreEl, { x: slot.x + 100, y, page: slot.page });
   if (!at || !unit) return;
   const scale = (unit.x - at.x) / 100;
-  if (!lyric.ctx) {
-    lyric.ctx = document.createElement('canvas').getContext('2d');
-    lyric.ctx.font = `${LYRIC_PX}px ${LYRIC_FONT}`;
-  }
-  const px = LYRIC_PX * scale;
+  // In the lyrics' style, which may have changed since the last syllable.
+  const lst = currentStyle('lyrics');
+  lyric.ctx ||= document.createElement('canvas').getContext('2d');
+  lyric.ctx.font = cssFont(lst);
+  const px = lst.size * scale;
   const width = Math.max(2.4 * px, lyric.ctx.measureText(lyric.input.value).width * scale + 1.2 * px);
   // Hidden while its note is scrolled out of the score area.
   const area = page.getBoundingClientRect();
   const inside = at.x > area.left && at.x < area.right && at.y > area.top + px && at.y < area.bottom;
   Object.assign(lyric.input.style, {
-    font: `${px}px ${LYRIC_FONT}`,
+    font: cssFont(lst, px),
     left: `${at.x - width / 2}px`,
     top: `${at.y - 1.16 * px}px`, // the text's baseline lands on the verse's baseline
     width: `${width}px`,
@@ -1677,8 +1731,13 @@ const textEdit = {
   input: Object.assign(document.createElement('input'), {
     className: 'lyric-input text-input', type: 'text', autocomplete: 'off', hidden: true,
   }),
+  // Text boxes have several lines: Enter keeps them, Shift+Enter starts a new line.
+  area: Object.assign(document.createElement('textarea'), {
+    className: 'lyric-input text-input text-area', spellcheck: false, rows: 1, hidden: true,
+  }),
+  field: null, // the one in use
 };
-document.body.append(textEdit.input);
+document.body.append(textEdit.input, textEdit.area);
 
 const metadataOf = (doc) => fullMetadata(doc.score.metadata);
 
@@ -1690,13 +1749,16 @@ function setMetadata(changes) {
 
 /**
  * What a text field edits, by key: a page text ('title', 'footer'…), words
- * on a note ('note:<id>:<kind>') or a rehearsal mark ('rehearsal:<measure>').
+ * on a note ('note:<id>:<kind>'), a rehearsal mark ('rehearsal:<measure>')
+ * or a text box ('box:<id>', 'box:new'). `kind` is the style it is drawn in
+ * (TextKind in model.rs); a text box has its own (`box`).
  */
 function textTarget(key, doc) {
   const [type, a, b] = key.split(':');
   if (type === 'note') {
     const found = findEvent(doc, Number(a));
     return {
+      kind: b,
       selector: `[data-ntext="${a}:${b}"]`,
       value: found?.e.texts?.find((nt) => nt.kind === b)?.text ?? '',
       label: t(`notetext.${b}`),
@@ -1706,13 +1768,32 @@ function textTarget(key, doc) {
   if (type === 'rehearsal') {
     const measure = Number(a);
     return {
+      kind: 'rehearsal',
       selector: `[data-rehearsal="${measure}"] text`,
       value: doc.score.measures[measure]?.rehearsal ?? '',
       label: t('rehearsal.label'),
       write: (text) => act({ type: 'set_rehearsal', measure, text: text || null }),
     };
   }
+  if (type === 'box') {
+    const draft = state.boxEdit;
+    const saved = doc.score.text_boxes?.find((x) => String(x.id) === a);
+    return {
+      box: true,
+      selector: `[data-box="${a}"] text`,
+      value: saved?.text ?? '',
+      label: t('textbox.label'),
+      // Words, look and place together: one undo step.
+      write: (text) => {
+        const { id, page, x, y, style, align, frame } = draft;
+        act({ type: 'set_text_box', text_box: { id: id === 'new' ? 0 : id, page, x, y, text, style, align, frame } });
+      },
+      changed: () => !!saved && (JSON.stringify(saved.style || {}) !== JSON.stringify(draft.style)
+        || (saved.align || 'left') !== draft.align || !!saved.frame !== draft.frame),
+    };
+  }
   return {
+    kind: key,
     selector: `[data-text="${key}"]`,
     value: metadataOf(doc)[key],
     label: t(`pagetext.${key}`),
@@ -1725,50 +1806,59 @@ function openTextEdit(key) {
   if (!doc) return;
   if (state.lyric) closeLyric();
   commitTextEdit();
+  const [type, id, kind] = key.split(':');
+  if (type === 'box' && id !== 'new') {
+    const saved = doc.score.text_boxes?.find((x) => String(x.id) === id);
+    if (!saved) return;
+    state.boxEdit = { ...saved, style: { ...(saved.style || {}) }, align: saved.align || 'left', frame: !!saved.frame };
+  }
   const target = textTarget(key, doc);
   textEdit.key = key;
-  textEdit.input.value = target.value;
-  textEdit.input.setAttribute('aria-label', target.label);
-  textEdit.input.hidden = false;
+  textEdit.field = target.box ? textEdit.area : textEdit.input;
+  textEdit.field.value = target.value;
+  textEdit.field.setAttribute('aria-label', target.label);
+  textEdit.field.hidden = false;
   // New words on a note: drawn as a hint where they will go, to type over.
-  const [type, id, kind] = key.split(':');
   if (type === 'note' && !target.value) {
     state.noteTextEdit = { id: Number(id), kind, hint: t(`notetext.${kind}.hint`) };
-    render();
-  } else {
-    placeTextInput();
   }
-  textEdit.input.focus({ preventScroll: true });
-  textEdit.input.select();
+  render();
+  showFormatBar();
+  textEdit.field.focus({ preventScroll: true });
+  textEdit.field.select();
 }
 
 /** Puts the field over its text (after every render and scroll), in the text's own font and size. */
 function placeTextInput() {
   const key = textEdit.key;
   const doc = active();
-  if (!key || !doc) return;
+  const field = textEdit.field;
+  if (!key || !doc || !field) return;
   const el = $('score').querySelector(textTarget(key, doc).selector);
   const svg = el?.ownerSVGElement;
-  if (!el || !svg) { textEdit.input.style.visibility = 'hidden'; return; }
+  if (!el || !svg) { field.style.visibility = 'hidden'; formatBar.hidden = true; return; }
   const box = svg.getBoundingClientRect();
   const vb = svg.viewBox.baseVal;
   const scale = box.width / vb.width;
-  const px = Number(el.getAttribute('font-size') || TEXT_SIZE.footer) * scale;
+  const px = Number(el.getAttribute('font-size') || 15) * scale;
   const r = el.getBoundingClientRect();
   const anchor = el.getAttribute('text-anchor') || 'start';
+  const lines = field === textEdit.area ? Math.max(1, field.value.split('\n').length) : 1;
   const width = Math.max(r.width + 3 * px, 10 * px);
   const left = anchor === 'start' ? r.left - 0.3 * px : anchor === 'end' ? r.right - width + 0.3 * px : r.left + r.width / 2 - width / 2;
   const baseline = box.top + (Number(el.getAttribute('y')) - vb.y) * scale;
   const style = getComputedStyle(el);
-  Object.assign(textEdit.input.style, {
-    font: `${style.fontStyle} ${style.fontWeight} ${px}px ${TEXT_FONT}`,
+  Object.assign(field.style, {
+    font: `${style.fontStyle} ${style.fontWeight} ${px}px ${style.fontFamily}`,
+    lineHeight: field === textEdit.area ? `${1.25 * px}px` : '',
     textAlign: anchor === 'start' ? 'left' : anchor === 'end' ? 'right' : 'center',
     left: `${left}px`,
     top: `${baseline - 1.16 * px}px`, // the text's baseline lands on the drawn one
     width: `${width}px`,
-    height: `${1.5 * px}px`,
+    height: `${(lines - 1) * 1.25 * px + 1.5 * px}px`,
     visibility: 'visible',
   });
+  placeFormatBar();
 }
 
 /** Leaves the field, writing what was typed unless `cancel`. */
@@ -1777,21 +1867,205 @@ function commitTextEdit(cancel = false) {
   if (!key) return;
   const doc = active();
   const target = doc && textTarget(key, doc);
+  const field = textEdit.field;
   textEdit.key = null;
-  textEdit.input.hidden = true;
-  const hinted = !!state.noteTextEdit;
+  field.hidden = true;
+  formatBar.hidden = true;
+  const value = target?.box ? field.value.replace(/\s+$/, '') : field.value.trim();
+  const write = !cancel && target && (value !== target.value || target.changed?.()) && (value || target.value);
+  if (write) target.write(value);
+  const hinted = !!(state.noteTextEdit || state.boxEdit);
   state.noteTextEdit = null;
-  const value = textEdit.input.value.trim();
-  if (!cancel && target && value !== target.value) target.write(value);
-  else if (hinted) render();
+  state.boxEdit = null;
+  if (!write && hinted) render();
   page.focus();
 }
 
-textEdit.input.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Enter') { ev.preventDefault(); commitTextEdit(); }
-  else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); commitTextEdit(true); }
+for (const field of [textEdit.input, textEdit.area]) {
+  field.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && !(field === textEdit.area && ev.shiftKey)) { ev.preventDefault(); commitTextEdit(); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); commitTextEdit(true); }
+  });
+  field.addEventListener('input', () => { if (field === textEdit.area) placeTextInput(); });
+  // Using the format bar keeps the field open.
+  field.addEventListener('blur', (ev) => { if (!formatBar.contains(ev.relatedTarget)) commitTextEdit(); });
+}
+
+// ----- text boxes ------------------------------------------------------------------
+// The T tool: a click on a page starts a box there (page view only, as a box
+// belongs to a place on a page). Click a box to change it, drag to move it,
+// erase it with the eraser or by leaving it empty.
+
+function startTextBox(ev) {
+  const lay = state.layout;
+  if (!lay || lay.mode !== 'page') { showError(t('error.textbox.pageview')); return; }
+  const p = pointerInLayout(ev.clientX, ev.clientY);
+  const pg = p && lay.pages.find((g) => p.y >= g.y && p.y < g.y + g.h);
+  if (!pg) return;
+  const size = TEXT_DEFAULTS.text_box.size;
+  state.mode = 'select';
+  state.boxEdit = {
+    id: 'new',
+    page: pg.index,
+    x: Math.round((p.x - pg.x) / UNITS_PER_TENTH_MM),
+    // The click is the top of the first line.
+    y: Math.round((p.y - pg.y + 0.8 * size) / UNITS_PER_TENTH_MM),
+    style: {},
+    align: 'left',
+    frame: false,
+    hint: t('textbox.hint'),
+  };
+  openTextEdit('box:new');
+}
+
+// ----- formatting ------------------------------------------------------------------
+// While a text is typed, a bar above it sets its font, size, bold and
+// italic. For a kind of text (title, tempo, expression…) that is the style
+// of every text of the kind (one undo step each change); a text box has its
+// own, written with its words.
+
+const FONTS = ['Georgia', 'Times New Roman', 'Palatino Linotype', 'Book Antiqua', 'Garamond', 'Cambria',
+  'Arial', 'Helvetica', 'Segoe UI', 'Calibri', 'Verdana', 'Trebuchet MS', 'Courier New'];
+const ptOf = (st) => Math.round((st.size / UNITS_PER_PT) * 2) / 2;
+
+/** `<option>`s for a font list, with `current` added if it is not one of them. */
+function fontOptions(current) {
+  const list = current && !FONTS.includes(current) ? [current, ...FONTS] : FONTS;
+  return `<option value="">${esc(t('format.font.default'))}</option>`
+    + list.map((f) => `<option value="${esc(f)}" style="font-family:'${esc(f)}'"${f === current ? ' selected' : ''}>${esc(f)}</option>`).join('');
+}
+
+const formatBar = Object.assign(document.createElement('div'), { className: 'format-bar', hidden: true });
+formatBar.setAttribute('role', 'toolbar');
+document.body.append(formatBar);
+
+/** The style being set: of the text box being typed, or of the kind of text. */
+function formatTarget() {
+  const doc = active();
+  if (!doc || !textEdit.key) return null;
+  const target = textTarget(textEdit.key, doc);
+  if (target.box) return { box: true, style: state.boxEdit.style, resolved: resolveStyle('text_box', state.boxEdit.style) };
+  return { kind: target.kind, style: { ...(doc.score.text_styles?.[target.kind] || {}) }, resolved: currentStyle(target.kind) };
+}
+
+function showFormatBar() {
+  const f = formatTarget();
+  if (!f) return;
+  const st = f.resolved;
+  const pressed = (on) => ` aria-pressed="${on}"${on ? ' class="on"' : ''}`;
+  formatBar.innerHTML = `<select class="fb-font" aria-label="${esc(t('format.font'))}" data-tip="${esc(t('format.font'))}">${fontOptions(st.font)}</select>
+    <input class="fb-size" type="number" min="4" max="72" step="0.5" value="${ptOf(st)}" aria-label="${esc(t('format.size'))}" data-tip="${esc(t('format.size'))}"><span class="fb-pt">pt</span>
+    <button type="button" data-fmt="bold"${pressed(st.bold)} data-tip="${esc(t('format.bold'))}"><b>${esc(t('format.bold.short'))}</b></button>
+    <button type="button" data-fmt="italic"${pressed(st.italic)} data-tip="${esc(t('format.italic'))}"><i>${esc(t('format.italic.short'))}</i></button>
+    ${f.box ? ['left', 'center', 'right'].map((a) =>
+      `<button type="button" data-fmt="align-${a}"${pressed(state.boxEdit.align === a)} data-tip="${esc(t(`format.align.${a}`))}"><svg class="icon"><use href="#i-align-${a}"/></svg></button>`).join('')
+      + `<button type="button" data-fmt="frame"${pressed(state.boxEdit.frame)} data-tip="${esc(t('format.frame'))}"><svg class="icon"><use href="#i-frame"/></svg></button>`
+      : `<button type="button" data-fmt="reset" data-tip="${esc(t('format.reset'))}" data-desc="${esc(t('format.reset.desc', { kind: t(`textkind.${f.kind}`) }))}">↺</button>`}`;
+  formatBar.hidden = false;
+  placeFormatBar();
+}
+
+function placeFormatBar() {
+  const field = textEdit.field;
+  if (formatBar.hidden || !field || field.hidden) return;
+  const r = field.getBoundingClientRect();
+  const h = formatBar.offsetHeight || 34;
+  const top = r.top - h - 6 > 4 ? r.top - h - 6 : r.bottom + 6;
+  const left = Math.max(4, Math.min(r.left, window.innerWidth - formatBar.offsetWidth - 4));
+  Object.assign(formatBar.style, { left: `${left}px`, top: `${top}px` });
+}
+
+/** Applies a change of look, then goes back to typing. */
+function applyFormat(change) {
+  const f = formatTarget();
+  if (!f) return;
+  if (f.box) {
+    Object.assign(state.boxEdit, change.box || {});
+    state.boxEdit.style = { ...state.boxEdit.style, ...(change.style || {}) };
+    render();
+  } else if (change.reset) {
+    act({ type: 'set_text_style', kind: f.kind, style: {} });
+  } else {
+    act({ type: 'set_text_style', kind: f.kind, style: { ...f.style, ...change.style } });
+  }
+  // Redraw the bar once the change is in.
+  queue.then(() => { if (textEdit.key) { showFormatBar(); textEdit.field.focus({ preventScroll: true }); } });
+}
+
+formatBar.addEventListener('mousedown', (ev) => { if (ev.target.closest('button')) ev.preventDefault(); });
+formatBar.addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-fmt]');
+  const f = b && formatTarget();
+  if (!f) return;
+  const st = f.resolved;
+  const fmt = b.dataset.fmt;
+  if (fmt === 'bold') applyFormat({ style: { bold: !st.bold } });
+  else if (fmt === 'italic') applyFormat({ style: { italic: !st.italic } });
+  else if (fmt === 'frame') applyFormat({ box: { frame: !state.boxEdit.frame } });
+  else if (fmt.startsWith('align-')) applyFormat({ box: { align: fmt.slice(6) } });
+  else if (fmt === 'reset') applyFormat({ reset: true });
 });
-textEdit.input.addEventListener('blur', () => commitTextEdit());
+formatBar.addEventListener('change', (ev) => {
+  if (ev.target.matches('.fb-font')) applyFormat({ style: { font: ev.target.value } });
+  if (ev.target.matches('.fb-size')) {
+    const pt = Number(ev.target.value);
+    if (pt >= 4 && pt <= 72) applyFormat({ style: { size: Math.round(pt * 10) } });
+  }
+});
+formatBar.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') { ev.preventDefault(); textEdit.field?.focus(); }
+  if (ev.key === 'Enter' && ev.target.matches('.fb-size')) { ev.preventDefault(); ev.target.blur(); }
+});
+// Leaving the bar for anywhere but the field ends the typing.
+formatBar.addEventListener('focusout', (ev) => {
+  if (ev.relatedTarget !== textEdit.field && !formatBar.contains(ev.relatedTarget)) commitTextEdit();
+});
+
+/** Score → Text Styles…: the look of every kind of text at once. */
+async function textStylesDialog() {
+  const doc = active();
+  if (!doc) return;
+  commitTextEdit();
+  const rows = TEXT_KINDS.map((k) => {
+    const st = currentStyle(k);
+    return `<tr data-kind="${k}">
+      <th>${esc(t(`textkind.${k}`))}</th>
+      <td><select class="ts-font" aria-label="${esc(t('format.font'))}">${fontOptions(st.font)}</select></td>
+      <td><input class="ts-size" type="number" min="4" max="72" step="0.5" value="${ptOf(st)}" aria-label="${esc(t('format.size'))}"> pt</td>
+      <td><label class="check"><input type="checkbox" class="ts-bold"${st.bold ? ' checked' : ''}> <b>${esc(t('format.bold.short'))}</b></label></td>
+      <td><label class="check"><input type="checkbox" class="ts-italic"${st.italic ? ' checked' : ''}> <i>${esc(t('format.italic.short'))}</i></label></td>
+    </tr>`;
+  }).join('');
+  const body = `<form class="styles-form" id="styles-form"><table class="styles-table">
+    <thead><tr><th></th><th>${esc(t('format.font'))}</th><th>${esc(t('format.size'))}</th><th></th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <p class="muted hint">${esc(t('styles.hint'))}</p></form>`;
+  const pending = choiceDialog(t('styles.title'), body, [
+    { label: t('styles.reset'), value: 'reset' },
+    { spacer: true },
+    { label: t('button.cancel'), value: 'cancel' },
+    { label: t('button.ok'), value: 'ok', primary: true },
+  ]);
+  const answer = await pending;
+  if (answer === 'reset') { act({ type: 'set_text_styles', styles: Object.fromEntries(TEXT_KINDS.map((k) => [k, {}])) }); return; }
+  if (answer !== 'ok') return;
+  // Only what differs from each kind's default is kept.
+  const styles = {};
+  for (const row of $('styles-form').querySelectorAll('tr[data-kind]')) {
+    const k = row.dataset.kind;
+    const d = resolveStyle(k);
+    const pt = Number(row.querySelector('.ts-size').value);
+    const bold = row.querySelector('.ts-bold').checked;
+    const italic = row.querySelector('.ts-italic').checked;
+    styles[k] = {
+      font: row.querySelector('.ts-font').value,
+      size: pt >= 4 && pt <= 72 && pt !== ptOf(d) ? Math.round(pt * 10) : 0,
+      bold: bold === d.bold ? null : bold,
+      italic: italic === d.italic ? null : italic,
+    };
+  }
+  act({ type: 'set_text_styles', styles });
+}
 
 /**
  * Notes → Expression / Technique: words on the note before the caret (or
@@ -2436,6 +2710,8 @@ const MENUS = [
     { label: t('menu.score.texts'), cmd: 'page-texts', enabled: hasDoc, desc: t('menu.score.texts.desc') },
     { label: t('menu.score.tempo'), cmd: 'tempo-mark', enabled: hasDoc, desc: t('menu.score.tempo.desc') },
     { label: t('menu.score.rehearsal'), cmd: 'rehearsal', enabled: hasDoc, desc: t('menu.score.rehearsal.desc') },
+    { label: t('menu.score.textbox'), cmd: 'text', enabled: hasDoc, desc: t('palette.text.desc') },
+    { label: t('menu.score.styles'), cmd: 'text-styles', enabled: hasDoc, desc: t('menu.score.styles.desc') },
     { sep: true },
     { label: t('menu.score.measure'), enabled: hasDoc, items: [
       { label: t('menu.score.measure.add'), cmd: 'add-measure', key: 'Ctrl+Enter', desc: t('toolbar.addmeasure.desc') },

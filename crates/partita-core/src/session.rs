@@ -210,6 +210,46 @@ mod tests {
     }
 
     #[test]
+    fn text_styles_and_boxes_survive_a_crash() {
+        use crate::model::{TextAlign, TextBox, TextKind, TextStyle};
+        let tmp = tempfile::tempdir().unwrap();
+        let store = store(tmp.path());
+        let mut s = Session::start(Document::new(Score::new("Nocturne", 1)), Some(&store)).unwrap();
+        s.edit(|d| {
+            d.set_text_style(
+                TextKind::Expression,
+                TextStyle {
+                    font: "Garamond".into(),
+                    ..TextStyle::default()
+                },
+                1_000,
+            )
+            .unwrap()
+        });
+        s.edit(|d| {
+            d.set_text_box(
+                TextBox {
+                    id: 0,
+                    page: 0,
+                    x: 200,
+                    y: 2700,
+                    text: "Ped. ad lib.".into(),
+                    style: TextStyle::default(),
+                    align: TextAlign::Right,
+                    frame: true,
+                },
+                2_000,
+            )
+            .unwrap()
+        });
+        let expected = s.doc().score.clone();
+        crash(s);
+        let found = store.scan();
+        let loaded = store.load(found[0].session_id).unwrap();
+        assert_eq!(loaded.document.score, expected);
+    }
+
+    #[test]
     fn note_texts_and_rehearsal_marks_survive_a_crash() {
         let tmp = tempfile::tempdir().unwrap();
         let store = store(tmp.path());
