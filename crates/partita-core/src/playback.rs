@@ -204,7 +204,8 @@ pub fn build(score: &Score) -> Timeline {
                     let sounding = written * sounding_permille(e, slurred.contains(&e.id)) / 1000;
                     let mut next_open = HashMap::new();
                     for p in e.pitches() {
-                        let key = p.midi().clamp(0, 127) as u8;
+                        // Transposing instruments sound away from the written note.
+                        let key = staff.transposition.sounding_midi(*p).clamp(0, 127) as u8;
                         let index = match open_ties.get(&key) {
                             // Continue the tied note instead of striking again.
                             Some(&i) => {

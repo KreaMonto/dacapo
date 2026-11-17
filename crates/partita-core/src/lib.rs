@@ -24,7 +24,7 @@ pub mod recovery;
 pub mod session;
 
 pub use cursor::{Caret, Move, SelectionRange};
-pub use document::{Clipboard, Document, EditError, JournalEntry};
+pub use document::{Clipboard, Document, EditError, JournalEntry, StaffProps};
 pub use model::*;
 pub use recovery::{Recoverable, RecoveryStore};
 pub use session::{now_ms, Session};

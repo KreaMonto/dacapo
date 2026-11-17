@@ -11,11 +11,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use partita_core::cursor::{Caret, Move, SelectionRange};
+use partita_core::document::StaffProps;
 use partita_core::document::{Clipboard, Document};
 use partita_core::file;
 use partita_core::model::{
-    Articulation, Clef, Duration, Dynamic, Issue, KeySignature, LyricJoin, Metadata, Score, Step,
-    TimeSignature,
+    Articulation, Clef, Duration, Dynamic, GroupKind, Issue, KeySignature, LyricJoin, Metadata,
+    Score, Step, TimeSignature, Transposition,
 };
 use partita_core::musicxml;
 use partita_core::recovery::{Recoverable, RecoveryStore};
@@ -202,7 +203,11 @@ enum Action {
         #[serde(default)]
         name: Option<String>,
         #[serde(default)]
+        short_name: String,
+        #[serde(default)]
         instrument: u8,
+        #[serde(default)]
+        transposition: Transposition,
     },
     RemoveStaff,
     SetClef {
@@ -225,9 +230,14 @@ enum Action {
     /// Name, playback instrument (General MIDI program) and clef of a staff.
     SetStaff {
         staff: usize,
-        name: String,
-        instrument: u8,
-        clef: Clef,
+        #[serde(flatten)]
+        props: StaffProps,
+    },
+    /// Joins staves `first..=last` with a bracket or brace (`None` ungroups).
+    GroupStaves {
+        first: usize,
+        last: usize,
+        kind: Option<GroupKind>,
     },
 }
 
@@ -401,12 +411,21 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::AddStaff {
                 clef,
                 name,
+                short_name,
                 instrument,
+                transposition,
             } => {
                 let name = name
                     .filter(|n| !n.trim().is_empty())
                     .unwrap_or_else(|| format!("Staff {}", d.score.staves.len() + 1));
-                d.add_instrument_staff(name, clef, instrument, now)
+                let props = StaffProps {
+                    name,
+                    short_name,
+                    instrument,
+                    clef,
+                    transposition,
+                };
+                d.add_instrument_staff(props, now)
             }
             Action::RemoveStaff => d.remove_staff(d.caret().staff, now),
             Action::SetClef { clef } => d.set_clef(d.caret().staff, clef, now),
@@ -423,12 +442,8 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
                 d.set_metadata(Metadata { title, composer }, now)
             }
             Action::SetTempo { bpm } => d.set_tempo(bpm, now),
-            Action::SetStaff {
-                staff,
-                name,
-                instrument,
-                clef,
-            } => d.set_staff_properties(staff, name, instrument, clef, now),
+            Action::SetStaff { staff, props } => d.set_staff_properties(staff, props, now),
+            Action::GroupStaves { first, last, kind } => d.group_staves(first, last, kind, now),
         };
         r.map_err(|e| e.to_string())
     });
@@ -440,12 +455,16 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             .checked_sub(1)
             .and_then(|i| d.score.voice(c.staff, c.measure, c.voice)?.get(i))
         {
+            let (instrument, transposition) = d
+                .score
+                .staves
+                .get(c.staff)
+                .map_or((0, Default::default()), |s| (s.instrument, s.transposition));
             let keys: Vec<u8> = e
                 .pitches()
                 .iter()
-                .map(|p| p.midi().clamp(0, 127) as u8)
+                .map(|p| transposition.sounding_midi(*p).clamp(0, 127) as u8)
                 .collect();
-            let instrument = d.score.staves.get(c.staff).map_or(0, |s| s.instrument);
             state.audio.preview(c.staff, instrument, &keys);
         }
     }

@@ -202,17 +202,25 @@
         snapshot();
         e.kind.chord.pitches.forEach((p) => { p.alter = a; });
       },
-      set_staff({ staff, name, instrument, clef }) {
+      // (The fake backend does not re-spell notes when the transposition
+      // changes; it only shows the new key and names.)
+      set_staff({ staff, name, short_name, instrument, clef, transposition }) {
         snapshot();
-        Object.assign(view.score.staves[staff], { name, instrument, clef });
+        Object.assign(view.score.staves[staff], { name, short_name, instrument, clef, transposition });
       },
-      add_staff({ clef, name, instrument }) {
+      add_staff({ clef, name, short_name, instrument, transposition }) {
         snapshot();
         const len = view.score.measures.length;
         view.score.staves.push({
-          id: nextId++, name: name || `Staff ${view.score.staves.length + 1}`, clef, instrument: instrument || 0,
+          id: nextId++, name: name || `Staff ${view.score.staves.length + 1}`, short_name: short_name || '', clef,
+          instrument: instrument || 0, transposition: transposition || { diatonic: 0, chromatic: 0 }, group: null,
           measures: Array.from({ length: len }, () => ({ voices: [[], [], [], []] })),
         });
+      },
+      group_staves({ first, last, kind }) {
+        snapshot();
+        const group = kind ? { id: nextId++, kind } : null;
+        for (let s = first; s <= last; s++) view.score.staves[s].group = group;
       },
       undo() {
         const s = undo.pop();

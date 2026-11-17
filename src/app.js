@@ -7,7 +7,9 @@ import {
 } from './render.js';
 import { installTooltips } from './tooltip.js';
 import { installMenuBar } from './menu.js';
-import { INSTRUMENTS, instrumentByProgram, instrumentOptions } from './instruments.js';
+import {
+  INSTRUMENTS, TRANSPOSITIONS, instrumentByProgram, instrumentOptions, shortNameFor, transpositionKey,
+} from './instruments.js';
 
 const tauri = window.__TAURI__;
 const invoke = tauri.core.invoke;
@@ -158,17 +160,31 @@ async function staffDialog(staff) {
   if (!doc) return;
   const adding = staff === null;
   const current = adding
-    ? { name: '', instrument: 0, clef: 'treble' }
+    ? { name: '', short_name: '', instrument: 0, clef: 'treble', transposition: { diatonic: 0, chromatic: 0 } }
     : doc.score.staves[staff];
   if (!current) return;
+  const trans = current.transposition || { diatonic: 0, chromatic: 0 };
+  const listed = transpositionKey(trans);
+  const transOptions = TRANSPOSITIONS.map((t) =>
+    `<option value="${t.key}"${t.key === listed ? ' selected' : ''}>${esc(t.label)}</option>`).join('')
+    + (listed ? '' : `<option value="custom" selected>${esc(`Other: ${trans.diatonic} steps, ${trans.chromatic} semitones`)}</option>`);
   const body = `<form class="staff-form" id="staff-form">
-    <label>Name at the start of the staff
-      <input id="staff-name" type="text" maxlength="40" value="${esc(current.name)}" placeholder="${adding ? 'e.g. Violin I' : ''}" autocomplete="off"></label>
+    <div class="row">
+      <label>Name (first system)
+        <input id="staff-name" type="text" maxlength="40" value="${esc(current.name)}" placeholder="${adding ? 'e.g. Violin I' : ''}" autocomplete="off"></label>
+      <label>Short name (next systems)
+        <input id="staff-short" type="text" maxlength="40" value="${esc(current.short_name || '')}" placeholder="e.g. Vln. I" autocomplete="off"></label>
+    </div>
     <label>Sound
       <select id="staff-sound">${instrumentOptions(current.instrument || 0, esc)}</select></label>
-    <label>Clef
-      <select id="staff-clef">${Object.entries(CLEF_LABELS).map(([v, l]) =>
-        `<option value="${v}"${v === current.clef ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+    <div class="row">
+      <label>Clef
+        <select id="staff-clef">${Object.entries(CLEF_LABELS).map(([v, l]) =>
+          `<option value="${v}"${v === current.clef ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>Transposition
+        <select id="staff-trans">${transOptions}</select></label>
+    </div>
+    <p class="muted hint">Notes are written in the instrument's key and play at concert pitch. Changing the transposition keeps the music sounding the same.</p>
   </form>`;
   const pending = choiceDialog(adding ? 'Add a staff' : 'Staff', body, [
     { spacer: true },
@@ -176,15 +192,26 @@ async function staffDialog(staff) {
     { label: adding ? 'Add Staff' : 'OK', value: 'ok', primary: true },
   ]);
   const name = $('staff-name');
+  const short = $('staff-short');
   const sound = $('staff-sound');
   const clef = $('staff-clef');
-  // The name follows the sound until the user types one.
-  let nameTouched = adding ? false : current.name !== instrumentByProgram(current.instrument || 0).name && !/^Staff \d+$/.test(current.name);
-  name.addEventListener('input', () => { nameTouched = name.value.trim() !== ''; });
+  const transSel = $('staff-trans');
+  const inst = () => INSTRUMENTS[Number(sound.value)];
+  // Name and short name follow the sound until the user types their own.
+  const startInst = instrumentByProgram(current.instrument || 0);
+  let nameTouched = !adding && current.name !== startInst.name && !/^Staff \d+$/.test(current.name);
+  let shortTouched = !adding && !!current.short_name && current.short_name !== shortNameFor(current.name, startInst);
+  name.addEventListener('input', () => {
+    nameTouched = name.value.trim() !== '';
+    if (!shortTouched) short.value = shortNameFor(name.value, inst());
+  });
+  short.addEventListener('input', () => { shortTouched = short.value.trim() !== ''; });
   sound.addEventListener('change', () => {
-    const inst = INSTRUMENTS[Number(sound.value)];
-    if (!nameTouched) name.value = inst.name;
-    clef.value = inst.clef;
+    const i = inst();
+    if (!nameTouched) name.value = i.name;
+    if (!shortTouched) short.value = shortNameFor(name.value, i);
+    clef.value = i.clef;
+    transSel.value = transpositionKey(i.transposition) || 'none';
   });
   $('staff-form').addEventListener('submit', (ev) => { ev.preventDefault(); $('dialog').querySelector('[data-answer="ok"]').click(); });
   name.focus();
@@ -192,12 +219,28 @@ async function staffDialog(staff) {
   const answer = await pending;
   if (answer !== 'ok') return;
   const instrument = Number(sound.value);
-  const chosenName = name.value.trim() || instrumentByProgram(instrument).name;
-  if (adding) {
-    await act({ type: 'add_staff', clef: clef.value, name: chosenName, instrument });
-  } else {
-    await act({ type: 'set_staff', staff, name: chosenName, instrument, clef: clef.value });
+  const chosen = TRANSPOSITIONS.find((t) => t.key === transSel.value);
+  const props = {
+    name: name.value.trim() || instrumentByProgram(instrument).name,
+    short_name: short.value.trim(),
+    instrument,
+    clef: clef.value,
+    transposition: chosen ? { diatonic: chosen.diatonic, chromatic: chosen.chromatic } : trans,
+  };
+  if (adding) await act({ type: 'add_staff', ...props });
+  else await act({ type: 'set_staff', staff, ...props });
+}
+
+/** Joins the selected staves with a bracket or brace, or ungroups them. */
+function groupSelectedStaves(kind) {
+  const doc = active();
+  const sel = doc?.selection;
+  if (!sel || sel.staff_hi <= sel.staff_lo) {
+    return choiceDialog('Select the staves first',
+      '<p>Select some music across the staves you want to join (for example, drag from the top staff to the bottom one), then choose the bracket or brace again.</p>',
+      [{ spacer: true }, { label: 'OK', value: 'ok', primary: true }]);
   }
+  return act({ type: 'group_staves', first: sel.staff_lo, last: sel.staff_hi, kind });
 }
 
 async function saveDocument(saveAs = false) {
@@ -1104,6 +1147,9 @@ const commands = {
   'remove-measure': () => act({ type: 'remove_measure' }),
   'add-staff': () => staffDialog(null),
   'staff-properties': () => staffDialog(active()?.caret.staff ?? 0),
+  'group-bracket': () => groupSelectedStaves('bracket'),
+  'group-brace': () => groupSelectedStaves('brace'),
+  'group-none': () => groupSelectedStaves(null),
   'import-musicxml': () => importMusicXmlFromDialog(),
   'export-musicxml': () => exportMusicXml(),
   'remove-staff': () => act({ type: 'remove_staff' }),
@@ -1947,6 +1993,9 @@ const MENUS = [
     { label: 'Measure After Current', cmd: 'add-measure', key: 'Ctrl+Enter', enabled: hasDoc },
     { label: 'Staff…', cmd: 'add-staff', enabled: hasDoc },
     { label: 'Staff Name, Sound and Clef…', cmd: 'staff-properties', enabled: hasDoc },
+    { label: 'Bracket Selected Staves', cmd: 'group-bracket', enabled: hasDoc },
+    { label: 'Brace Selected Staves', cmd: 'group-brace', enabled: hasDoc },
+    { label: 'Remove Bracket or Brace', cmd: 'group-none', enabled: hasDoc },
     { sep: true },
     { label: 'Tie', cmd: 'tie', key: 'T', enabled: hasDoc },
     { label: 'Slur over Selection', cmd: 'slur', key: 'S', enabled: hasSelection },

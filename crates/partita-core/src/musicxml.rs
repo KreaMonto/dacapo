@@ -65,9 +65,32 @@ pub fn export(score: &Score) -> String {
         env!("CARGO_PKG_VERSION")
     );
     x.push_str("  </identification>\n  <part-list>\n");
+    let mut group_number = 0;
     for (s, staff) in score.staves.iter().enumerate() {
+        let group = staff.group;
+        let starts = group.is_some() && (s == 0 || score.staves[s - 1].group != group);
+        let ends = group.is_some() && score.staves.get(s + 1).map(|n| n.group) != Some(group);
+        let alone = starts && ends; // a group of one staff is no group
+        if starts && !alone {
+            group_number += 1;
+            let symbol = match group.map(|g| g.kind) {
+                Some(GroupKind::Brace) => "brace",
+                _ => "bracket",
+            };
+            let _ = writeln!(
+                x,
+                "    <part-group type=\"start\" number=\"{group_number}\"><group-symbol>{symbol}</group-symbol><group-barline>yes</group-barline></part-group>"
+            );
+        }
         let _ = writeln!(x, "    <score-part id=\"P{}\">", s + 1);
         let _ = writeln!(x, "      <part-name>{}</part-name>", esc(&staff.name));
+        if !staff.short_name.is_empty() {
+            let _ = writeln!(
+                x,
+                "      <part-abbreviation>{}</part-abbreviation>",
+                esc(&staff.short_name)
+            );
+        }
         let _ = writeln!(x, "      <score-instrument id=\"P{}-I1\"><instrument-name>{}</instrument-name></score-instrument>", s + 1, esc(&staff.name));
         let _ = writeln!(
             x,
@@ -77,6 +100,12 @@ pub fn export(score: &Score) -> String {
             staff.instrument as u16 + 1
         );
         x.push_str("    </score-part>\n");
+        if ends && !alone {
+            let _ = writeln!(
+                x,
+                "    <part-group type=\"stop\" number=\"{group_number}\"/>"
+            );
+        }
     }
     x.push_str("  </part-list>\n");
 
@@ -99,20 +128,16 @@ pub fn export(score: &Score) -> String {
             let capacity = attrs.time.measure_ticks();
             let _ = writeln!(x, "    <measure number=\"{}\">", m + 1);
             let prev_attrs = m.checked_sub(1).map(|p| score.measures[p]);
-            if m == 0
-                || prev_attrs.map(|p| p.key) != Some(attrs.key)
-                || prev_attrs.map(|p| p.time) != Some(attrs.time)
-            {
+            // Transposing staves show their written key.
+            let key = score.written_key(s, m);
+            let prev_key = m.checked_sub(1).map(|p| score.written_key(s, p));
+            if m == 0 || prev_key != Some(key) || prev_attrs.map(|p| p.time) != Some(attrs.time) {
                 x.push_str("      <attributes>\n");
                 if m == 0 {
                     let _ = writeln!(x, "        <divisions>{divisions}</divisions>");
                 }
-                if m == 0 || prev_attrs.map(|p| p.key) != Some(attrs.key) {
-                    let _ = writeln!(
-                        x,
-                        "        <key><fifths>{}</fifths></key>",
-                        attrs.key.fifths
-                    );
+                if m == 0 || prev_key != Some(key) {
+                    let _ = writeln!(x, "        <key><fifths>{}</fifths></key>", key.fifths);
                 }
                 if m == 0 || prev_attrs.map(|p| p.time) != Some(attrs.time) {
                     let _ = writeln!(
@@ -127,6 +152,23 @@ pub fn export(score: &Score) -> String {
                         x,
                         "        <clef><sign>{sign}</sign><line>{line}</line></clef>"
                     );
+                    if !staff.transposition.is_none() {
+                        let t = staff.transposition;
+                        // MusicXML splits off whole octaves.
+                        let octaves = t.diatonic.div_euclid(7) as i32;
+                        let octaves = if t.diatonic < 0 && t.diatonic % 7 != 0 {
+                            octaves + 1
+                        } else {
+                            octaves
+                        };
+                        let _ = writeln!(
+                            x,
+                            "        <transpose><diatonic>{}</diatonic><chromatic>{}</chromatic>{}</transpose>",
+                            t.diatonic as i32 - 7 * octaves,
+                            t.chromatic as i32 - 12 * octaves,
+                            if octaves != 0 { format!("<octave-change>{octaves}</octave-change>") } else { String::new() }
+                        );
+                    }
                 }
                 x.push_str("      </attributes>\n");
             }
@@ -563,6 +605,15 @@ fn number_of(n: roxmltree::Node, name: &str) -> Option<f64> {
     text_of(n, name).and_then(|t| t.parse().ok())
 }
 
+/// What the part list says about a part.
+#[derive(Clone, Default)]
+struct PartInfo {
+    name: String,
+    short_name: String,
+    program: u8,
+    group: Option<StaffGroup>,
+}
+
 /// Where a part's staff ended up in the score.
 #[derive(Default)]
 struct StaffSlot {
@@ -607,12 +658,44 @@ impl Importer {
             })
             .unwrap_or_default();
 
-        // Part names and instruments from the part list.
-        let mut part_info: HashMap<String, (String, u8)> = HashMap::new();
+        // Part names, abbreviations, instruments and groups from the part
+        // list. A part keeps the innermost bracket or brace around it.
+        let mut part_info: HashMap<String, PartInfo> = HashMap::new();
+        let mut open_groups: Vec<(String, Option<GroupKind>, u64)> = Vec::new();
         if let Some(list) = child(root, "part-list") {
-            for sp in children(list, "score-part") {
+            for el in list.children().filter(|c| c.is_element()) {
+                if el.has_tag_name("part-group") {
+                    let number = el.attribute("number").unwrap_or("1").to_string();
+                    match el.attribute("type") {
+                        Some("start") => {
+                            let kind = match text_of(el, "group-symbol").as_deref() {
+                                Some("brace") => Some(GroupKind::Brace),
+                                Some("bracket" | "square") => Some(GroupKind::Bracket),
+                                _ => None,
+                            };
+                            let id = self.alloc();
+                            open_groups.push((number, kind, id));
+                        }
+                        Some("stop") => {
+                            if let Some(i) = open_groups.iter().rposition(|g| g.0 == number) {
+                                open_groups.remove(i);
+                            }
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+                if !el.has_tag_name("score-part") {
+                    continue;
+                }
+                let sp = el;
                 let id = sp.attribute("id").unwrap_or_default().to_string();
                 let name = text_of(sp, "part-name").unwrap_or_default();
+                let short_name = text_of(sp, "part-abbreviation").unwrap_or_default();
+                let group = open_groups
+                    .iter()
+                    .rev()
+                    .find_map(|(_, kind, id)| kind.map(|kind| StaffGroup { id: *id, kind }));
                 let program = sp
                     .descendants()
                     .find(|n| n.has_tag_name("midi-program"))
@@ -620,7 +703,15 @@ impl Importer {
                     .and_then(|t| t.trim().parse::<u16>().ok())
                     .map(|p| p.clamp(1, 128) as u8 - 1)
                     .unwrap_or(0);
-                part_info.insert(id, (name, program));
+                part_info.insert(
+                    id,
+                    PartInfo {
+                        name,
+                        short_name,
+                        program,
+                        group,
+                    },
+                );
             }
         }
 
@@ -629,11 +720,22 @@ impl Importer {
             return Err(MusicXmlError::NotAScore);
         }
         for (p, part) in parts.iter().enumerate() {
-            let (name, program) = part
+            let info = part
                 .attribute("id")
                 .and_then(|id| part_info.get(id).cloned())
                 .unwrap_or_default();
-            self.read_part(*part, p == 0, &name, program);
+            self.read_part(*part, p == 0, &info);
+        }
+        // A group of one staff is no group.
+        let n = self.score_staves.len();
+        for s in 0..n {
+            let g = self.score_staves[s].group;
+            let joined = g.is_some()
+                && ((s > 0 && self.score_staves[s - 1].group == g)
+                    || (s + 1 < n && self.score_staves[s + 1].group == g));
+            if !joined {
+                self.score_staves[s].group = None;
+            }
         }
 
         // Assemble: every staff gets the same number of measures.
@@ -715,7 +817,25 @@ impl Importer {
         Ok(Import { score, notes })
     }
 
-    fn read_part(&mut self, part: roxmltree::Node, first_part: bool, name: &str, program: u8) {
+    fn read_part(&mut self, part: roxmltree::Node, first_part: bool, info: &PartInfo) {
+        let name = info.name.as_str();
+        // One instrument on several staves (a piano) is braced, unless the
+        // part list says otherwise.
+        let staves_here = part
+            .descendants()
+            .find(|n| n.has_tag_name("staves"))
+            .and_then(|n| n.text())
+            .and_then(|t| t.trim().parse::<u32>().ok())
+            .unwrap_or(1);
+        let group = if staves_here > 1 {
+            Some(StaffGroup {
+                id: self.alloc(),
+                kind: GroupKind::Brace,
+            })
+        } else {
+            info.group
+        };
+        let mut transposition = Transposition::NONE;
         // Staff number (1-based) → slot in the score.
         let mut slots: HashMap<u32, StaffSlot> = HashMap::new();
         let staves_in_part = part
@@ -736,8 +856,11 @@ impl Importer {
             self.score_staves.push(Staff {
                 id,
                 name: label,
+                short_name: info.short_name.clone(),
                 clef: if n == 1 { Clef::Treble } else { Clef::Bass },
-                instrument: program,
+                instrument: info.program,
+                transposition: Transposition::NONE,
+                group,
                 measures: Vec::new(),
             });
             slots.insert(
@@ -779,10 +902,26 @@ impl Importer {
                                 divisions = d;
                             }
                         }
+                        if let Some(t) = child(el, "transpose") {
+                            let octaves = number_of(t, "octave-change").unwrap_or(0.0) as i32;
+                            let d = number_of(t, "diatonic").unwrap_or(0.0) as i32 + 7 * octaves;
+                            let c = number_of(t, "chromatic").unwrap_or(0.0).round() as i32
+                                + 12 * octaves;
+                            transposition = Transposition {
+                                diatonic: d.clamp(-28, 28) as i8,
+                                chromatic: c.clamp(-48, 48) as i8,
+                            };
+                            for slot in slots.values() {
+                                self.score_staves[slot.index].transposition = transposition;
+                            }
+                        }
                         if let Some(k) = child(el, "key").and_then(|k| number_of(k, "fifths")) {
-                            current_attrs.key = KeySignature {
+                            // The score keeps the concert key; a transposing
+                            // part shows its written key.
+                            let written = KeySignature {
                                 fifths: (k as i8).clamp(-7, 7),
                             };
+                            current_attrs.key = transposition.concert_key(written);
                         }
                         if let Some(t) = child(el, "time") {
                             let beats: u32 = text_of(t, "beats")
@@ -1160,8 +1299,19 @@ mod tests {
         score.measures[1].key = KeySignature { fifths: -2 };
         let bass = score.blank_staff("Cello", Clef::Bass);
         score.staves.push(bass);
-        score.staves[0].name = "Violin".into();
-        score.staves[0].instrument = 40;
+        score.staves[0].name = "Clarinet in B♭".into();
+        score.staves[0].short_name = "Cl.".into();
+        score.staves[0].instrument = 71;
+        score.staves[0].transposition = Transposition {
+            diatonic: -1,
+            chromatic: -2,
+        };
+        let g = Some(StaffGroup {
+            id: 999,
+            kind: GroupKind::Bracket,
+        });
+        score.staves[0].group = g;
+        score.staves[1].group = g;
 
         let mut a = note(&mut score, DurationBase::Quarter, &[(Step::C, 0, 5)]);
         a.tie = true;
@@ -1207,7 +1357,16 @@ mod tests {
             score.metadata.title, score.metadata.composer, score.tempo, score.measures
         );
         for s in &score.staves {
-            let _ = writeln!(out, "{} {:?} {}", s.name, s.clef, s.instrument);
+            let _ = writeln!(
+                out,
+                "{} {} {:?} {} {:?} {:?}",
+                s.name,
+                s.short_name,
+                s.clef,
+                s.instrument,
+                s.transposition,
+                s.group.map(|g| g.kind)
+            );
             for (m, cell) in s.measures.iter().enumerate() {
                 for (v, events) in cell.voices.iter().enumerate() {
                     for e in events {
@@ -1229,6 +1388,14 @@ mod tests {
         let score = sample();
         let xml = export(&score);
         assert!(xml.contains("<work-title>Round &amp; Trip</work-title>"));
+        // The clarinet reads D major and E-flat... its own key: concert C
+        // (measure 1) is written D (2 sharps); concert B-flat is written C.
+        assert!(xml.contains("<key><fifths>2</fifths></key>"));
+        assert!(
+            xml.contains("<transpose><diatonic>-1</diatonic><chromatic>-2</chromatic></transpose>")
+        );
+        assert!(xml.contains("<group-symbol>bracket</group-symbol>"));
+        assert!(xml.contains("<part-abbreviation>Cl.</part-abbreviation>"));
         let back = import(&xml, "fallback").unwrap();
         assert!(back.notes.is_empty(), "{:?}", back.notes);
         assert!(back.score.validate().is_empty());

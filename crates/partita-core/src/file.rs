@@ -31,8 +31,8 @@ pub const FILE_EXTENSION: &str = "partita";
 ///   as version 4, so everything else still opens in older versions.
 /// - 5: lyrics on events. As with version 4, only files that have lyrics
 ///   are written as version 5.
-/// - 6: an instrument per staff. Only files where a staff plays something
-///   other than the piano are written as version 6.
+/// - 6: staff instruments, short names, transpositions and brackets or
+///   braces. Only files that use one of them are written as version 6.
 pub const FORMAT_VERSION: u32 = 6;
 const FORMAT_MARKER: &str = "partita";
 /// Marker written by Da Capo (the project's former name) up to 0.2.2.
@@ -79,7 +79,12 @@ fn required_version(score: &Score) -> u32 {
                 .any(|m| m.voices.iter().any(|v| v.iter().any(test)))
         })
     };
-    if score.staves.iter().any(|s| s.instrument != 0) {
+    if score.staves.iter().any(|s| {
+        s.instrument != 0
+            || !s.short_name.is_empty()
+            || !s.transposition.is_none()
+            || s.group.is_some()
+    }) {
         6
     } else if any_event(|e| e.has_lyrics()) {
         5

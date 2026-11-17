@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::model::{
-    Clef, Event, MeasureAttrs, Metadata, Score, Slur, Staff, StaffMeasure, MAX_VOICES,
+    Clef, Event, MeasureAttrs, Metadata, Score, Slur, Staff, StaffGroup, StaffMeasure,
+    Transposition, MAX_VOICES,
 };
 
 /// Address of one voice inside one measure of one staff.
@@ -87,6 +88,18 @@ pub enum Op {
     SetStaffInstrument {
         staff: usize,
         instrument: u8,
+    },
+    SetStaffShortName {
+        staff: usize,
+        short_name: String,
+    },
+    SetStaffTransposition {
+        staff: usize,
+        transposition: Transposition,
+    },
+    SetStaffGroup {
+        staff: usize,
+        group: Option<StaffGroup>,
     },
 }
 
@@ -310,6 +323,42 @@ impl Op {
                 Ok(Op::SetStaffInstrument {
                     staff: *staff,
                     instrument: old,
+                })
+            }
+            Op::SetStaffShortName { staff, short_name } => {
+                let s = score
+                    .staves
+                    .get_mut(*staff)
+                    .ok_or(OpError::StaffIndex(*staff))?;
+                let old = std::mem::replace(&mut s.short_name, short_name.clone());
+                Ok(Op::SetStaffShortName {
+                    staff: *staff,
+                    short_name: old,
+                })
+            }
+            Op::SetStaffTransposition {
+                staff,
+                transposition,
+            } => {
+                let s = score
+                    .staves
+                    .get_mut(*staff)
+                    .ok_or(OpError::StaffIndex(*staff))?;
+                let old = std::mem::replace(&mut s.transposition, *transposition);
+                Ok(Op::SetStaffTransposition {
+                    staff: *staff,
+                    transposition: old,
+                })
+            }
+            Op::SetStaffGroup { staff, group } => {
+                let s = score
+                    .staves
+                    .get_mut(*staff)
+                    .ok_or(OpError::StaffIndex(*staff))?;
+                let old = std::mem::replace(&mut s.group, *group);
+                Ok(Op::SetStaffGroup {
+                    staff: *staff,
+                    group: old,
                 })
             }
             Op::SetMetadata { metadata } => {
