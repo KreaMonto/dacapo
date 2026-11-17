@@ -5,7 +5,7 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 ## [Unreleased]
 
 ### Changed
-- **Da Capo is now Partita.** Another free notation editor was already called DaCapo Editor, so the project has a new name, a new home at https://github.com/partita-notation/partita and a new website at https://partita-notation.github.io.
+- **Da Capo is now Partita.** Another free notation editor was already called DaCapo Editor, so the project has a new name, a new home at https://github.com/partita-notation/partita and a new website at https://partita-notation.github.io. It comes with a new icon: a Baroque letter P in gold on dark walnut.
   - Scores are now saved as `.partita`. Files saved as `.dacapo` still open (and open with a double-click), and keep their name when saved again.
   - The downloaded SoundFont and any unsaved work waiting in crash recovery move over from Da Capo on the first start, so nothing is lost or downloaded again. View settings (theme, zoom, page view) start from their defaults once.
   - On Windows, Partita installs next to Da Capo instead of replacing it: uninstall Da Capo from Settings → Apps once Partita runs.
