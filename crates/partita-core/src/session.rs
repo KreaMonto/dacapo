@@ -165,6 +165,8 @@ mod tests {
     const Q: Dur = Dur {
         base: DurationBase::Quarter,
         dots: 0,
+        tuplet: None,
+        grace: None,
     };
 
     fn store(dir: &Path) -> RecoveryStore {

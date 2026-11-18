@@ -181,6 +181,27 @@
                fills them (FIGURES). -->
           <div class="figures" data-i18n-aria="palette.value"></div>
           <button data-cmd="dot" class="glyph" data-i18n-tip="palette.dot" data-i18n-desc="palette.dot.desc" data-i18n-aria="palette.dot" data-key=".">&#xE1E7;</button>
+          <!-- Grace notes: the next notes go in as acciaccaturas or
+               appoggiaturas. The face shows the last kind chosen. -->
+          <div class="drop" data-drop="grace">
+            <button class="glyph drop-btn grace-face" aria-haspopup="true" aria-expanded="false" data-i18n-tip="toolbar.grace" data-i18n-desc="toolbar.grace.desc" data-i18n-aria="toolbar.grace">&#xE560;</button>
+            <div class="drop-pop" role="group" data-i18n-aria="toolbar.grace" hidden>
+              <button data-cmd="grace:acciaccatura" class="glyph" data-i18n-tip="grace.acciaccatura" data-i18n-desc="grace.acciaccatura.desc" data-i18n-aria="grace.acciaccatura" data-key="Ctrl+G">&#xE560;</button>
+              <button data-cmd="grace:appoggiatura" class="glyph" data-i18n-tip="grace.appoggiatura" data-i18n-desc="grace.appoggiatura.desc" data-i18n-aria="grace.appoggiatura" data-key="Ctrl+Shift+G">&#xE562;</button>
+            </div>
+          </div>
+          <!-- Tuplets: the next notes go in as a triplet (or 5, 6, 2, 4).
+               The face shows the last one chosen and is lit while it is on. -->
+          <div class="drop" data-drop="tuplet">
+            <button class="glyph tuplet-digit drop-btn tuplet-face" aria-haspopup="true" aria-expanded="false" data-i18n-tip="toolbar.tuplet" data-i18n-desc="toolbar.tuplet.desc" data-i18n-aria="toolbar.tuplet">&#xE883;</button>
+            <div class="drop-pop" role="group" data-i18n-aria="toolbar.tuplet" hidden>
+              <button data-cmd="tuplet:3" class="glyph tuplet-digit" data-i18n-tip="tuplet.3" data-i18n-desc="tuplet.3.desc" data-i18n-aria="tuplet.3" data-key="Ctrl+3">&#xE883;</button>
+              <button data-cmd="tuplet:5" class="glyph tuplet-digit" data-i18n-tip="tuplet.5" data-i18n-desc="tuplet.5.desc" data-i18n-aria="tuplet.5" data-key="Ctrl+5">&#xE885;</button>
+              <button data-cmd="tuplet:6" class="glyph tuplet-digit" data-i18n-tip="tuplet.6" data-i18n-desc="tuplet.6.desc" data-i18n-aria="tuplet.6" data-key="Ctrl+6">&#xE886;</button>
+              <button data-cmd="tuplet:2" class="glyph tuplet-digit" data-i18n-tip="tuplet.2" data-i18n-desc="tuplet.2.desc" data-i18n-aria="tuplet.2" data-key="Ctrl+2">&#xE882;</button>
+              <button data-cmd="tuplet:4" class="glyph tuplet-digit" data-i18n-tip="tuplet.4" data-i18n-desc="tuplet.4.desc" data-i18n-aria="tuplet.4" data-key="Ctrl+4">&#xE884;</button>
+            </div>
+          </div>
         </div>
         <div class="tbar" role="group" data-bar-id="accidentals" data-i18n-bar="bar.accidentals" data-i18n-aria="bar.accidentals">
           <button data-alter="1" class="glyph" data-i18n-aria="palette.sharp" data-i18n-tip="palette.sharp" data-i18n-desc="palette.sharp.desc" data-key="+">&#xE262;</button>
@@ -223,6 +244,17 @@
           <button data-cmd="slur" class="icon-btn" data-i18n-aria="palette.slur" data-i18n-tip="palette.slur" data-i18n-desc="palette.slur.desc" data-key="S">
             <svg viewBox="0 0 40 24" aria-hidden="true"><path d="M5 18 Q20 0 35 18 Q20 5 5 18Z"/></svg>
           </button>
+        </div>
+        <!-- Beams set by hand on the note before the caret (or the
+             selection): a new beam, joined across the beat, or automatic. -->
+        <div class="tbar" role="group" data-bar-id="beams" data-i18n-bar="bar.beams" data-i18n-aria="bar.beams">
+          <button data-cmd="beam:break" class="icon-btn" data-i18n-aria="beam.break" data-i18n-tip="beam.break" data-i18n-desc="beam.break.desc">
+            <svg viewBox="0 0 40 24" aria-hidden="true"><ellipse cx="9" cy="19" rx="4.2" ry="3" transform="rotate(-20 9 19)"/><ellipse cx="27" cy="19" rx="4.2" ry="3" transform="rotate(-20 27 19)"/><rect x="12.3" y="3" width="1.4" height="16"/><rect x="30.3" y="3" width="1.4" height="16"/><path d="M13 3 C14 7 19 8 18 13 C18 9 15 8 13 7Z"/><path d="M31 3 C32 7 37 8 36 13 C36 9 33 8 31 7Z"/></svg>
+          </button>
+          <button data-cmd="beam:join" class="icon-btn" data-i18n-aria="beam.join" data-i18n-tip="beam.join" data-i18n-desc="beam.join.desc">
+            <svg viewBox="0 0 40 24" aria-hidden="true"><ellipse cx="9" cy="19" rx="4.2" ry="3" transform="rotate(-20 9 19)"/><ellipse cx="27" cy="19" rx="4.2" ry="3" transform="rotate(-20 27 19)"/><rect x="12.3" y="3" width="1.4" height="16"/><rect x="30.3" y="3" width="1.4" height="16"/><rect x="12.3" y="3" width="19.4" height="3.2"/></svg>
+          </button>
+          <button data-cmd="beam:auto" class="text-btn" data-i18n-aria="beam.auto" data-i18n-tip="beam.auto" data-i18n-desc="beam.auto.desc" data-i18n="beam.auto.short">auto</button>
         </div>
         <div class="tbar" role="group" data-bar-id="articulations" data-i18n-bar="palette.articulations" data-i18n-aria="palette.articulations">
           <button data-artic="staccato" class="glyph" data-i18n-aria="palette.staccato" data-i18n-tip="palette.staccato" data-i18n-desc="palette.staccato.desc">&#xE4A2;</button>

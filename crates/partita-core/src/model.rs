@@ -161,26 +161,161 @@ impl DurationBase {
     }
 }
 
-/// A rhythmic value: base value plus augmentation dots.
+/// A tuplet: `actual` notes of `unit` in the time of `normal` (a triplet of
+/// eighths is 3 eighths in the time of 2). Every note of the group carries
+/// it; groups are read from the voice: a group is complete once its notes
+/// fill `normal` × `unit`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Tuplet {
+    pub actual: u8,
+    pub normal: u8,
+    pub unit: DurationBase,
+}
+
+impl Tuplet {
+    /// The time a whole group takes, in ticks.
+    pub fn span(self) -> u32 {
+        self.unit.ticks() * self.normal as u32
+    }
+}
+
+/// A grace note: drawn small before the note it ornaments, and played in
+/// that note's time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Grace {
+    /// Struck through, played as short as possible.
+    Acciaccatura,
+    /// Without the stroke, played as half of the main note.
+    Appoggiatura,
+}
+
+/// A rhythmic value: base value plus augmentation dots, the tuplet it
+/// belongs to, and whether it is a grace note (which takes no time).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 pub struct Duration {
     pub base: DurationBase,
     pub dots: u8,
+    /// Since file format 8 (recovery format 16).
+    pub tuplet: Option<Tuplet>,
+    /// Since file format 8 (recovery format 16).
+    pub grace: Option<Grace>,
+}
+
+#[derive(Deserialize)]
+struct DurationFields {
+    base: DurationBase,
+    dots: u8,
+    #[serde(default)]
+    tuplet: Option<Tuplet>,
+    #[serde(default)]
+    grace: Option<Grace>,
+}
+
+/// [`Duration`] as written to recovery formats 3 to 15 (before tuplets).
+#[derive(Deserialize)]
+struct DurationPreTuplet {
+    base: DurationBase,
+    dots: u8,
+}
+
+impl<'de> Deserialize<'de> for Duration {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        if matches!(legacy_format(), 3..=15) {
+            let d = DurationPreTuplet::deserialize(deserializer)?;
+            return Ok(Duration {
+                base: d.base,
+                dots: d.dots,
+                tuplet: None,
+                grace: None,
+            });
+        }
+        let d = DurationFields::deserialize(deserializer)?;
+        Ok(Duration {
+            base: d.base,
+            dots: d.dots,
+            tuplet: d.tuplet,
+            grace: d.grace,
+        })
+    }
 }
 
 impl Duration {
     pub fn new(base: DurationBase) -> Self {
-        Duration { base, dots: 0 }
+        Duration {
+            base,
+            dots: 0,
+            tuplet: None,
+            grace: None,
+        }
+    }
+
+    /// The same value as a grace note.
+    pub fn as_grace(self, grace: Grace) -> Self {
+        Duration {
+            grace: Some(grace),
+            tuplet: None,
+            ..self
+        }
+    }
+
+    /// The same value in a tuplet.
+    pub fn in_tuplet(self, tuplet: Tuplet) -> Self {
+        Duration {
+            tuplet: Some(tuplet),
+            ..self
+        }
+    }
+
+    /// Without its tuplet if that would not come out in whole ticks (a
+    /// septuplet, for one): Partita counts 960 ticks to the quarter, which
+    /// divides by 2, 3, 4, 5 and 6 but not by 7.
+    /// A grace note is never in a tuplet.
+    pub fn exact(self) -> Self {
+        match self.tuplet {
+            Some(_) if self.grace.is_some() => Duration {
+                tuplet: None,
+                ..self
+            },
+            Some(t)
+                if t.actual == 0
+                    || t.normal == 0
+                    || !(self.notated_ticks() * t.normal as u32)
+                        .is_multiple_of(t.actual as u32) =>
+            {
+                Duration {
+                    tuplet: None,
+                    ..self
+                }
+            }
+            _ => self,
+        }
+    }
+
+    /// Length in ticks as written, before the tuplet.
+    pub fn notated_ticks(&self) -> u32 {
+        let base = self.base.ticks();
+        (0..=self.dots as u32).map(|d| base >> d).sum()
     }
 
     pub fn dotted(base: DurationBase, dots: u8) -> Self {
-        Duration { base, dots }
+        Duration {
+            base,
+            dots,
+            tuplet: None,
+            grace: None,
+        }
     }
 
-    /// Length in ticks including dots.
+    /// Length in ticks, dots and tuplet included; none for a grace note.
     pub fn ticks(&self) -> u32 {
-        let base = self.base.ticks();
-        (0..=self.dots as u32).map(|d| base >> d).sum()
+        if self.grace.is_some() {
+            return 0;
+        }
+        let notated = self.notated_ticks();
+        match self.tuplet {
+            Some(t) if t.actual > 0 => notated * t.normal as u32 / t.actual as u32,
+            _ => notated,
+        }
     }
 }
 
@@ -293,6 +428,20 @@ pub struct Event {
     /// of each kind, in kind order. Since file format 7 (recovery format 8).
     #[serde(default)]
     pub texts: Vec<NoteText>,
+    /// How the note is beamed to the one before it, when not as the time
+    /// signature says. Since file format 8 (recovery format 16).
+    #[serde(default)]
+    pub beam: Option<Beam>,
+}
+
+/// A beam set by hand on a note, against the automatic beaming.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Beam {
+    /// A new beam starts at this note.
+    Break,
+    /// Beamed to the note before, even across a beat.
+    Join,
 }
 
 /// Where words attached to a note go, and how they look.
@@ -330,6 +479,22 @@ struct EventFields {
     #[serde(default)]
     lyrics: Vec<Syllable>,
     #[serde(default)]
+    texts: Vec<NoteText>,
+    #[serde(default)]
+    beam: Option<Beam>,
+}
+
+/// [`Event`] as written to recovery data before manual beams (formats 8 to
+/// 15).
+#[derive(Deserialize)]
+struct EventPreBeam {
+    id: EventId,
+    duration: Duration,
+    kind: EventKind,
+    tie: bool,
+    articulations: Vec<Articulation>,
+    dynamic: Option<Dynamic>,
+    lyrics: Vec<Syllable>,
     texts: Vec<NoteText>,
 }
 
@@ -369,7 +534,8 @@ thread_local! {
 /// marks in 6 and 7; no text styles or text boxes in 6 to 8; no barline
 /// types in 6 to 9; no repeats in 6 to 10; no endings in 6 to 11; no
 /// jumps in 6 to 12; no measure lengths in 6 to 13; no layout breaks in
-/// any of them).
+/// any of them), or 15 (Partita 0.3.14: no tuplets, grace notes or manual
+/// beams; so too all the older ones).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
@@ -403,6 +569,7 @@ impl<'de> Deserialize<'de> for Event {
                 dynamic: e.dynamic,
                 lyrics: Vec::new(),
                 texts: Vec::new(),
+                beam: None,
             });
         }
         if matches!(legacy_format(), 4..=7) {
@@ -416,6 +583,21 @@ impl<'de> Deserialize<'de> for Event {
                 dynamic: e.dynamic,
                 lyrics: e.lyrics,
                 texts: Vec::new(),
+                beam: None,
+            });
+        }
+        if matches!(legacy_format(), 8..=15) {
+            let e = EventPreBeam::deserialize(deserializer)?;
+            return Ok(Event {
+                id: e.id,
+                duration: e.duration,
+                kind: e.kind,
+                tie: e.tie,
+                articulations: e.articulations,
+                dynamic: e.dynamic,
+                lyrics: e.lyrics,
+                texts: e.texts,
+                beam: None,
             });
         }
         let e = EventFields::deserialize(deserializer)?;
@@ -428,6 +610,7 @@ impl<'de> Deserialize<'de> for Event {
             dynamic: e.dynamic,
             lyrics: e.lyrics,
             texts: e.texts,
+            beam: e.beam,
         })
     }
 }
@@ -452,6 +635,7 @@ impl Event {
             dynamic: None,
             lyrics: Vec::new(),
             texts: Vec::new(),
+            beam: None,
         }
     }
 
@@ -480,6 +664,50 @@ impl Event {
 /// Whether a voice is a single *measure rest*: one rest that fills the
 /// whole measure. By convention a plain whole rest means "rest for the whole
 /// measure" in any time signature (3/4, 6/8, …), so it counts too.
+/// The tuplet groups of a voice, as (first, last) event indexes: notes in
+/// the same tuplet that follow each other, until they fill its span.
+pub fn tuplet_groups(events: &[Event]) -> Vec<(usize, usize)> {
+    let mut groups = Vec::new();
+    let mut open: Option<(usize, Tuplet, u32)> = None;
+    for (i, e) in events.iter().enumerate() {
+        // Grace notes inside a group take no time: they do not end it.
+        if e.duration.grace.is_some() {
+            continue;
+        }
+        let Some(t) = e.duration.tuplet else {
+            if let Some((start, _, _)) = open.take() {
+                groups.push((start, i - 1));
+            }
+            continue;
+        };
+        match open {
+            Some((start, ot, filled)) if ot == t && filled < ot.span() => {
+                let filled = filled + e.ticks();
+                if filled >= t.span() {
+                    groups.push((start, i));
+                    open = None;
+                } else {
+                    open = Some((start, ot, filled));
+                }
+            }
+            _ => {
+                if let Some((start, _, _)) = open.take() {
+                    groups.push((start, i - 1));
+                }
+                if e.ticks() >= t.span() {
+                    groups.push((i, i));
+                } else {
+                    open = Some((i, t, e.ticks()));
+                }
+            }
+        }
+    }
+    if let Some((start, _, _)) = open {
+        groups.push((start, events.len() - 1));
+    }
+    groups
+}
+
 pub fn is_measure_rest(events: &[Event], capacity: u32) -> bool {
     match events {
         [e] => {
@@ -1569,6 +1797,17 @@ impl Score {
             .is_some_and(|a| a.capacity() < a.time.measure_ticks())
     }
 
+    /// Whether any note or rest is in a tuplet, is a grace note or has a
+    /// beam set by hand (which need file format 8).
+    pub fn has_rhythm_marks(&self) -> bool {
+        self.staves
+            .iter()
+            .flat_map(|s| s.measures.iter())
+            .flat_map(|m| m.voices.iter())
+            .flatten()
+            .any(|e| e.duration.tuplet.is_some() || e.duration.grace.is_some() || e.beam.is_some())
+    }
+
     /// Whether any measure has a tempo marking.
     pub fn has_tempo_marks(&self) -> bool {
         self.measures.iter().any(|a| a.tempo.is_some())
@@ -1832,6 +2071,50 @@ mod tests {
     #[test]
     fn time_signature_capacity() {
         assert_eq!(TimeSignature::COMMON.measure_ticks(), 3840);
+        // Tuplets: three eighths of a triplet make a quarter.
+        let triplet = Tuplet {
+            actual: 3,
+            normal: 2,
+            unit: DurationBase::Eighth,
+        };
+        assert_eq!(
+            Duration::new(DurationBase::Eighth)
+                .in_tuplet(triplet)
+                .ticks(),
+            320
+        );
+        let quintuplet = Tuplet {
+            actual: 5,
+            normal: 4,
+            unit: DurationBase::Sixteenth,
+        };
+        assert_eq!(
+            Duration::new(DurationBase::Sixteenth)
+                .in_tuplet(quintuplet)
+                .ticks(),
+            192
+        );
+        // A septuplet does not come out in whole ticks: it is dropped.
+        let septuplet = Tuplet {
+            actual: 7,
+            normal: 4,
+            unit: DurationBase::Sixteenth,
+        };
+        assert!(Duration::new(DurationBase::Sixteenth)
+            .in_tuplet(septuplet)
+            .exact()
+            .tuplet
+            .is_none());
+        assert!(Duration::new(DurationBase::Eighth)
+            .in_tuplet(triplet)
+            .exact()
+            .tuplet
+            .is_some());
+        // Grace notes take no time, and are never in a tuplet.
+        let grace = Duration::new(DurationBase::Eighth).as_grace(Grace::Acciaccatura);
+        assert_eq!(grace.ticks(), 0);
+        assert_eq!(grace.notated_ticks(), 480);
+        assert!(grace.in_tuplet(triplet).exact().tuplet.is_none());
         assert_eq!(
             TimeSignature {
                 beats: 6,

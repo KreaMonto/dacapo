@@ -27,7 +27,7 @@ export const DEFAULT_LAYOUT = {
   // Left of the score: what you write with.
   left: [['figures', 'accidentals', 'voice']],
   // Right of the score: what goes on the notes.
-  right: [['lines', 'articulations', 'dynamics', 'expressions']],
+  right: [['lines', 'beams', 'articulations', 'dynamics', 'expressions']],
 };
 
 /**
@@ -398,6 +398,8 @@ function installDrop(drop, onChange) {
     y = Math.max(4, Math.min(y, window.innerHeight - p.height - 4));
     pop.style.left = `${x}px`;
     pop.style.top = `${y}px`;
+    // Glyphs are fitted to their buttons once they can be measured.
+    for (const b of pop.querySelectorAll('.glyph')) onChange?.(b);
   };
 
   face.addEventListener('click', (ev) => {

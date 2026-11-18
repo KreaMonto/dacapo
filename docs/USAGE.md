@@ -6,7 +6,7 @@ Partita is designed to feel like a word processor whose "text" is music. A blink
 
 - **New** (Ctrl+N) opens a new tab with an empty 8-measure score.
 - **Open** (Ctrl+O) loads a `.partita` file (or a `.dacapo` file from before the project was renamed). It also opens MusicXML files, like **Import MusicXML**.
-- **Import MusicXML…** (File menu) opens a score from another notation program (`.musicxml`, `.xml` or compressed `.mxl`) as a new, unsaved score. What Partita cannot show yet is simplified, and a message lists it: tuplets keep their written values, grace notes are left out, voices beyond four per staff are dropped, and each staff keeps the clef it starts with.
+- **Import MusicXML…** (File menu) opens a score from another notation program (`.musicxml`, `.xml` or compressed `.mxl`) as a new, unsaved score. What Partita cannot show yet is simplified, and a message lists it: septuplets and other tuplets that do not divide evenly keep their written values, voices beyond four per staff are dropped, and each staff keeps the clef it starts with.
 - **Export MusicXML…** (File menu) saves the score as MusicXML for Finale, Sibelius, Dorico, MuseScore and others: one part per staff, with its name and instrument.
 - **Save** (Ctrl+S) saves the document. **Save As** is Ctrl+Shift+S.
 - **Close tab** is Ctrl+W, and **next/previous tab** is Ctrl+Tab and Ctrl+Shift+Tab.
@@ -129,7 +129,7 @@ With the **Select** tool, point at a notehead: the pointer becomes a vertical do
 
 ## The bars beside the score
 
-Left of the score, one column of buttons: the **Figures**, **Accidentals** and **Voice** bars. When the window is too short for all of them, the last ones go behind **»** at the bottom. Right of the score, another column holds what goes on the notes: the **Ties & slurs**, **Articulations**, **Dynamics** and **Expressions** bars. **Dynamics** is one button that shows the last dynamic you chose: click it to open all of them, then choose one. Hover any button, or reach it with Tab, to see a tooltip with its name, what it does, its keyboard shortcut and the bar it belongs to.
+Left of the score, one column of buttons: the **Figures**, **Accidentals** and **Voice** bars. When the window is too short for all of them, the last ones go behind **»** at the bottom. Right of the score, another column holds what goes on the notes: the **Ties & slurs**, **Beams**, **Articulations**, **Dynamics** and **Expressions** bars. **Dynamics** is one button that shows the last dynamic you chose: click it to open all of them, then choose one. Hover any button, or reach it with Tab, to see a tooltip with its name, what it does, its keyboard shortcut and the bar it belongs to.
 
 **Accidentals, articulations and dynamics** can be placed with the mouse: click the mark (it stays highlighted and follows the pointer) (it stays highlighted and follows the pointer), then click each note it goes on; the note under the pointer lights up first. An accidental clicked on a chord changes only that tone. **Esc**, a right-click or clicking the mark again puts it down. With a selection, clicking a mark applies it to every note in the selection at once. From the keyboard, marks apply to **the note just before the caret**.
 
@@ -139,9 +139,10 @@ Left of the score, one column of buttons: the **Figures**, **Accidentals** and *
 |---|---|
 | **↖ Select** (Tools bar) | Back to normal editing: click to place the caret, drag to select. **Esc**, a right-click or `N` leave entry mode. |
 | **Eraser** (Tools bar, next to Select, `X`) | The pointer becomes a crosshair. Aim at a note and click to erase just that note; in a chord, only the tone you aim at goes. Drag a box to erase every note and rest inside it. The note under the crosshair turns red before you click. One Ctrl+Z brings back everything erased in one go. **Esc**, a right-click or `X` leave the eraser. |
-| **Figures** (left) | Two columns: the notes, and beside each one its rest. Click either to place it. The **dot** below them makes the figure dotted. **View → Breve and 128th Notes** adds the breve (double whole note), the 64th and the 128th. |
+| **Figures** (left) | Two columns: the notes, and beside each one its rest. Click either to place it. The **dot** below them makes the figure dotted. The **Grace Note** button below it writes the next notes as acciaccaturas or appoggiaturas, small and before the note they ornament, until you choose the same kind again. The **Tuplet** button (it shows the last one chosen) writes the next notes as a triplet, quintuplet, sextuplet, duplet or quadruplet until you choose it again; the figure in use when you turn it on is what the group counts in. **View → Breve and 128th Notes** adds the breve (double whole note), the 64th and the 128th. |
 | **Accidentals** (left) | ♯ ♭ ♮. The key signature's sharps and flats are applied automatically when you place a note. |
 | **Ties & slurs** (right) | **Tie** (`T`) joins a note to the next one of the same pitch. **Slur** (`S`) draws a phrase mark over the selected notes, and needs a selection. Deleting a slurred note removes its slur; undo restores both. |
+| **Beams** (right) | Beam the note before the caret (or the selected notes) by hand: start a new beam there, join it to the note before across the beat, or go back to automatic (**auto**). |
 | **Articulations** (right) | Staccato, staccatissimo, tenuto, accent, marcato, fermata. They are placed on the notehead side; the fermata goes above and also works on rests. |
 | **Dynamics** (right) | ppp … fff, sfz, fp, behind one button that shows the last one chosen. Printed below the staff. Choosing the dynamic a note already has removes it. |
 | **Voice** (left) | Shows **1** until you need more. **+** adds an independent line on the same staff, for example divisi strings or two melodies in one hand. Its buttons switch between voices (also `Alt+1`…`4`). A voice that contains no music disappears again once you leave it. |
@@ -209,6 +210,8 @@ A measure that holds more beats than its time signature allows is outlined in re
 | `1`…`7` | Choose the note value: 64th, 32nd, 16th, eighth, quarter, half, whole. With a selection, change its note values. |
 | `8` / `9` | Breve / 128th, when **View → Breve and 128th Notes** is on. |
 | `.` | Toggle a dot. |
+| `Ctrl+G` | Grace notes (acciaccaturas) on / off; `Ctrl+Shift+G`: appoggiaturas. |
+| `Ctrl+3` | Triplet on / off (`Ctrl+5`, `Ctrl+6`, `Ctrl+2`, `Ctrl+4`: quintuplet, sextuplet, duplet, quadruplet). |
 | `+` / `-` | Raise or lower the accidental of the previous note (or the selection). |
 | `Alt` + `↑` / `↓` | Move the previous note (or the selection) up or down one step. |
 | `Ctrl` + `Alt` + `↑` / `↓` | Move it up or down an octave. |

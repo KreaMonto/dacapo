@@ -197,6 +197,8 @@ body.no-drop, body.no-drop * { cursor: not-allowed !important; }
 .vzone .tbar-overflow > .tbar { flex-direction: column; padding: 0 6px; }
 .vzone .tbar-overflow > .tbar + .tbar { border-top: none; border-left: 1px solid var(--chrome-border); padding-top: 0; }
 .vzone .glyph { height: 28px; font-size: 20px; line-height: 0; overflow: visible; }
+/* Tuplet digits are small in Bravura: start larger, fitGlyph shrinks them to fit. */
+.toolbar .glyph.tuplet-digit { font-size: 48px; }
 /* Figures: the only bar with two columns, notes and rests side by side. */
 .vzone .figures { grid-auto-flow: row; grid-template-rows: none; grid-template-columns: 26px 26px; gap: 3px; }
 .figures .extended { display: none; }
@@ -497,6 +499,12 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 /* Music glyphs: SMuFL defines 1 em = 4 staff spaces (SP = 10px in render.js). */
 .score .m { font-family: Bravura; font-size: 40px; }
 .score .tsig, .score .mark { text-anchor: middle; }
+.score .tuplet-num { text-anchor: middle; }
+/* Grace notes: 65 % of the size (GRACE_K in render.js). */
+.score .m.small { font-size: 26px; }
+.score .grace .stem, .score .grace-stem { stroke-width: 1; }
+.score .grace-slash { stroke: currentColor; stroke-width: 1; }
+.score .tuplet-bracket { fill: none; stroke: currentColor; stroke-width: 1; }
 .score .ev .arc { fill: currentColor; }
 .score .mnum { font-size: 10px; fill: var(--muted); }
 /* Staff dialog (name, sound, clef). */
