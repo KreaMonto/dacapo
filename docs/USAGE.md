@@ -62,6 +62,8 @@ All views edit the same way. Clicking, selecting and the pointer figure work ide
 
 **Print** (Ctrl+P) prints the page view in black on white, one sheet per page. Editing aids such as the caret, the selection and the error marks are left out. From another view, Partita switches to page view for the print and back afterwards.
 
+**Toolbars:** **View → Toolbars** shows or hides each bar; Partita remembers your choice. A row or column whose bars are all hidden disappears, and the score takes its room. **Reset Toolbars** shows every bar again, where Partita puts them.
+
 **Theme:** **System** (default) follows your computer's light or dark setting. **Light** or **Dark** fix it for Partita only.
 
 **Language:** Partita speaks English and Spanish. **View → Language → System** (default) follows your computer's language; choosing **English** or **Español** fixes it for Partita only. The window reloads in the new language; open scores and their undo history stay as they are.

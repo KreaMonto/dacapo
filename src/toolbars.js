@@ -19,6 +19,52 @@ export const DEFAULT_LAYOUT = {
   right: ['lines', 'articulations', 'dynamics', 'expressions'],
 };
 
+// Which bars the person has hidden (View → Toolbars), kept between sessions.
+// Reset brings back Partita's layout.
+const STORE = 'partita.toolbars';
+let hidden = new Set(load().hidden);
+let rootEl = null;
+let fitAll = () => {};
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch { return {}; }
+}
+function save() {
+  try { localStorage.setItem(STORE, JSON.stringify({ hidden: [...hidden] })); } catch { /* not kept */ }
+}
+
+/** The bars of the default layout, zone by zone: { zone, ids }. */
+export const barZones = () => Object.entries(DEFAULT_LAYOUT).map(([zone, ids]) => ({ zone, ids }));
+
+/** The i18n key of a bar's name. */
+export const barNameKey = (id) => document.querySelector(`[data-bar-id="${id}"]`)?.dataset.i18nBar;
+
+export const isBarShown = (id) => !hidden.has(id);
+
+export function setBarShown(id, shown) {
+  if (shown) hidden.delete(id); else hidden.add(id);
+  save();
+  applyVisibility();
+}
+
+/** Every bar back, in Partita's layout. */
+export function resetBars() {
+  hidden = new Set();
+  try { localStorage.removeItem(STORE); } catch { /* nothing kept */ }
+  applyLayout(rootEl);
+  applyVisibility();
+}
+
+/** Hides the hidden bars, and a zone with nothing left to show. */
+function applyVisibility() {
+  if (!rootEl) return;
+  for (const bar of rootEl.querySelectorAll('[data-bar-id]')) bar.hidden = hidden.has(bar.dataset.barId);
+  for (const zone of rootEl.querySelectorAll('.toolbar[data-zone]')) {
+    zone.hidden = ![...zone.querySelectorAll('[data-bar-id]')].some((b) => !b.hidden);
+  }
+  fitAll();
+}
+
 /** Puts every bar named in `layout` into its zone, in order. */
 export function applyLayout(root, layout = DEFAULT_LAYOUT) {
   for (const [zone, ids] of Object.entries(layout)) {
@@ -37,10 +83,12 @@ export function applyLayout(root, layout = DEFAULT_LAYOUT) {
  * a `.tbar-row`, a `.tbar-more` button and a `.tbar-overflow` panel.
  */
 export function installBars(root, { onChange } = {}) {
+  rootEl = root;
   applyLayout(root);
   for (const drop of root.querySelectorAll('.drop')) installDrop(drop, onChange);
   const rows = [...root.querySelectorAll('.toolbar')].map(fitRow);
-  const fitAll = () => { for (const r of rows) r.fit(); };
+  fitAll = () => { for (const r of rows) r.fit(); };
+  applyVisibility();
   // Each row also watches itself; this covers the window and the fonts.
   window.addEventListener('resize', fitAll);
   document.fonts?.ready.then(fitAll);
@@ -141,7 +189,9 @@ function fitRow(toolbar) {
     more.hidden = true;
     if (!overflows()) { close(); return; }
     more.hidden = false;
-    while (row.children.length > 1 && overflows()) panel.prepend(row.lastElementChild);
+    // Keep at least one shown bar in the zone.
+    const shown = () => [...row.children].filter((b) => !b.hidden).length;
+    while (shown() > 1 && overflows()) panel.prepend(row.lastElementChild);
   };
 
   more.addEventListener('click', (ev) => {

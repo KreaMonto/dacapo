@@ -7,7 +7,7 @@ import {
   currentStyle, cssFont, resolveStyle, TEXT_KINDS, TEXT_DEFAULTS, UNITS_PER_PT, UNITS_PER_TENTH_MM,
 } from './render.js';
 import { installTooltips } from './tooltip.js';
-import { installBars } from './toolbars.js';
+import { installBars, barZones, barNameKey, isBarShown, setBarShown, resetBars } from './toolbars.js';
 import { installMenuBar } from './menu.js';
 import {
   t, tn, has, keyLabel, applyTranslations, LANGUAGES, LANGUAGE_NAMES, languageChoice,
@@ -2730,6 +2730,9 @@ for (const a of ARTICULATIONS) commands[`artic:${a}`] = () => act({ type: 'toggl
 for (const d of DYNAMICS) commands[`dyn:${d}`] = () => act({ type: 'set_dynamic', dynamic: d });
 commands['page-texts'] = () => pageTextsDialog();
 commands['tempo-mark'] = () => { const doc = active(); if (doc) tempoDialog(doc.caret.measure); };
+// View → Toolbars: show or hide each bar; Reset brings back Partita's layout.
+for (const { ids } of barZones()) for (const id of ids) commands[`toolbar:${id}`] = () => setBarShown(id, !isBarShown(id));
+commands['toolbars-reset'] = () => resetBars();
 commands['note-text:expression'] = () => startNoteText('expression');
 commands['note-text:technique'] = () => startNoteText('technique');
 commands.rehearsal = () => rehearsalMark();
@@ -2786,6 +2789,15 @@ const MENUS = [
     { label: t('menu.view.paper'), value: () => t(`menu.view.paper.${state.paper}`), items: [
       choice('menu.view.paper.a4', 'paper:a4', () => state.paper === 'a4'),
       choice('menu.view.paper.letter', 'paper:letter', () => state.paper === 'letter'),
+    ] },
+    // One group per zone: the rows on top, then the columns left and right.
+    { label: t('menu.view.toolbars'), items: [
+      ...barZones().flatMap(({ ids }, i) => [
+        ...(i > 1 ? [{ sep: true }] : []),
+        ...ids.map((id) => ({ label: t(barNameKey(id)), cmd: `toolbar:${id}`, checked: () => isBarShown(id) })),
+      ]),
+      { sep: true },
+      { label: t('menu.view.toolbars.reset'), cmd: 'toolbars-reset', desc: t('menu.view.toolbars.reset.desc') },
     ] },
     { sep: true },
     { label: t('menu.view.multirest'), cmd: 'multirest', checked: () => state.multiRest, desc: t('toolbar.multirest.desc') },

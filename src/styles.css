@@ -118,6 +118,7 @@ body > .workspace { flex: 1 1 auto; }
 }
 .tbar-row { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; overflow: hidden; }
 .tbar { display: flex; align-items: center; gap: 3px; flex: none; padding: 0 8px; }
+.tbar[hidden], .toolbar[hidden] { display: none; }
 .tbar-row > .tbar:first-child { padding-left: 0; }
 .tbar-row > .tbar + .tbar { border-left: 1px solid var(--chrome-border); }
 .tbar label { display: flex; align-items: center; gap: 4px; color: var(--muted); }
@@ -264,11 +265,17 @@ button.on { background: var(--button-active); border-color: var(--accent); color
      the page scroll sideways. */
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-rows: minmax(0, 1fr);
+  /* Named areas: a hidden column leaves its place empty instead of
+     shifting the document into it. */
+  grid-template-areas: "left doc right";
   min-height: 0;
 }
 /* Between the entry bars and the palette: tabs, recovery banner, then the
    page filling the rest. */
+#entry { grid-area: left; }
+#marks { grid-area: right; }
 .document {
+  grid-area: doc;
   display: flex;
   flex-direction: column;
   min-width: 0;
