@@ -429,14 +429,62 @@ function pointerInLayout(clientX, clientY) {
  * top padding is exactly where the baseline goes.
  */
 const glyphCtx = document.createElement('canvas').getContext('2d');
+// The Figures bar: each value as a note and as a rest, side by side. The
+// whole and half rests carry a short line, so hanging and sitting tell them
+// apart off the staff. `extended` values show with View → Breve and 128th
+// Notes. Keys are the duration digits.
+const FIGURES = [
+  { dur: 'Breve', note: '', rest: '', key: '8', extended: true },
+  { dur: 'Whole', note: '', rest: '', key: '7' },
+  { dur: 'Half', note: '', rest: '', key: '6' },
+  { dur: 'Quarter', note: '', rest: '', key: '5' },
+  { dur: 'Eighth', note: '', rest: '', key: '4' },
+  { dur: 'Sixteenth', note: '', rest: '', key: '3' },
+  { dur: 'ThirtySecond', note: '', rest: '', key: '2' },
+  { dur: 'SixtyFourth', note: '', rest: '', key: '1', extended: true },
+  { dur: 'HundredTwentyEighth', note: '', rest: '', key: '9', extended: true },
+];
+function buildFigures() {
+  const desc = esc(t('palette.figure.desc'));
+  document.querySelector('.figures').innerHTML = FIGURES.map((f) => ['note', 'rest'].map((kind) => {
+    const tip = esc(t(`figure.${f.dur}.${kind}`));
+    const cls = f.extended ? 'glyph extended' : 'glyph';
+    return `<button data-dur="${f.dur}" data-kind="${kind}" class="${cls}" data-key="${f.key}" data-tip="${tip}" data-desc="${desc}" aria-label="${tip}">${f[kind]}</button>`;
+  }).join('')).join('');
+}
+
 function fitGlyph(button) {
-  const style = getComputedStyle(button);
-  glyphCtx.font = `${style.fontSize} Bravura`;
-  const m = glyphCtx.measureText(button.textContent);
+  // A hidden button (the breve, until it is shown) is fitted when it shows.
+  if (!button.offsetHeight) return;
+  // Start from the size the stylesheet gives, then shrink a glyph whose ink
+  // would not fit inside the button with a small margin (long stems and
+  // flags, the short rests), so nothing sticks out.
+  button.style.fontSize = '';
+  const size = parseFloat(getComputedStyle(button).fontSize);
+  const room = { h: button.clientHeight - 6, w: button.clientWidth - 6 };
+  glyphCtx.font = `${size}px Bravura`;
+  let m = glyphCtx.measureText(button.textContent);
+  const inkW = m.actualBoundingBoxLeft + m.actualBoundingBoxRight;
+  const scale = Math.min(1, room.h / (m.actualBoundingBoxAscent + m.actualBoundingBoxDescent || 1), room.w / (inkW || 1));
+  if (scale < 1) {
+    button.style.fontSize = `${Math.floor(size * scale * 10) / 10}px`;
+    glyphCtx.font = `${button.style.fontSize} Bravura`;
+    m = glyphCtx.measureText(button.textContent);
+  }
   const ink = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
-  // A hidden button (the breve, until it is shown) has no size yet: use its CSS height.
-  const height = button.offsetHeight || parseFloat(style.height) || 40;
-  button.style.paddingTop = `${Math.round((height - ink) / 2 + m.actualBoundingBoxAscent)}px`;
+  // Where the baseline falls without padding (Bravura's line box puts it
+  // well off the middle): measure it with an empty marker on the baseline.
+  // A button centres its content, so padding on one side moves the glyph
+  // by half as much: pad twice the distance, above or below.
+  button.style.paddingTop = '0px';
+  button.style.paddingBottom = '0px';
+  const probe = document.createElement('span');
+  probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
+  button.prepend(probe);
+  const baseline = probe.getBoundingClientRect().top - button.getBoundingClientRect().top;
+  probe.remove();
+  const shift = 2 * ((button.offsetHeight - ink) / 2 + m.actualBoundingBoxAscent - baseline);
+  button.style[shift >= 0 ? 'paddingTop' : 'paddingBottom'] = `${Math.round(Math.abs(shift))}px`;
 }
 
 // ----- mouse entry mode ------------------------------------------------------
@@ -570,28 +618,10 @@ function syncControls(doc) {
   const staff = doc.score.staves[caret.staff];
   document.querySelector('[data-cmd=undo]').disabled = !doc.can_undo;
   document.querySelector('[data-cmd=redo]').disabled = !doc.can_redo;
-  document.querySelectorAll('[data-dur]').forEach((b) => {
-    if (b.textContent !== b.dataset[state.kind]) {
-      b.textContent = b.dataset[state.kind];
-      fitGlyph(b);
-    }
-    b.dataset.tip = t(`figure.${b.dataset.dur}.${state.kind}`);
-    b.dataset.desc = t('palette.figure.desc');
-    b.setAttribute('aria-label', b.dataset.tip);
-    b.classList.toggle('on', b.dataset.dur === state.duration.base);
+  // The figure in use: its value and whether it is a note or a rest.
+  document.querySelectorAll('.figures [data-dur]').forEach((b) => {
+    b.classList.toggle('on', b.dataset.dur === state.duration.base && b.dataset.kind === state.kind);
   });
-  // One button for notes or rests: it shows the figure kind in use.
-  const kind = document.querySelector('[data-kind-toggle]');
-  const rests = state.kind === 'rest';
-  if (kind.textContent !== (rests ? '' : '')) {
-    kind.textContent = rests ? '' : '';
-    fitGlyph(kind);
-  }
-  kind.classList.toggle('on', rests);
-  kind.setAttribute('aria-pressed', String(rests));
-  kind.dataset.tip = t('palette.kind');
-  kind.dataset.desc = t(`palette.kind.${state.kind}.desc`);
-  kind.setAttribute('aria-label', t('palette.kind'));
   document.querySelector('[data-cmd=select]').classList.toggle('on', state.mode === 'select');
   document.querySelector('[data-cmd=erase]').classList.toggle('on', state.mode === 'erase');
   document.querySelector('[data-cmd=text]').classList.toggle('on', state.mode === 'text');
@@ -1222,6 +1252,7 @@ let installedBars = null; // the toolbars, once laid out (installBars)
 /** Shows or hides the rarely used values (breve, 64th, 128th) in the palette. */
 function applyExtendedValues() {
   $('entry').classList.toggle('extended-values', state.extendedValues);
+  for (const b of document.querySelectorAll('.figures .extended')) fitGlyph(b);
   installedBars?.fit();
 }
 
@@ -2671,9 +2702,12 @@ dialogEl.addEventListener('click', (ev) => {
 const onControlClick = (ev) => {
   const b = ev.target.closest('button');
   if (!b) return;
-  if (b.dataset.dur) setDuration(b.dataset.dur, true);
+  if (b.dataset.dur) {
+    // Each figure has a note button and a rest button.
+    if (b.dataset.kind) state.kind = b.dataset.kind;
+    setDuration(b.dataset.dur, true);
+  }
   else if (b.dataset.voice) setVoice(Number(b.dataset.voice));
-  else if ('kindToggle' in b.dataset) setKind(state.kind === 'rest' ? 'note' : 'rest');
   else if (b.dataset.alter || b.dataset.artic || b.dataset.dyn) useMark(b);
   else runCommand(b.dataset.cmd);
   // Back to the score, unless the button opened something to type in.
@@ -2838,10 +2872,12 @@ applyTheme();
 applyExtendedValues();
 
 installTooltips();
+buildFigures();
 installedBars = installBars(document.body, { onChange: fitGlyph });
 // Glyph buttons of the columns (accidentals, the dot, articulations,
 // dynamics): centre each from its measured ink, like the figures.
-document.fonts?.ready.then(() => { for (const b of document.querySelectorAll('.vzone .glyph:not([data-dur])')) fitGlyph(b); });
+// fonts.ready can settle before Bravura is even asked for: wait for it.
+document.fonts?.load('20px Bravura', '').then(() => { for (const b of document.querySelectorAll('.vzone .glyph')) fitGlyph(b); });
 
 
 // The key names' letter is translated (C → Do); the accidental is kept.

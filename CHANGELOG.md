@@ -17,7 +17,7 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 ### Changed
 - **Thin, named bars around the score instead of the palette**, so the score gets more room. A button's tooltip shows which bar it belongs to, and when a row or column has no room, its last bars go behind **»** instead of wrapping.
   - **On top**, two thin rows: File, Edit, Playback and View; then Tools (select, eraser, text box), Measure, Staves (with **Bracket**, **Brace** and **Ungroup** buttons) and Indications (tempo marking, rehearsal mark).
-  - **Left of the score**, one column for note entry: Figures (one button switches notes and rests, then the figures and the dot), Accidentals and Voice (**1**, **2**… and **+**).
+  - **Left of the score**, one column for note entry: Figures (two columns, each note beside its rest, and the dot), Accidentals and Voice (**1**, **2**… and **+**). Off the staff, the whole and half rests carry a short line so they can be told apart.
   - **Right of the score**, one column for what goes on the notes: Ties & slurs, Articulations, Dynamics and Expressions (*dolce*, *pizz.*). The dynamics are one button that shows the last one chosen and opens all of them.
   - In the menu, bracket, brace and ungroup are now under **Score → Staff → Group**.
 - **The title and composer are drawn on the page** like the music, so they print exactly as shown, and the music moves down to make room for the texts of page 1.

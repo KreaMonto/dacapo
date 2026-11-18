@@ -164,12 +164,12 @@ body > .workspace { flex: 1 1 auto; }
 .vzone .tbar-overflow { top: auto; right: auto; bottom: 4px; left: calc(100% + 2px); flex-direction: row; padding: 4px 6px; }
 .vzone .tbar-overflow > .tbar { flex-direction: column; padding: 0 6px; }
 .vzone .tbar-overflow > .tbar + .tbar { border-top: none; border-left: 1px solid var(--chrome-border); padding-top: 0; }
-.vzone .glyph { height: 30px; font-size: 22px; line-height: 0; overflow: visible; }
-.vzone .figures { display: flex; flex-direction: column; gap: 3px; }
-.vzone .figures button { height: 34px; }
-.vzone .kind-toggle.on { color: var(--accent); border-color: var(--accent); }
+.vzone .glyph { height: 28px; font-size: 20px; line-height: 0; overflow: visible; }
+/* Figures: the only bar with two columns, notes and rests side by side. */
+.vzone .figures { display: grid; grid-template-columns: 26px 26px; gap: 3px; }
+.vzone .figures button { width: 26px; height: 26px; font-size: 17px; }
 .figures .extended { display: none; }
-.extended-values .figures .extended { display: inline-block; }
+.extended-values .figures .extended { display: block; }
 .vzone .voices { flex-direction: column; flex-wrap: nowrap; gap: 3px; }
 .vzone .voices button { width: 32px; min-width: 0; }
 /* The marks column, right of the score. */
