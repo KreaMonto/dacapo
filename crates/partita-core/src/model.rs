@@ -368,7 +368,8 @@ thread_local! {
 /// builds before 0.4.0: no tempo markings in 6; no note texts or rehearsal
 /// marks in 6 and 7; no text styles or text boxes in 6 to 8; no barline
 /// types in 6 to 9; no repeats in 6 to 10; no endings in 6 to 11; no
-/// jumps in 6 to 12; no measure lengths in any of them).
+/// jumps in 6 to 12; no measure lengths in 6 to 13; no layout breaks in
+/// any of them).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
@@ -602,6 +603,9 @@ pub struct MeasureAttrs {
     /// that completes it at the end. Since file format 7 (recovery format
     /// 14).
     pub length: Option<u32>,
+    /// A system or page break after this measure. Since file format 7
+    /// (recovery format 15).
+    pub break_after: Option<LayoutBreak>,
 }
 
 impl MeasureAttrs {
@@ -615,6 +619,17 @@ impl MeasureAttrs {
 
 /// The highest ending number.
 pub const MAX_ENDING: u8 = 8;
+
+/// Where a line or a page of music is made to end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LayoutBreak {
+    /// The next measure starts a new system.
+    System,
+    /// The next measure starts a new page (in page view; a new system
+    /// otherwise).
+    Page,
+}
 
 /// An instruction at the end of a measure that changes where the music
 /// goes: where it ends (*Fine*), where it leaves for the coda (*To Coda*),
@@ -673,6 +688,7 @@ impl Default for MeasureAttrs {
             coda: false,
             jump: None,
             length: None,
+            break_after: None,
         }
     }
 }
@@ -700,6 +716,25 @@ struct MeasureAttrsFields {
     #[serde(default)]
     jump: Option<Jump>,
     #[serde(default)]
+    length: Option<u32>,
+    #[serde(default)]
+    break_after: Option<LayoutBreak>,
+}
+
+/// [`MeasureAttrs`] as written to recovery format 14 (before layout breaks).
+#[derive(Deserialize)]
+struct MeasureAttrsPreBreak {
+    time: TimeSignature,
+    key: KeySignature,
+    tempo: Option<TempoMark>,
+    rehearsal: Option<String>,
+    barline: Barline,
+    repeat_start: bool,
+    repeat_end: Option<u8>,
+    ending: Vec<u8>,
+    segno: bool,
+    coda: bool,
+    jump: Option<Jump>,
     length: Option<u32>,
 }
 
@@ -861,6 +896,25 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
                 coda: a.coda,
                 jump: a.jump,
                 length: None,
+                break_after: None,
+            });
+        }
+        if legacy_format() == 14 {
+            let a = MeasureAttrsPreBreak::deserialize(deserializer)?;
+            return Ok(MeasureAttrs {
+                time: a.time,
+                key: a.key,
+                tempo: a.tempo,
+                rehearsal: a.rehearsal,
+                barline: a.barline,
+                repeat_start: a.repeat_start,
+                repeat_end: a.repeat_end,
+                ending: a.ending,
+                segno: a.segno,
+                coda: a.coda,
+                jump: a.jump,
+                length: a.length,
+                break_after: None,
             });
         }
         let a = MeasureAttrsFields::deserialize(deserializer)?;
@@ -877,6 +931,7 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
             coda: a.coda,
             jump: a.jump,
             length: a.length,
+            break_after: a.break_after,
         })
     }
 }
@@ -1536,6 +1591,7 @@ impl Score {
                     || a.coda
                     || a.jump.is_some()
                     || a.length.is_some()
+                    || a.break_after.is_some()
             })
             || self
                 .staves

@@ -456,6 +456,7 @@ export function layout(view, width, opts = {}) {
       segno: !!attrs.segno, // where a D.S. goes back to
       coda: !!attrs.coda, // the coda begins here
       jump: attrs.jump ?? null, // Fine, To Coda, D.C., D.S. at the end
+      breakAfter: attrs.break_after ?? null, // 'system' or 'page' after it
       overfull,
       // An end repeat takes room before the barline for its dots.
       content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP, Math.min(lyricW, 80 * SP) + 2.6 * SP) + (attrs.repeat_end ? REPEAT_W : 0),
@@ -472,10 +473,10 @@ export function layout(view, width, opts = {}) {
     let j = i;
     if (opts.multiRest && single[i].restOnly) {
       // A tempo marking (even a hidden one) starts a new run: it may change the tempo.
-      while (j + 1 < single.length && single[j].barline === 'single' && !single[j].repeatEnd && !single[j + 1].repeatStart && !single[j].ending.length && !single[j + 1].ending.length && !single[j].jump && !single[j + 1].segno && !single[j + 1].coda && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo && !single[j + 1].rehearsal) j++;
+      while (j + 1 < single.length && single[j].barline === 'single' && !single[j].repeatEnd && !single[j + 1].repeatStart && !single[j].ending.length && !single[j + 1].ending.length && !single[j].jump && !single[j].breakAfter && !single[j + 1].segno && !single[j + 1].coda && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo && !single[j + 1].rehearsal) j++;
     }
     if (j > i) {
-      measures.push({ ...single[i], mEnd: single[j].m, multi: j - i + 1, barline: single[j].barline, repeatEnd: single[j].repeatEnd, jump: single[j].jump, content: 13 * SP + (single[j].repeatEnd ? REPEAT_W : 0) });
+      measures.push({ ...single[i], mEnd: single[j].m, multi: j - i + 1, barline: single[j].barline, repeatEnd: single[j].repeatEnd, jump: single[j].jump, breakAfter: single[j].breakAfter, content: 13 * SP + (single[j].repeatEnd ? REPEAT_W : 0) });
     } else {
       measures.push(single[i]);
     }
@@ -512,15 +513,18 @@ export function layout(view, width, opts = {}) {
   const keyRoom = (fifths) => Math.max(...score.staves.map((st) => keyWidth(writtenFifths(st, fifths))));
   const systems = [];
   let sys = null;
+  // A break after the previous measure starts a new system (and a page
+  // break, in page view, a new page). The continuous view has no lines.
+  let forced = null;
   for (const ms of measures) {
     // A start repeat sits after the clef, key and time, before the music.
     const repeatRoom = ms.repeatStart ? REPEAT_W : 0;
     const startPrefix = 0.6 * SP + CLEF_COL + keyRoom(ms.attrs.key.fifths) + (ms.timeChange ? 2.8 * SP : 0) + SP + repeatRoom;
     const midPrefix = (ms.keyChange ? keyRoom(ms.attrs.key.fifths) + SP : 0) + (ms.timeChange ? 2.8 * SP : 0) + repeatRoom;
     const room = avail - (systems.length === 1 ? nameIndent : shortIndent);
-    const fitsMid = sys && sys.width + midPrefix + ms.content <= room;
+    const fitsMid = sys && sys.width + midPrefix + ms.content <= room && !forced;
     if (!fitsMid) {
-      sys = { measures: [], width: 0 };
+      sys = { measures: [], width: 0, pageBreak: forced === 'page' && !!geo };
       systems.push(sys);
       ms.prefix = startPrefix;
       ms.systemStart = true;
@@ -530,6 +534,7 @@ export function layout(view, width, opts = {}) {
     }
     ms.w = ms.prefix + ms.content;
     sys.width += ms.w;
+    forced = Number.isFinite(avail) ? ms.breakAfter : null;
     sys.measures.push(ms);
   }
 
@@ -596,7 +601,7 @@ export function layout(view, width, opts = {}) {
       ? TEMPO_ROOM + Math.max(0, Math.max(currentStyle('tempo').size, currentStyle('rehearsal').size) - 2 * SP)
       : 0;
     const above = s.hasEnding ? Math.max(tempoAbove, ENDING_ROOM) + (marked ? ENDING_LIFT : 0) : tempoAbove;
-    if (geo && i > 0 && y + above + s.height + 2 * SP > pageTop(page) + geo.h - geo.margin) {
+    if (geo && i > 0 && (s.pageBreak || y + above + s.height + 2 * SP > pageTop(page) + geo.h - geo.margin)) {
       page++;
       y = pageTop(page) + geo.margin + MARGIN_TOP;
     }
@@ -1048,6 +1053,10 @@ export function renderScore(view, width, opts = {}) {
       const bx = ms.x + ms.w;
       const joined = lay.groups.some((g) => st >= g.first && st < g.last);
       const barBottom = joined ? lay.staffTop(ms, st + 1) : top + 4 * SP;
+      // A break ends this line: a mark beside it while editing, never printed.
+      if (st === 0 && ms.breakAfter && ms === ms.system.measures.at(-1)) {
+        push(`<text class="layout-break" x="${bx + 0.6 * SP}" y="${top + 2.4 * SP}"><title>${esc(t(`break.${ms.breakAfter}`))}</title>${ms.breakAfter === 'page' ? '⇟' : '↵'}</text>`);
+      }
       // Its kind: a single barline at the very end is drawn as a final one;
       // an end repeat replaces it.
       const kind = ms.repeatEnd ? 'repeat' : ms.barline === 'single' && lastMeasure ? 'final' : ms.barline;

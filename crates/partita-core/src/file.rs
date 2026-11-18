@@ -394,6 +394,15 @@ mod tests {
     }
 
     #[test]
+    fn breaks_need_format_7() {
+        let mut score = Score::new("Etude", 2);
+        score.measures[0].break_after = Some(crate::model::LayoutBreak::System);
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format_version"], 7);
+        assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
+    }
+
+    #[test]
     fn a_pickup_needs_format_7() {
         let mut score = Score::new("Etude", 2);
         score.measures[0].length = Some(960);

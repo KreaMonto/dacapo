@@ -530,6 +530,7 @@ mod tests {
                     coda: false,
                     jump: Some(crate::model::Jump::DalSegnoAlCoda),
                     length: Some(960),
+                    break_after: Some(crate::model::LayoutBreak::Page),
                 },
             },
             Op::SetTextStyle {

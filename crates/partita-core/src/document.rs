@@ -16,9 +16,9 @@ use crate::cursor::{self, Caret, Move, SelectionRange};
 use crate::history::{History, Transaction, TxKind};
 use crate::model::{
     is_measure_rest, Articulation, Barline, Clef, Duration, Dynamic, Event, EventId, EventKind,
-    GroupKind, Jump, KeySignature, LyricJoin, MeasureAttrs, Metadata, NoteText, NoteTextKind,
-    Pitch, Score, Slur, StaffGroup, Step, Syllable, TempoMark, TextBox, TextKind, TextStyle,
-    TimeSignature, Transposition, MAX_ENDING, MAX_NOTE_TEXT_CHARS, MAX_STAFF_NAME_CHARS,
+    GroupKind, Jump, KeySignature, LayoutBreak, LyricJoin, MeasureAttrs, Metadata, NoteText,
+    NoteTextKind, Pitch, Score, Slur, StaffGroup, Step, Syllable, TempoMark, TextBox, TextKind,
+    TextStyle, TimeSignature, Transposition, MAX_ENDING, MAX_NOTE_TEXT_CHARS, MAX_STAFF_NAME_CHARS,
     MAX_SYLLABLE_CHARS, MAX_TEXT_BOX_CHARS, MAX_VERSES, REPEAT_TIMES, TEXT_SIZE_RANGE,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
@@ -1493,6 +1493,30 @@ impl Document {
         self.commit(TxKind::Edit, ops, caret, now_ms, false)
     }
 
+    /// A system or page break after `measure` (`None` removes it).
+    pub fn set_break(
+        &mut self,
+        measure: usize,
+        layout_break: Option<LayoutBreak>,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let Some(current) = self.score.measures.get(measure).cloned() else {
+            return Err(crate::ops::OpError::MeasureIndex(measure).into());
+        };
+        if current.break_after == layout_break {
+            return Ok(());
+        }
+        let op = Op::SetMeasureAttrs {
+            index: measure,
+            attrs: MeasureAttrs {
+                break_after: layout_break,
+                ..current
+            },
+        };
+        let caret = self.caret;
+        self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
+    }
+
     /// How long `measure` really is, in ticks (`None`: as its time
     /// signature says): a pickup, or the measure that completes it. A
     /// length of the whole measure or more means none.
@@ -1646,6 +1670,7 @@ impl Document {
             coda: false,
             jump: None,
             length: None,
+            break_after: None,
             ..self.score.measures[index.saturating_sub(1).min(self.score.measures.len() - 1)]
                 .clone()
         };
@@ -2199,6 +2224,28 @@ mod tests {
             Some(2),
             "the repeat stays"
         );
+    }
+
+    #[test]
+    fn breaks_are_set_and_belong_to_their_measure() {
+        let mut doc = Document::new(Score::new("Etude", 3));
+        doc.set_break(1, Some(LayoutBreak::System), 1_000).unwrap();
+        assert_eq!(doc.score.measures[1].break_after, Some(LayoutBreak::System));
+        doc.set_break(1, Some(LayoutBreak::Page), 2_000).unwrap();
+        doc.undo().unwrap();
+        assert_eq!(
+            doc.score.measures[1].break_after,
+            Some(LayoutBreak::System),
+            "one step each"
+        );
+        doc.insert_measure(2, 3_000).unwrap();
+        assert!(
+            doc.score.measures[2].break_after.is_none(),
+            "an inserted measure has none"
+        );
+        doc.set_break(1, None, 4_000).unwrap();
+        assert!(doc.score.measures[1].break_after.is_none());
+        assert!(doc.set_break(9, None, 5_000).is_err());
     }
 
     #[test]

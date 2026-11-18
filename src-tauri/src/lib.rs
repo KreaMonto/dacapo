@@ -17,8 +17,8 @@ use partita_core::document::{Clipboard, Document};
 use partita_core::file;
 use partita_core::model::{
     Articulation, Barline, Clef, Duration, Dynamic, GroupKind, Issue, Jump, KeySignature,
-    LyricJoin, Metadata, NoteTextKind, Score, Step, TempoMark, TextBox, TextKind, TextStyle,
-    TimeSignature, Transposition,
+    LayoutBreak, LyricJoin, Metadata, NoteTextKind, Score, Step, TempoMark, TextBox, TextKind,
+    TextStyle, TimeSignature, Transposition,
 };
 use partita_core::musicxml;
 use partita_core::recovery::{Recoverable, RecoveryStore};
@@ -323,6 +323,11 @@ enum Action {
         numbers: Vec<u8>,
         close: bool,
     },
+    /// A system or page break after a measure (`None` removes it).
+    SetBreak {
+        measure: usize,
+        layout_break: Option<LayoutBreak>,
+    },
     /// How long a measure really is, in ticks (`None`: its time
     /// signature's length): a pickup, or the measure completing it.
     SetMeasureLength {
@@ -599,6 +604,10 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
                 numbers,
                 close,
             } => d.set_ending(first, last, &numbers, close, now),
+            Action::SetBreak {
+                measure,
+                layout_break,
+            } => d.set_break(measure, layout_break, now),
             Action::SetMeasureLength { measure, length } => {
                 d.set_measure_length(measure, length, now)
             }
