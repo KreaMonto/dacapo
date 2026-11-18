@@ -172,6 +172,28 @@ body > .workspace { flex: 1 1 auto; }
 .extended-values .figures .extended { display: inline-block; }
 .vzone .voices { flex-direction: column; flex-wrap: nowrap; gap: 3px; }
 .vzone .voices button { width: 32px; min-width: 0; }
+/* The marks column, right of the score. */
+.toolbar.vzone[data-zone="right"] { border-right: none; border-left: 1px solid var(--chrome-border); }
+.vzone[data-zone="right"] .tbar-overflow { left: auto; right: calc(100% + 2px); }
+.vzone .text-btn { width: auto; min-width: 32px; padding: 0 3px; font-size: 12.5px; }
+/* Drop-down group (the dynamics): the group opens beside the button. */
+.drop-btn { position: relative; }
+.drop-btn::after { content: ""; position: absolute; right: 2px; bottom: 2px; border: 3px solid transparent; border-right-color: currentColor; border-bottom-color: currentColor; opacity: 0.5; }
+.drop:has(.armed) > .drop-btn { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+.drop-pop {
+  position: fixed;
+  z-index: 70;
+  display: grid;
+  grid-template-columns: repeat(5, 34px);
+  gap: 3px;
+  padding: 5px;
+  background: var(--chrome);
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+.drop-pop[hidden] { display: none; }
+.drop-pop button { width: 34px; height: 32px; padding: 0; font-size: 22px; line-height: 0; }
 button, select, input {
   font: inherit;
   color: var(--text);
@@ -203,7 +225,6 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .ibtn .icon { vertical-align: 0; }
 .tool { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .tool .icon { fill: currentColor; stroke-width: 1.5; }
-.palette .tool .icon { width: 15px; height: 15px; }
 
 /* Tooltip */
 .tooltip {
@@ -255,43 +276,7 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 }
 .document > .tabs, .document > .recovery { flex: none; }
 .document > .page { flex: 1 1 auto; min-height: 0; }
-.palette {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 128px;
-  padding: 10px 6px 16px 10px;
-  background: var(--chrome);
-  border-left: 1px solid var(--chrome-border);
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: stable; /* opening a section must not shift the buttons */
-  scrollbar-width: thin;
-}
-.palette details { display: flex; flex-direction: column; gap: 6px; }
-.palette details > :not(summary) { margin-top: 6px; }
-.palette summary {
-  cursor: pointer;
-  list-style: none;
-  margin-top: 6px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--muted);
-  user-select: none;
-}
-.palette summary::-webkit-details-marker { display: none; }
-.palette summary::before { content: "▸"; display: inline-block; width: 12px; transition: transform 0.15s; }
-.palette details[open] > summary::before { transform: rotate(90deg); }
-.palette summary:hover { color: var(--text); }
-.palette .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
-.palette .grid3 button { padding: 0; height: 32px; }
-/* Indications: tempo, expression, technique, rehearsal mark. */
-.palette .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 .text-btn { padding: 0 4px; font: 14px Georgia, "Times New Roman", serif; white-space: nowrap; }
-.palette .text-btn { height: 32px; }
 .toolbar .text-btn { min-width: 28px; }
 .text-btn .m { font-family: Bravura; font-size: 22px; line-height: 0; vertical-align: -3px; }
 .text-btn .boxed { border: 1.5px solid currentColor; border-radius: 2px; padding: 0 5px; font-weight: 700; }
@@ -304,35 +289,8 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .score .rehearsal:hover rect { stroke: var(--accent); }
 .score .rehearsal:hover text { fill: var(--accent); }
 @media print { .score .ntext.placeholder { display: none; } .score .rehearsal rect { stroke: #000; } .score .rehearsal text { fill: #000; } }
-.palette .mark-btn { font-size: 28px; padding-top: 14px; }
-.palette .dynamics button { font-size: 22px; padding-top: 4px; }
-.palette .icon-btn { padding: 4px 6px; height: 32px; }
-.palette .icon-btn svg { width: 100%; height: 100%; fill: currentColor; }
-.palette h3 {
-  margin: 8px 0 0;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.palette .wide { width: 100%; }
-.palette .row { display: flex; gap: 4px; }
-.palette .row button { flex: 1; padding: 0; }
-/* Palette symbols in Bravura. SMuFL glyphs sit on the baseline with most of
-   the ink above it (stems), so the line box is shifted down a little. */
-.palette .glyph { font-size: 26px; line-height: 1; padding-top: 10px; overflow: hidden; }
-.palette .row .glyph { font-size: 24px; padding-top: 8px; }
-.switch {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  padding: 2px;
-  border: 1px solid var(--chrome-border);
-  border-radius: 7px;
-  background: var(--bg);
-}
-.switch button { border: none; background: transparent; padding: 2px 0; min-height: 24px; font-size: 12px; color: var(--muted); }
-.switch button.on { background: var(--button); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); }
+.icon-btn { padding: 6px 4px; }
+.icon-btn svg { width: 100%; height: 100%; fill: currentColor; }
 .figures { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 /* Figures: app.js centres each glyph from its measured ink (fitGlyph), so
    long stems and flags never touch the edge. */
@@ -735,7 +693,7 @@ body[data-view="continuous"] .sheet { max-width: none; width: max-content; min-w
     --muted: #444 !important;
   }
   html, body { height: auto; overflow: visible; background: #fff; }
-  .menubar, .toolbar, .tabs, .recovery, .palette, .status, .tooltip, dialog { display: none !important; }
+  .menubar, .toolbar, .tabs, .recovery, .status, .tooltip, .drop-pop, dialog { display: none !important; }
   .workspace { display: block; }
   .page { overflow: visible; padding: 0; }
   body[data-view="page"] .score { gap: 0; }

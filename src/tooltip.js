@@ -38,14 +38,15 @@ export function installTooltips(root = document) {
     x = Math.max(margin, Math.min(x, window.innerWidth - t.width - margin));
     let y = r.bottom + 6;
     if (y + t.height > window.innerHeight - margin) y = r.top - t.height - 6;
-    // Palette, entry-bar buttons and menu items: beside them reads better than below
-    // (below would cover the next item). Menus: beside the whole list, on
-    // the side with room.
+    // Buttons in the columns beside the score and menu items: beside them
+    // reads better than below (below would cover the next item), on the
+    // score's side. Menus: beside the whole list, on the side with room.
+    // A drop-down group keeps the default, below its buttons.
     const list = el.closest('.menu-pop');
-    if (el.closest('.palette, .vzone') || list) {
+    if ((el.closest('.vzone') && !el.closest('.drop-pop')) || list) {
       const side = list ? list.getBoundingClientRect() : r;
       x = side.right + 8;
-      if (list && x + t.width > window.innerWidth - margin) x = side.left - t.width - 8;
+      if (el.closest('[data-zone="right"]') || (list && x + t.width > window.innerWidth - margin)) x = side.left - t.width - 8;
       y = Math.max(margin, Math.min(r.top + r.height / 2 - t.height / 2, window.innerHeight - t.height - margin));
     }
     tip.style.left = `${x}px`;

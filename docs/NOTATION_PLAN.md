@@ -43,7 +43,7 @@ The steps, one pull request each:
 - [x] **0.1 The shared bar.** One thin look for every bar (about 30 px, icons in one row, names in tooltips as in the menus), the bar's name in its tooltips, and a **»** button holding what does not fit, instead of wrapping to a second row.
 - [x] **0.2 Granular bars.** Split the top bar into File, Edit, Playback, Tools, Measure, Staves and Indications, in the default layout above.
 - [x] **0.3 Entry bar.** The palette becomes one column on the left, without section titles; one button switches notes and rests. Done as three bars (Figures, Accidentals, Voice); until 0.4, the rest of the palette sits right of the score.
-- [ ] **0.4 Marks bar.** What goes on notes moves to the right, with drop-down buttons for the large groups.
+- [x] **0.4 Marks bar.** What goes on notes moves to the right, with drop-down buttons for the large groups.
 - [ ] **0.5 View → Toolbars.** Show or hide each bar, remembered; **Reset** brings back the default layout.
 - [ ] **0.6 Moving bars.** Drag a bar by its handle (⋮⋮) to another zone or another place in its zone; remembered between sessions.
 - [ ] **0.7 Layouts.** Built-in layouts and the user's own: **Save Layout As…**, choose one, **Reset** to its built-in layout. The base for the instrument modes.
@@ -188,3 +188,11 @@ The foundation is a **staff type** in the model: normal, percussion or tablature
 - Customizable keyboard shortcuts.
 - Other music fonts (Leland, Petaluma).
 - Chant notation (neumes), if it is ever needed: it is a notation of its own.
+
+## At 1.0: sustaining Partita
+
+The app stays free, with no paid edition. When 1.0 is out:
+
+- Apply for grants and funds for open source software (and for culture or music education, where they fit).
+- Open ways to support the project (GitHub Sponsors, Patreon, Ko-fi), and consider a YouTube channel with tutorials and development notes to make Partita known.
+- Think about paid things *around* the app (templates, courses, sounds, arrangements…), never inside it.

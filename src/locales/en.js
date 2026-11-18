@@ -310,6 +310,7 @@ export default {
   'bar.accidentals': 'Accidentals',
   'bar.voice': 'Voice',
   'toolbar.label.entry': 'Note entry',
+  'toolbar.label.marks': 'Marks',
   'bar.tools': 'Tools',
   'bar.indications': 'Indications',
   'toolbar.label.score': 'Score toolbar',
@@ -364,7 +365,6 @@ export default {
   'keysig.major': '{note} major',
 
   // ----- palette --------------------------------------------------------------
-  'palette.label': 'Palette',
   'palette.select': 'Select tool',
   'palette.select.desc': 'Click to place the caret, drag or Shift+click to select.',
   'palette.erase': 'Eraser',
@@ -403,6 +403,7 @@ export default {
   'palette.fermata': 'Fermata',
   'palette.fermata.desc': 'Hold longer than written. Also works on rests.',
   'palette.dynamics': 'Dynamics',
+  'palette.dynamics.drop': 'Click to choose one; the button shows the last one used.',
   'palette.ppp': 'Pianississimo',
   'palette.ppp.desc': 'As soft as possible.',
   'palette.pp': 'Pianissimo',
