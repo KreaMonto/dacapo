@@ -16,9 +16,9 @@ use partita_core::document::StaffProps;
 use partita_core::document::{Clipboard, Document};
 use partita_core::file;
 use partita_core::model::{
-    Articulation, Barline, Clef, Duration, Dynamic, GroupKind, Issue, KeySignature, LyricJoin,
-    Metadata, NoteTextKind, Score, Step, TempoMark, TextBox, TextKind, TextStyle, TimeSignature,
-    Transposition,
+    Articulation, Barline, Clef, Duration, Dynamic, GroupKind, Issue, Jump, KeySignature,
+    LyricJoin, Metadata, NoteTextKind, Score, Step, TempoMark, TextBox, TextKind, TextStyle,
+    TimeSignature, Transposition,
 };
 use partita_core::musicxml;
 use partita_core::recovery::{Recoverable, RecoveryStore};
@@ -323,6 +323,14 @@ enum Action {
         numbers: Vec<u8>,
         close: bool,
     },
+    /// The jump marks of a measure: a segno and the start of the coda at
+    /// its beginning, Fine / To Coda / D.C. / D.S. at its end.
+    SetJumps {
+        measure: usize,
+        segno: bool,
+        coda: bool,
+        jump: Option<Jump>,
+    },
     /// The barline at the end of measures `first` to `last`.
     SetBarline {
         first: usize,
@@ -585,6 +593,12 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
                 numbers,
                 close,
             } => d.set_ending(first, last, &numbers, close, now),
+            Action::SetJumps {
+                measure,
+                segno,
+                coda,
+                jump,
+            } => d.set_jumps(measure, segno, coda, jump, now),
             Action::SetBarline {
                 first,
                 last,

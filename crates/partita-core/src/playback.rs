@@ -22,13 +22,19 @@
 //!   dynamics carry on in the order the measures are played. **Endings**
 //!   ("1.", "2.") are played on their time through only: the n-th time,
 //!   measures whose ending does not include n are skipped.
+//! - **D.C. and D.S.** go back, once each, to the beginning or to the
+//!   segno. After the jump, repeats are not taken again and of a group of
+//!   endings only the last is played; *al Fine* stops at Fine, *al Coda*
+//!   goes on from To Coda to the coda.
 //! - Fermatas do not change timing yet.
 
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
-use crate::model::{Articulation, Dynamic, Event, EventId, Score, MAX_VOICES, TICKS_PER_QUARTER};
+use crate::model::{
+    Articulation, Dynamic, Event, EventId, Jump, Score, MAX_VOICES, TICKS_PER_QUARTER,
+};
 
 /// One note to play, in absolute ticks from the start of the score.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -198,6 +204,30 @@ fn slurred_events(score: &Score) -> HashSet<EventId> {
 pub fn play_order(score: &Score) -> Vec<usize> {
     let n = score.measures.len();
     let mut order = Vec::with_capacity(n);
+    // The last ending number of each group of endings, by measure: after a
+    // D.C. or D.S. only that ending is played.
+    let mut last_ending = vec![0u8; n];
+    let mut i = 0;
+    while i < n {
+        if score.measures[i].ending.is_empty() {
+            i += 1;
+            continue;
+        }
+        let j = (i..n)
+            .find(|&k| score.measures[k].ending.is_empty())
+            .unwrap_or(n);
+        let top = (i..j)
+            .flat_map(|k| score.measures[k].ending.iter().copied())
+            .max()
+            .unwrap_or(0);
+        last_ending[i..j].fill(top);
+        i = j;
+    }
+    let segno = score.measures.iter().position(|a| a.segno);
+    let coda = score.measures.iter().position(|a| a.coda);
+    // After a D.C. or D.S.: whether it was al Fine or al Coda.
+    let mut jumped: Option<Jump> = None;
+    let mut jumps_taken: std::collections::HashSet<usize> = std::collections::HashSet::new();
     let mut start = 0;
     // How many times each end repeat has sent the music back.
     let mut sent_back: HashMap<usize, u8> = HashMap::new();
@@ -217,7 +247,12 @@ pub fn play_order(score: &Score) -> Vec<usize> {
             }
         } else {
             in_endings = true;
-            if !attrs.ending.contains(&pass) {
+            let wanted = if jumped.is_some() {
+                last_ending[m]
+            } else {
+                pass
+            };
+            if !attrs.ending.contains(&wanted) {
                 // Not this time through: skipped, end repeat and all.
                 m += 1;
                 continue;
@@ -227,6 +262,35 @@ pub fn play_order(score: &Score) -> Vec<usize> {
             start = m;
         }
         order.push(m);
+        // Where the music ends or leaves for the coda, after a jump.
+        match (attrs.jump, jumped) {
+            (Some(Jump::Fine), Some(Jump::DaCapoAlFine | Jump::DalSegnoAlFine)) => break,
+            (Some(Jump::ToCoda), Some(Jump::DaCapoAlCoda | Jump::DalSegnoAlCoda)) => {
+                if let Some(c) = coda.filter(|&c| c > m) {
+                    jumped = Some(Jump::DaCapo); // in the coda: no more jumps
+                    m = c;
+                    continue;
+                }
+            }
+            (Some(j), _) if j.is_jump() && !jumps_taken.contains(&m) => {
+                jumps_taken.insert(m);
+                jumped = Some(j);
+                in_endings = false;
+                m = match j {
+                    Jump::DalSegno | Jump::DalSegnoAlFine | Jump::DalSegnoAlCoda => {
+                        segno.unwrap_or(0)
+                    }
+                    _ => 0,
+                };
+                continue;
+            }
+            _ => {}
+        }
+        // After a jump, repeats are not taken again.
+        if jumped.is_some() {
+            m += 1;
+            continue;
+        }
         if let Some(times) = attrs.repeat_end {
             let done = sent_back.entry(m).or_insert(0);
             if *done + 1 < times.max(1) {
@@ -439,6 +503,37 @@ mod tests {
         s.measures[2].ending = vec![2];
         s.measures[4].repeat_end = Some(2);
         assert_eq!(play_order(&s), vec![0, 1, 0, 2, 3, 4, 3, 4]);
+    }
+
+    #[test]
+    fn jumps_are_followed() {
+        // 0 | 1 Fine | 2 | 3 D.C. al Fine  →  0 1 2 3 0 1
+        let mut s = Score::new("t", 4);
+        s.measures[1].jump = Some(Jump::Fine);
+        s.measures[3].jump = Some(Jump::DaCapoAlFine);
+        assert_eq!(play_order(&s), vec![0, 1, 2, 3, 0, 1]);
+        // 0 | 𝄋1 | 2 To Coda | 3 D.S. al Coda | 𝄌4 | 5  →  0 1 2 3 1 2 4 5
+        let mut s = Score::new("t", 6);
+        s.measures[1].segno = true;
+        s.measures[2].jump = Some(Jump::ToCoda);
+        s.measures[3].jump = Some(Jump::DalSegnoAlCoda);
+        s.measures[4].coda = true;
+        assert_eq!(play_order(&s), vec![0, 1, 2, 3, 1, 2, 4, 5]);
+        // Without "al Coda", To Coda is played through and the coda follows.
+        s.measures[3].jump = Some(Jump::DalSegno);
+        assert_eq!(play_order(&s), vec![0, 1, 2, 3, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn after_a_jump_repeats_are_not_taken_and_the_last_ending_plays() {
+        // |: 0 |1.[ 1 :|] 2.[ 2 ] | 3 D.C.  →  0 1 0 2 3, then 0 2 3
+        let mut s = Score::new("t", 4);
+        s.measures[0].repeat_start = true;
+        s.measures[1].ending = vec![1];
+        s.measures[1].repeat_end = Some(2);
+        s.measures[2].ending = vec![2];
+        s.measures[3].jump = Some(Jump::DaCapo);
+        assert_eq!(play_order(&s), vec![0, 1, 0, 2, 3, 0, 2, 3]);
     }
 
     #[test]

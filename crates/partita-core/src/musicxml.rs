@@ -90,6 +90,65 @@ fn tempo_direction(score: &Score, m: usize) -> Option<String> {
 }
 
 /// Writes `score` as MusicXML text.
+/// What a direction says about where the music goes.
+enum Navigation {
+    Segno,
+    Coda,
+    Jump(Jump),
+}
+
+/// A segno, a coda, or Fine / To Coda / D.C. / D.S. in a `<direction>`,
+/// from its `<sound>` attributes or, failing those, its words.
+fn navigation_of(el: roxmltree::Node) -> Option<Navigation> {
+    let sound = el.descendants().find(|n| n.has_tag_name("sound"));
+    let has_sound = |a: &str| sound.and_then(|s| s.attribute(a)).is_some();
+    let words = el
+        .descendants()
+        .filter(|n| n.has_tag_name("words"))
+        .filter_map(|n| n.text())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_lowercase();
+    let al = |plain: Jump, fine: Jump, coda: Jump| {
+        Navigation::Jump(if words.contains("fine") {
+            fine
+        } else if words.contains("coda") {
+            coda
+        } else {
+            plain
+        })
+    };
+    if has_sound("dacapo") || words.starts_with("d.c.") || words.starts_with("da capo") {
+        return Some(al(Jump::DaCapo, Jump::DaCapoAlFine, Jump::DaCapoAlCoda));
+    }
+    if has_sound("dalsegno") || words.starts_with("d.s.") || words.starts_with("dal segno") {
+        return Some(al(
+            Jump::DalSegno,
+            Jump::DalSegnoAlFine,
+            Jump::DalSegnoAlCoda,
+        ));
+    }
+    if has_sound("tocoda") || words.starts_with("to coda") || words == "al coda" {
+        return Some(Navigation::Jump(Jump::ToCoda));
+    }
+    if has_sound("fine") || words == "fine" {
+        return Some(Navigation::Jump(Jump::Fine));
+    }
+    let in_type = |tag: &str| {
+        el.children()
+            .filter(|n| n.has_tag_name("direction-type"))
+            .any(|t| t.children().any(|c| c.has_tag_name(tag)))
+    };
+    if in_type("segno") {
+        return Some(Navigation::Segno);
+    }
+    if in_type("coda") {
+        return Some(Navigation::Coda);
+    }
+    None
+}
+
 /// An ending's MusicXML number ("1, 2") and printed text ("1., 2.").
 fn ending_label(numbers: &[u8]) -> (String, String) {
     let number = numbers
@@ -298,6 +357,13 @@ pub fn export(score: &Score) -> String {
                 x.push_str("      </attributes>\n");
             }
             if s == 0 {
+                // Where a D.S. goes back to, and where the coda begins.
+                if attrs.segno {
+                    x.push_str("      <direction placement=\"above\"><direction-type><segno/></direction-type><sound segno=\"segno\"/></direction>\n");
+                }
+                if attrs.coda {
+                    x.push_str("      <direction placement=\"above\"><direction-type><coda/></direction-type><sound coda=\"coda\"/></direction>\n");
+                }
                 if let Some(mark) = &score.measures[m].rehearsal {
                     let _ = writeln!(
                         x,
@@ -380,6 +446,22 @@ pub fn export(score: &Score) -> String {
             }
             // The measure's barline; the last measure ends with a final one
             // unless it says otherwise.
+            // Fine, To Coda, D.C. or D.S., before the barline.
+            if s == 0 {
+                if let Some(jump) = score.measures[m].jump {
+                    let sound = match jump {
+                        Jump::Fine => "fine=\"yes\"",
+                        Jump::ToCoda => "tocoda=\"coda\"",
+                        Jump::DaCapo | Jump::DaCapoAlFine | Jump::DaCapoAlCoda => "dacapo=\"yes\"",
+                        _ => "dalsegno=\"segno\"",
+                    };
+                    let _ = writeln!(
+                        x,
+                        "      <direction placement=\"above\"><direction-type><words>{}</words></direction-type><sound {sound}/></direction>",
+                        jump.text()
+                    );
+                }
+            }
             // Right side: the barline (an end repeat draws its own), the
             // end of an ending, an end repeat.
             let a = &score.measures[m];
@@ -950,6 +1032,10 @@ struct Importer {
     /// Endings by measure, and the one still open while it runs.
     endings: HashMap<usize, Vec<u8>>,
     open_ending: Option<Vec<u8>>,
+    /// Segnos, codas and jumps by measure, from the first part.
+    segnos: std::collections::HashSet<usize>,
+    codas: std::collections::HashSet<usize>,
+    jumps: HashMap<usize, Jump>,
 }
 
 impl Importer {
@@ -1116,6 +1202,9 @@ impl Importer {
                 repeat_start: self.repeat_starts.remove(&m),
                 repeat_end: self.repeat_ends.remove(&m),
                 ending: self.endings.remove(&m).unwrap_or_default(),
+                segno: self.segnos.remove(&m),
+                coda: self.codas.remove(&m),
+                jump: self.jumps.remove(&m),
                 ..last.clone()
             });
         }
@@ -1410,6 +1499,24 @@ impl Importer {
                             {
                                 pending_dynamic.insert(staff_no, dynamic);
                             }
+                        }
+                        // A segno, a coda or a jump: not words for a note, nor
+                        // a tempo marking.
+                        if let Some(nav) = navigation_of(el) {
+                            if first_part {
+                                match nav {
+                                    Navigation::Segno => {
+                                        self.segnos.insert(m);
+                                    }
+                                    Navigation::Coda => {
+                                        self.codas.insert(m);
+                                    }
+                                    Navigation::Jump(j) => {
+                                        self.jumps.insert(m, j);
+                                    }
+                                }
+                            }
+                            continue;
                         }
                         let sound_tempo = el
                             .descendants()
@@ -1984,6 +2091,37 @@ mod tests {
         assert_eq!(back.measures[1].repeat_end, Some(3));
         assert_eq!(back.measures[2].ending, vec![3]);
         assert!(back.measures[0].ending.is_empty());
+    }
+
+    #[test]
+    fn jumps_round_trip() {
+        let mut score = sample();
+        score.measures[0].segno = true;
+        score.measures[0].jump = Some(Jump::ToCoda);
+        score.measures[1].coda = true;
+        score.measures[1].jump = Some(Jump::DalSegnoAlCoda);
+        let xml = export(&score);
+        assert!(xml.contains("<segno/></direction-type><sound segno=\"segno\"/>"));
+        assert!(
+            xml.contains("<words>D.S. al Coda</words></direction-type><sound dalsegno=\"segno\"/>")
+        );
+        let back = import(&xml, "x").unwrap();
+        assert!(back.score.measures[0].segno);
+        assert_eq!(back.score.measures[0].jump, Some(Jump::ToCoda));
+        assert!(back.score.measures[1].coda);
+        assert_eq!(back.score.measures[1].jump, Some(Jump::DalSegnoAlCoda));
+        // Not taken for words on a note, nor for a tempo marking.
+        let texts = back
+            .score
+            .staves
+            .iter()
+            .flat_map(|s| s.measures.iter())
+            .flat_map(|m| m.voices.iter())
+            .flatten()
+            .filter(|e| !e.texts.is_empty())
+            .count();
+        assert_eq!(texts, 0);
+        assert!(back.score.measures.iter().all(|a| a.tempo.is_none()));
     }
 
     #[test]

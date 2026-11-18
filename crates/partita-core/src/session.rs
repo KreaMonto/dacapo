@@ -272,6 +272,16 @@ mod tests {
         });
         s.edit(|d| d.set_repeat(0, 1, true, Some(3), 4_000).unwrap());
         s.edit(|d| d.set_ending(1, 1, &[1, 2], true, 5_000).unwrap());
+        s.edit(|d| {
+            d.set_jumps(
+                1,
+                true,
+                false,
+                Some(crate::model::Jump::DaCapoAlFine),
+                6_000,
+            )
+            .unwrap()
+        });
         let expected = s.doc().score.clone();
         crash(s);
         let found = store.scan();

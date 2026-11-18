@@ -367,7 +367,8 @@ thread_local! {
 /// page texts), 5 (Partita 0.3.0: no page texts), or 6 to 8 (development
 /// builds before 0.4.0: no tempo markings in 6; no note texts or rehearsal
 /// marks in 6 and 7; no text styles or text boxes in 6 to 8; no barline
-/// types in 6 to 9; no repeats in 6 to 10; no endings in any of them).
+/// types in 6 to 9; no repeats in 6 to 10; no endings in 6 to 11; no
+/// jumps in any of them).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
@@ -587,10 +588,58 @@ pub struct MeasureAttrs {
     /// does not include n are skipped. Since file format 7 (recovery
     /// format 12).
     pub ending: Vec<u8>,
+    /// A segno (𝄋) at the start of this measure: where a D.S. goes back to.
+    /// Since file format 7 (recovery format 13).
+    pub segno: bool,
+    /// The coda (𝄌) begins with this measure. Since file format 7
+    /// (recovery format 13).
+    pub coda: bool,
+    /// Fine, To Coda, D.C. or D.S. at the end of this measure. Since file
+    /// format 7 (recovery format 13).
+    pub jump: Option<Jump>,
 }
 
 /// The highest ending number.
 pub const MAX_ENDING: u8 = 8;
+
+/// An instruction at the end of a measure that changes where the music
+/// goes: where it ends (*Fine*), where it leaves for the coda (*To Coda*),
+/// or a jump back to the beginning (*D.C.*) or to the segno (*D.S.*).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Jump {
+    /// The end of the piece after a D.C. or D.S. al Fine.
+    Fine,
+    /// After a D.C. or D.S. al Coda, the music goes on at the coda.
+    ToCoda,
+    DaCapo,
+    DaCapoAlFine,
+    DaCapoAlCoda,
+    DalSegno,
+    DalSegnoAlFine,
+    DalSegnoAlCoda,
+}
+
+impl Jump {
+    /// The words printed for it.
+    pub fn text(self) -> &'static str {
+        match self {
+            Jump::Fine => "Fine",
+            Jump::ToCoda => "To Coda",
+            Jump::DaCapo => "D.C.",
+            Jump::DaCapoAlFine => "D.C. al Fine",
+            Jump::DaCapoAlCoda => "D.C. al Coda",
+            Jump::DalSegno => "D.S.",
+            Jump::DalSegnoAlFine => "D.S. al Fine",
+            Jump::DalSegnoAlCoda => "D.S. al Coda",
+        }
+    }
+
+    /// Whether it sends the music back (D.C., D.S.).
+    pub fn is_jump(self) -> bool {
+        !matches!(self, Jump::Fine | Jump::ToCoda)
+    }
+}
 
 /// How many times a repeated passage can be played in all.
 pub const REPEAT_TIMES: std::ops::RangeInclusive<u8> = 2..=10;
@@ -606,6 +655,9 @@ impl Default for MeasureAttrs {
             repeat_start: false,
             repeat_end: None,
             ending: Vec::new(),
+            segno: false,
+            coda: false,
+            jump: None,
         }
     }
 }
@@ -625,6 +677,25 @@ struct MeasureAttrsFields {
     #[serde(default)]
     repeat_end: Option<u8>,
     #[serde(default)]
+    ending: Vec<u8>,
+    #[serde(default)]
+    segno: bool,
+    #[serde(default)]
+    coda: bool,
+    #[serde(default)]
+    jump: Option<Jump>,
+}
+
+/// [`MeasureAttrs`] as written to recovery format 12 (before jumps).
+#[derive(Deserialize)]
+struct MeasureAttrsPreJump {
+    time: TimeSignature,
+    key: KeySignature,
+    tempo: Option<TempoMark>,
+    rehearsal: Option<String>,
+    barline: Barline,
+    repeat_start: bool,
+    repeat_end: Option<u8>,
     ending: Vec<u8>,
 }
 
@@ -725,7 +796,21 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
                 barline: a.barline,
                 repeat_start: a.repeat_start,
                 repeat_end: a.repeat_end,
-                ending: Vec::new(),
+                ..MeasureAttrs::default()
+            });
+        }
+        if legacy_format() == 12 {
+            let a = MeasureAttrsPreJump::deserialize(deserializer)?;
+            return Ok(MeasureAttrs {
+                time: a.time,
+                key: a.key,
+                tempo: a.tempo,
+                rehearsal: a.rehearsal,
+                barline: a.barline,
+                repeat_start: a.repeat_start,
+                repeat_end: a.repeat_end,
+                ending: a.ending,
+                ..MeasureAttrs::default()
             });
         }
         let a = MeasureAttrsFields::deserialize(deserializer)?;
@@ -738,6 +823,9 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
             repeat_start: a.repeat_start,
             repeat_end: a.repeat_end,
             ending: a.ending,
+            segno: a.segno,
+            coda: a.coda,
+            jump: a.jump,
         })
     }
 }
@@ -1385,6 +1473,9 @@ impl Score {
                     || a.repeat_start
                     || a.repeat_end.is_some()
                     || !a.ending.is_empty()
+                    || a.segno
+                    || a.coda
+                    || a.jump.is_some()
             })
             || self
                 .staves

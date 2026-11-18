@@ -237,6 +237,10 @@ body.no-drop, body.no-drop * { cursor: not-allowed !important; }
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
 }
 .drop-pop[hidden] { display: none; }
+/* A group of words (the jumps): three to a row, as wide as they need. */
+.drop-pop.words { grid-template-columns: repeat(3, auto); }
+.drop-pop.words button { width: auto; min-width: 34px; padding: 0 6px; font-size: 13px; line-height: normal; }
+.drop-pop.words .m, .drop-btn .m { font-family: Bravura; font-size: 22px; line-height: 0; }
 .drop-pop button { width: 34px; height: 32px; padding: 0; font-size: 22px; line-height: 0; }
 button, select, input {
   font: inherit;
@@ -475,6 +479,8 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .score .bar.dashed { stroke-dasharray: 4 3; }
 .score .repeat-dot { fill: var(--ink); }
 .score .ending path { fill: none; stroke: var(--ink); stroke-width: 1.2; }
+.score .jump { font: italic 600 13px Georgia, serif; fill: var(--ink); }
+.score text.m.jump-sign { font-size: 28px; fill: var(--ink); }
 .score .ending text { font: 12px Georgia, serif; fill: var(--ink); }
 .score .repeat-times { font: italic 11px Georgia, serif; fill: var(--ink); }
 .score .stem { stroke: currentColor; stroke-width: 1.2; }

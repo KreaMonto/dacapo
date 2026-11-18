@@ -439,6 +439,9 @@ export function layout(view, width, opts = {}) {
       repeatStart: !!attrs.repeat_start,
       repeatEnd: attrs.repeat_end ?? null, // times the passage is played
       ending: attrs.ending ?? [], // the endings ("1.", "2.") it belongs to
+      segno: !!attrs.segno, // where a D.S. goes back to
+      coda: !!attrs.coda, // the coda begins here
+      jump: attrs.jump ?? null, // Fine, To Coda, D.C., D.S. at the end
       overfull,
       // An end repeat takes room before the barline for its dots.
       content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP, Math.min(lyricW, 80 * SP) + 2.6 * SP) + (attrs.repeat_end ? REPEAT_W : 0),
@@ -455,10 +458,10 @@ export function layout(view, width, opts = {}) {
     let j = i;
     if (opts.multiRest && single[i].restOnly) {
       // A tempo marking (even a hidden one) starts a new run: it may change the tempo.
-      while (j + 1 < single.length && single[j].barline === 'single' && !single[j].repeatEnd && !single[j + 1].repeatStart && !single[j].ending.length && !single[j + 1].ending.length && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo && !single[j + 1].rehearsal) j++;
+      while (j + 1 < single.length && single[j].barline === 'single' && !single[j].repeatEnd && !single[j + 1].repeatStart && !single[j].ending.length && !single[j + 1].ending.length && !single[j].jump && !single[j + 1].segno && !single[j + 1].coda && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo && !single[j + 1].rehearsal) j++;
     }
     if (j > i) {
-      measures.push({ ...single[i], mEnd: single[j].m, multi: j - i + 1, barline: single[j].barline, repeatEnd: single[j].repeatEnd, content: 13 * SP + (single[j].repeatEnd ? REPEAT_W : 0) });
+      measures.push({ ...single[i], mEnd: single[j].m, multi: j - i + 1, barline: single[j].barline, repeatEnd: single[j].repeatEnd, jump: single[j].jump, content: 13 * SP + (single[j].repeatEnd ? REPEAT_W : 0) });
     } else {
       measures.push(single[i]);
     }
@@ -573,7 +576,7 @@ export function layout(view, width, opts = {}) {
   systems.forEach((s, i) => {
     // Room above for a tempo marking, and for ending brackets (the
     // markings go above those).
-    const marked = s.measures.some((ms) => ms.tempoShown || ms.rehearsal);
+    const marked = s.measures.some((ms) => ms.tempoShown || ms.rehearsal || ms.segno || ms.coda || ms.jump);
     s.hasEnding = s.measures.some((ms) => ms.ending.length);
     const tempoAbove = marked
       ? TEMPO_ROOM + Math.max(0, Math.max(currentStyle('tempo').size, currentStyle('rehearsal').size) - 2 * SP)
@@ -679,6 +682,45 @@ export function hitTest(lay, view, x, y, voice) {
   const events = view.score.staves[staff].measures[ms.m].voices[voice];
   const index = eventXs(lay, ms, events).filter((ex) => x > ex + 0.2 * SP).length;
   return { staff, measure: ms.m, voice, index };
+}
+
+// The words of each jump, as printed (Italian, like the rest of the
+// musical terms: the same in every language).
+const JUMP_TEXT = {
+  fine: 'Fine',
+  to_coda: 'To Coda',
+  da_capo: 'D.C.',
+  da_capo_al_fine: 'D.C. al Fine',
+  da_capo_al_coda: 'D.C. al Coda',
+  dal_segno: 'D.S.',
+  dal_segno_al_fine: 'D.S. al Fine',
+  dal_segno_al_coda: 'D.S. al Coda',
+};
+
+/**
+ * Draws the segno and the coda sign over the start of their measure and the
+ * jump instructions (Fine, To Coda, D.C., D.S.) over its end, right
+ * aligned at the barline.
+ */
+function drawJumps(lay, push, onPage) {
+  for (const ms of lay.measures) {
+    if (!ms.segno && !ms.coda && !ms.jump) continue;
+    onPage(ms.system.page);
+    // Clear of the stems and beams that rise over the staff.
+    const y = lay.staffTop(ms, 0) - 2 * SP - (ms.system.hasEnding ? ENDING_LIFT : 0);
+    const x0 = ms.systemStart ? ms.x + ms.prefix - 0.4 * SP : ms.x + 0.5 * SP;
+    // SMuFL: segno U+E047, coda U+E048.
+    let at = x0;
+    if (ms.segno) { push(`<text class="m jump-sign" x="${at}" y="${y}">\uE047</text>`); at += 3 * SP; }
+    if (ms.coda) push(`<text class="m jump-sign" x="${at}" y="${y}">\uE048</text>`);
+    if (ms.jump) {
+      const xr = ms.x + ms.w - 0.4 * SP;
+      // To Coda ends with the coda sign, inside the measure.
+      // (The coda sign is about 2.7 spaces wide at its size.)
+      const words = `<text class="jump" x="${xr - (ms.jump === 'to_coda' ? 3.4 * SP : 0)}" y="${y}" text-anchor="end">${esc(JUMP_TEXT[ms.jump] ?? '')}</text>`;
+      push(ms.jump === 'to_coda' ? `${words}<text class="m jump-sign" x="${xr - 3 * SP}" y="${y}">\uE048</text>` : words);
+    }
+  }
 }
 
 /**
@@ -939,6 +981,7 @@ export function renderScore(view, width, opts = {}) {
   drawTextBoxes(lay, score, push, onPage, opts);
   drawTempoMarks(lay, score, push, onPage);
   drawEndings(lay, score, push, onPage);
+  drawJumps(lay, push, onPage);
 
   // Drawn events, for ties and slurs: per staff+voice in score order, and by id.
   const seqs = new Map();
