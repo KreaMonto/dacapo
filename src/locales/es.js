@@ -323,6 +323,8 @@ export default {
   'toolbar.label.score': 'Barra de la partitura',
   'bar.more': 'Más herramientas',
   'bar.more.desc': 'Las herramientas que no caben en la ventana.',
+  'bar.grip': 'Mover esta barra',
+  'bar.grip.desc': 'Arrástrala a otro lugar, al lado de la partitura o arriba. Ver → Barras de herramientas → Restablecer barras las devuelve a su sitio.',
   'toolbar.new': 'Partitura nueva',
   'toolbar.new.desc': 'Abre una partitura vacía en una pestaña nueva.',
   'toolbar.open': 'Abrir',
