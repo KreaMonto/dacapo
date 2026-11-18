@@ -105,7 +105,7 @@ body > .workspace { flex: 1 1 auto; }
 
 .glyph { font-family: Bravura, "Segoe UI Symbol", serif; }
 
-/* Toolbar: thin bars in one row. Bars that do not fit go behind » (see
+/* Toolbars: rows of thin bars. Bars that do not fit go behind » (see
    toolbars.js) instead of wrapping to a second row. */
 .toolbar {
   position: relative;
@@ -172,8 +172,9 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 }
 .ibtn { width: 34px; padding: 0; display: inline-grid; place-items: center; }
 .ibtn .icon { vertical-align: 0; }
-.palette .tool { display: flex; align-items: center; justify-content: center; gap: 6px; }
-.palette .tool .icon { width: 15px; height: 15px; fill: currentColor; stroke-width: 1.5; }
+.tool { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.tool .icon { fill: currentColor; stroke-width: 1.5; }
+.palette .tool .icon { width: 15px; height: 15px; }
 
 /* Tooltip */
 .tooltip {
@@ -257,9 +258,11 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .palette .grid3 button { padding: 0; height: 32px; }
 /* Indications: tempo, expression, technique, rehearsal mark. */
 .palette .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.palette .text-btn { height: 32px; padding: 0 4px; font: 14px Georgia, "Times New Roman", serif; white-space: nowrap; }
-.palette .text-btn .m { font-family: Bravura; font-size: 22px; line-height: 0; vertical-align: -3px; }
-.palette .text-btn .boxed { border: 1.5px solid currentColor; border-radius: 2px; padding: 0 5px; font-weight: 700; }
+.text-btn { padding: 0 4px; font: 14px Georgia, "Times New Roman", serif; white-space: nowrap; }
+.palette .text-btn { height: 32px; }
+.toolbar .text-btn { min-width: 28px; }
+.text-btn .m { font-family: Bravura; font-size: 22px; line-height: 0; vertical-align: -3px; }
+.text-btn .boxed { border: 1.5px solid currentColor; border-radius: 2px; padding: 0 5px; font-weight: 700; }
 /* Words on notes and rehearsal marks in the score: click to change them. */
 .score .ntext { cursor: text; }
 .score .ntext.placeholder { opacity: 0.5; }
@@ -282,9 +285,6 @@ button.on { background: var(--button-active); border-color: var(--accent); color
   color: var(--muted);
 }
 .palette .wide { width: 100%; }
-.palette .tools { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
-.palette .tools .tool { height: 32px; padding: 0; }
-.palette .tools .icon { width: 17px; height: 17px; }
 .palette .row { display: flex; gap: 4px; }
 .palette .row button { flex: 1; padding: 0; }
 /* Palette symbols in Bravura. SMuFL glyphs sit on the baseline with most of

@@ -7,6 +7,7 @@ Agreed on 2026-11-18:
 - **The common base comes first.** Instrument groups (percussion, guitar, choir…) come after it.
 - **Each item is its own small change**, worked out in detail one at a time, usually one pull request each.
 - **The starting point is the layout:** the common tools are spread over thin bars around the score instead of a few tall ones, so the score gets more space.
+- **Releases:** Partita 0.4 is sections 0 (layout) and 1 (common base). Section 2 (modes) is big enough for a release of its own; section 3 (files) can come as minor versions.
 - **Instrument modes switch automatically**, following the staff with the caret. Each person can add or remove tools in each mode, and a **Reset** button brings back the defaults.
 
 ## 0. Layout: thin bars around the score
@@ -26,6 +27,7 @@ The default layout:
 | **File** | row 1 | new, open, save |
 | **Edit** | row 1 | undo, redo |
 | **Playback** | row 1 | start, play, stop, tempo |
+| **View** | row 1 | multi-measure rests |
 | **Tools** | row 2, first, so it is close to the score | select, eraser, text box |
 | **Measure** | row 2 | clef, key, time, add / delete measure; later barlines, repeats, endings, D.C. / Coda |
 | **Staves** | row 2 | add / delete staff, groups |
@@ -39,7 +41,7 @@ Large groups (the dynamics, later the ornaments) are drop-down buttons: they sho
 The steps, one pull request each:
 
 - [x] **0.1 The shared bar.** One thin look for every bar (about 30 px, icons in one row, names in tooltips as in the menus), the bar's name in its tooltips, and a **»** button holding what does not fit, instead of wrapping to a second row.
-- [ ] **0.2 Granular bars.** Split the top bar into File, Edit, Playback, Tools, Measure, Staves and Indications, in the default layout above.
+- [x] **0.2 Granular bars.** Split the top bar into File, Edit, Playback, Tools, Measure, Staves and Indications, in the default layout above.
 - [ ] **0.3 Entry bar.** The palette becomes one column on the left, without section titles; one button switches notes and rests.
 - [ ] **0.4 Marks bar.** What goes on notes moves to the right, with drop-down buttons for the large groups.
 - [ ] **0.5 View → Toolbars.** Show or hide each bar, remembered; **Reset** brings back the default layout.

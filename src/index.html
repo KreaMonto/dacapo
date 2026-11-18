@@ -30,6 +30,9 @@
       <symbol id="i-align-center" viewBox="0 0 24 24"><path d="M4 6h16M7 10h10M4 14h16M7 18h10"/></symbol>
       <symbol id="i-align-right" viewBox="0 0 24 24"><path d="M4 6h16M10 10h10M4 14h16M10 18h10"/></symbol>
       <symbol id="i-frame" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/><path d="M8 10h8M8 14h5"/></symbol>
+      <symbol id="i-bracket" viewBox="0 0 24 24"><path d="M10 4H6v16h4"/><path d="M13 8h8M13 16h8"/></symbol>
+      <symbol id="i-brace" viewBox="0 0 24 24"><path d="M10 4C8 4 8 5 8 7v2.5C8 11 7 12 5.5 12 7 12 8 13 8 14.5V17c0 2 0 3 2 3"/><path d="M13 8h8M13 16h8"/></symbol>
+      <symbol id="i-none" viewBox="0 0 24 24"><path d="M10 4H6v5M6 15v5h4"/><path d="M13 8h8M13 16h8"/><path d="M4 12h4" stroke-dasharray="1 2"/></symbol>
       <symbol id="i-more" viewBox="0 0 24 24"><path d="M6 7l5 5-5 5M13 7l5 5-5 5"/></symbol>
       <symbol id="i-start" viewBox="0 0 24 24"><path d="M6 5v14"/><path d="M9 12l10-7v14z" fill="currentColor"/></symbol>
     </defs>
@@ -39,64 +42,81 @@
 
   <!-- Thin bars, each a named group of tools (its name shows in the
        tooltips). What does not fit the window goes behind ». -->
-  <header class="toolbar" role="toolbar" data-i18n-aria="toolbar.label">
-    <div class="tbar-row">
-      <div class="tbar" role="group" data-bar-id="file" data-i18n-bar="bar.file" data-i18n-aria="bar.file">
-        <button data-cmd="new" class="ibtn" data-i18n-aria="toolbar.new" data-i18n-tip="toolbar.new" data-i18n-desc="toolbar.new.desc" data-key="Ctrl+N"><svg class="icon"><use href="#i-new"/></svg></button>
-        <button data-cmd="open" class="ibtn" data-i18n-aria="toolbar.open" data-i18n-tip="toolbar.open.tip" data-i18n-desc="toolbar.open.desc" data-key="Ctrl+O"><svg class="icon"><use href="#i-open"/></svg></button>
-        <button data-cmd="save" class="ibtn" data-i18n-aria="toolbar.save" data-i18n-tip="toolbar.save" data-i18n-desc="toolbar.save.desc" data-key="Ctrl+S"><svg class="icon"><use href="#i-save"/></svg></button>
+  <!-- Thin bars, each a named group of tools (its name shows in the
+       tooltips), in two rows. toolbars.js holds which bar goes where
+       (DEFAULT_LAYOUT); what does not fit a row goes behind ». -->
+  <header class="toolbars">
+    <div class="toolbar" role="toolbar" data-zone="top1" data-i18n-aria="toolbar.label">
+      <div class="tbar-row">
+        <div class="tbar" role="group" data-bar-id="file" data-i18n-bar="bar.file" data-i18n-aria="bar.file">
+          <button data-cmd="new" class="ibtn" data-i18n-aria="toolbar.new" data-i18n-tip="toolbar.new" data-i18n-desc="toolbar.new.desc" data-key="Ctrl+N"><svg class="icon"><use href="#i-new"/></svg></button>
+          <button data-cmd="open" class="ibtn" data-i18n-aria="toolbar.open" data-i18n-tip="toolbar.open.tip" data-i18n-desc="toolbar.open.desc" data-key="Ctrl+O"><svg class="icon"><use href="#i-open"/></svg></button>
+          <button data-cmd="save" class="ibtn" data-i18n-aria="toolbar.save" data-i18n-tip="toolbar.save" data-i18n-desc="toolbar.save.desc" data-key="Ctrl+S"><svg class="icon"><use href="#i-save"/></svg></button>
+        </div>
+        <div class="tbar" role="group" data-bar-id="edit" data-i18n-bar="bar.edit" data-i18n-aria="bar.edit">
+          <button data-cmd="undo" class="ibtn" data-i18n-aria="toolbar.undo" data-i18n-tip="toolbar.undo" data-i18n-desc="toolbar.undo.desc" data-key="Ctrl+Z"><svg class="icon"><use href="#i-undo"/></svg></button>
+          <button data-cmd="redo" class="ibtn" data-i18n-aria="toolbar.redo" data-i18n-tip="toolbar.redo" data-key="Ctrl+Y"><svg class="icon"><use href="#i-redo"/></svg></button>
+        </div>
+        <div class="tbar transport" role="group" data-bar-id="playback" data-i18n-bar="bar.playback" data-i18n-aria="bar.playback">
+          <button data-cmd="play-start" class="ibtn" data-i18n-aria="toolbar.playstart" data-i18n-tip="toolbar.playstart" data-key="Shift+Space"><svg class="icon"><use href="#i-start"/></svg></button>
+          <button data-cmd="play" id="play-btn" class="ibtn play" data-i18n-aria="toolbar.play" data-i18n-tip="toolbar.play.tip" data-i18n-desc="toolbar.play.desc" data-key="Space"><svg class="icon"><use href="#i-play"/></svg></button>
+          <button data-cmd="stop" class="ibtn" data-i18n-aria="toolbar.stop" data-i18n-tip="toolbar.stop" data-i18n-desc="toolbar.stop.desc" data-key="Esc"><svg class="icon"><use href="#i-stop"/></svg></button>
+          <label class="tempo" data-i18n-tip="toolbar.tempo" data-i18n-desc="toolbar.tempo.desc">
+            <span class="m tempo-note">&#xE1D5;</span> =
+            <input id="tempo" size="3" inputmode="numeric" data-i18n-aria="toolbar.tempo.aria">
+          </label>
+        </div>
+        <div class="tbar" role="group" data-bar-id="view" data-i18n-bar="bar.view" data-i18n-aria="bar.view">
+          <button data-cmd="multirest" class="ibtn" aria-pressed="true" data-i18n-aria="toolbar.multirest" data-i18n-tip="toolbar.multirest" data-i18n-desc="toolbar.multirest.desc"><svg class="icon"><use href="#i-multirest"/></svg></button>
+        </div>
       </div>
-      <div class="tbar" role="group" data-bar-id="edit" data-i18n-bar="bar.edit" data-i18n-aria="bar.edit">
-        <button data-cmd="undo" class="ibtn" data-i18n-aria="toolbar.undo" data-i18n-tip="toolbar.undo" data-i18n-desc="toolbar.undo.desc" data-key="Ctrl+Z"><svg class="icon"><use href="#i-undo"/></svg></button>
-        <button data-cmd="redo" class="ibtn" data-i18n-aria="toolbar.redo" data-i18n-tip="toolbar.redo" data-key="Ctrl+Y"><svg class="icon"><use href="#i-redo"/></svg></button>
-      </div>
-      <div class="tbar transport" role="group" data-bar-id="playback" data-i18n-bar="bar.playback" data-i18n-aria="bar.playback">
-        <button data-cmd="play-start" class="ibtn" data-i18n-aria="toolbar.playstart" data-i18n-tip="toolbar.playstart" data-key="Shift+Space"><svg class="icon"><use href="#i-start"/></svg></button>
-        <button data-cmd="play" id="play-btn" class="ibtn play" data-i18n-aria="toolbar.play" data-i18n-tip="toolbar.play.tip" data-i18n-desc="toolbar.play.desc" data-key="Space"><svg class="icon"><use href="#i-play"/></svg></button>
-        <button data-cmd="stop" class="ibtn" data-i18n-aria="toolbar.stop" data-i18n-tip="toolbar.stop" data-i18n-desc="toolbar.stop.desc" data-key="Esc"><svg class="icon"><use href="#i-stop"/></svg></button>
-        <label class="tempo" data-i18n-tip="toolbar.tempo" data-i18n-desc="toolbar.tempo.desc">
-          <span class="m tempo-note">&#xE1D5;</span> =
-          <input id="tempo" size="3" inputmode="numeric" data-i18n-aria="toolbar.tempo.aria">
-        </label>
-      </div>
-      <div class="tbar" role="group" data-bar-id="measure" data-i18n-bar="bar.measure" data-i18n-aria="bar.measure">
-        <label data-i18n-tip="toolbar.clef" data-i18n-desc="toolbar.clef.desc"><span data-i18n="toolbar.clef"></span>
-          <select id="clef">
-            <option value="treble" data-i18n="clef.treble"></option>
-            <option value="bass" data-i18n="clef.bass"></option>
-            <option value="alto" data-i18n="clef.alto"></option>
-            <option value="tenor" data-i18n="clef.tenor"></option>
-          </select>
-        </label>
-        <label data-i18n-tip="toolbar.key.tip" data-i18n-desc="toolbar.key.desc"><span data-i18n="toolbar.key"></span>
-          <select id="key"></select>
-        </label>
-        <label data-i18n-tip="toolbar.time.tip" data-i18n-desc="toolbar.time.desc"><span data-i18n="toolbar.time"></span>
-          <input id="time" size="4">
-        </label>
-        <button data-cmd="add-measure" class="ibtn" data-i18n-aria="toolbar.addmeasure" data-i18n-tip="toolbar.addmeasure" data-i18n-desc="toolbar.addmeasure.desc" data-key="Ctrl+Enter"><svg class="icon"><use href="#i-measure-add"/></svg></button>
-        <button data-cmd="remove-measure" class="ibtn" data-i18n-aria="toolbar.removemeasure" data-i18n-tip="toolbar.removemeasure" data-i18n-desc="toolbar.removemeasure.desc"><svg class="icon"><use href="#i-measure-remove"/></svg></button>
-      </div>
-      <div class="tbar" role="group" data-bar-id="staves" data-i18n-bar="bar.staves" data-i18n-aria="bar.staves">
-        <button data-cmd="add-staff" class="ibtn" data-i18n-aria="toolbar.addstaff" data-i18n-tip="toolbar.addstaff" data-i18n-desc="toolbar.addstaff.desc"><svg class="icon"><use href="#i-staff-add"/></svg></button>
-        <button data-cmd="remove-staff" class="ibtn" data-i18n-aria="toolbar.removestaff" data-i18n-tip="toolbar.removestaff" data-i18n-desc="toolbar.removestaff.desc"><svg class="icon"><use href="#i-staff-remove"/></svg></button>
-      </div>
-      <div class="tbar" role="group" data-bar-id="view" data-i18n-bar="bar.view" data-i18n-aria="bar.view">
-        <button data-cmd="multirest" class="ibtn" aria-pressed="true" data-i18n-aria="toolbar.multirest" data-i18n-tip="toolbar.multirest" data-i18n-desc="toolbar.multirest.desc"><svg class="icon"><use href="#i-multirest"/></svg></button>
-      </div>
+      <button class="ibtn tbar-more" hidden aria-haspopup="true" aria-expanded="false" data-i18n-tip="bar.more" data-i18n-desc="bar.more.desc" data-i18n-aria="bar.more"><svg class="icon"><use href="#i-more"/></svg></button>
+      <div class="tbar-overflow" hidden></div>
     </div>
-    <button class="ibtn tbar-more" hidden aria-haspopup="true" aria-expanded="false" data-i18n-tip="bar.more" data-i18n-desc="bar.more.desc" data-i18n-aria="bar.more"><svg class="icon"><use href="#i-more"/></svg></button>
-    <div class="tbar-overflow" hidden></div>
+    <div class="toolbar" role="toolbar" data-zone="top2" data-i18n-aria="toolbar.label.score">
+      <div class="tbar-row">
+        <div class="tbar" role="group" data-bar-id="tools" data-i18n-bar="bar.tools" data-i18n-aria="bar.tools">
+          <button data-cmd="select" class="ibtn tool" data-i18n-tip="palette.select" data-i18n-desc="palette.select.desc" data-key="Esc" data-i18n-aria="palette.select"><svg class="icon"><use href="#i-select"/></svg></button>
+          <button data-cmd="erase" class="ibtn tool" data-i18n-tip="palette.erase" data-i18n-desc="palette.erase.desc" data-key="X" data-i18n-aria="palette.erase"><svg class="icon"><use href="#i-erase"/></svg></button>
+          <button data-cmd="text" class="ibtn tool" data-i18n-tip="palette.text" data-i18n-desc="palette.text.desc" data-i18n-aria="palette.text"><svg class="icon"><use href="#i-text"/></svg></button>
+        </div>
+        <div class="tbar" role="group" data-bar-id="measure" data-i18n-bar="bar.measure" data-i18n-aria="bar.measure">
+          <label data-i18n-tip="toolbar.clef" data-i18n-desc="toolbar.clef.desc"><span data-i18n="toolbar.clef"></span>
+            <select id="clef">
+              <option value="treble" data-i18n="clef.treble"></option>
+              <option value="bass" data-i18n="clef.bass"></option>
+              <option value="alto" data-i18n="clef.alto"></option>
+              <option value="tenor" data-i18n="clef.tenor"></option>
+            </select>
+          </label>
+          <label data-i18n-tip="toolbar.key.tip" data-i18n-desc="toolbar.key.desc"><span data-i18n="toolbar.key"></span>
+            <select id="key"></select>
+          </label>
+          <label data-i18n-tip="toolbar.time.tip" data-i18n-desc="toolbar.time.desc"><span data-i18n="toolbar.time"></span>
+            <input id="time" size="4">
+          </label>
+          <button data-cmd="add-measure" class="ibtn" data-i18n-aria="toolbar.addmeasure" data-i18n-tip="toolbar.addmeasure" data-i18n-desc="toolbar.addmeasure.desc" data-key="Ctrl+Enter"><svg class="icon"><use href="#i-measure-add"/></svg></button>
+          <button data-cmd="remove-measure" class="ibtn" data-i18n-aria="toolbar.removemeasure" data-i18n-tip="toolbar.removemeasure" data-i18n-desc="toolbar.removemeasure.desc"><svg class="icon"><use href="#i-measure-remove"/></svg></button>
+        </div>
+        <div class="tbar" role="group" data-bar-id="staves" data-i18n-bar="bar.staves" data-i18n-aria="bar.staves">
+          <button data-cmd="add-staff" class="ibtn" data-i18n-aria="toolbar.addstaff" data-i18n-tip="toolbar.addstaff" data-i18n-desc="toolbar.addstaff.desc"><svg class="icon"><use href="#i-staff-add"/></svg></button>
+          <button data-cmd="remove-staff" class="ibtn" data-i18n-aria="toolbar.removestaff" data-i18n-tip="toolbar.removestaff" data-i18n-desc="toolbar.removestaff.desc"><svg class="icon"><use href="#i-staff-remove"/></svg></button>
+          <button data-cmd="group-bracket" class="ibtn" data-i18n-aria="menu.score.group.bracket" data-i18n-tip="menu.score.group.bracket" data-i18n-desc="menu.score.group.bracket.desc"><svg class="icon"><use href="#i-bracket"/></svg></button>
+          <button data-cmd="group-brace" class="ibtn" data-i18n-aria="menu.score.group.brace" data-i18n-tip="menu.score.group.brace" data-i18n-desc="menu.score.group.brace.desc"><svg class="icon"><use href="#i-brace"/></svg></button>
+          <button data-cmd="group-none" class="ibtn" data-i18n-aria="menu.score.group.none" data-i18n-tip="menu.score.group.none" data-i18n-desc="menu.score.group.none.desc"><svg class="icon"><use href="#i-none"/></svg></button>
+        </div>
+        <div class="tbar" role="group" data-bar-id="indications" data-i18n-bar="bar.indications" data-i18n-aria="bar.indications">
+          <button data-cmd="tempo-mark" class="text-btn" data-i18n-tip="palette.tempo" data-i18n-desc="palette.tempo.desc" data-i18n-aria="palette.tempo"><span class="m">&#xECA5;</span>&#8202;=</button>
+          <button data-cmd="rehearsal" class="text-btn" data-i18n-tip="palette.rehearsal" data-i18n-desc="palette.rehearsal.desc" data-i18n-aria="palette.rehearsal"><span class="boxed">A</span></button>
+        </div>
+      </div>
+      <button class="ibtn tbar-more" hidden aria-haspopup="true" aria-expanded="false" data-i18n-tip="bar.more" data-i18n-desc="bar.more.desc" data-i18n-aria="bar.more"><svg class="icon"><use href="#i-more"/></svg></button>
+      <div class="tbar-overflow" hidden></div>
+    </div>
   </header>
 
   <div class="workspace">
     <aside class="palette" id="palette" data-i18n-aria="palette.label">
-      <div class="tools">
-        <button data-cmd="select" class="tool" data-i18n-tip="palette.select" data-i18n-desc="palette.select.desc" data-key="Esc" data-i18n-aria="palette.select"><svg class="icon"><use href="#i-select"/></svg></button>
-        <button data-cmd="erase" class="tool" data-i18n-tip="palette.erase" data-i18n-desc="palette.erase.desc" data-key="X" data-i18n-aria="palette.erase"><svg class="icon"><use href="#i-erase"/></svg></button>
-        <button data-cmd="text" class="tool" data-i18n-tip="palette.text" data-i18n-desc="palette.text.desc" data-i18n-aria="palette.text"><svg class="icon"><use href="#i-text"/></svg></button>
-      </div>
-
       <!-- Each category is collapsible; app.js remembers which are open.
            Glyphs are SMuFL code points in Bravura. Marks apply to the note
            before the caret, or to every note in the selection. -->
@@ -174,10 +194,8 @@
       <details data-section="markings" open>
         <summary data-i18n="palette.markings"></summary>
         <div class="grid2 markings">
-          <button data-cmd="tempo-mark" class="text-btn" data-i18n-tip="palette.tempo" data-i18n-desc="palette.tempo.desc" data-i18n-aria="palette.tempo"><span class="m">&#xECA5;</span>&#8202;=</button>
           <button data-cmd="note-text:expression" class="text-btn" data-i18n-tip="palette.expression" data-i18n-desc="palette.expression.desc" data-i18n-aria="palette.expression" data-key="Ctrl+E"><i>dolce</i></button>
           <button data-cmd="note-text:technique" class="text-btn" data-i18n-tip="palette.technique" data-i18n-desc="palette.technique.desc" data-i18n-aria="palette.technique">pizz.</button>
-          <button data-cmd="rehearsal" class="text-btn" data-i18n-tip="palette.rehearsal" data-i18n-desc="palette.rehearsal.desc" data-i18n-aria="palette.rehearsal"><span class="boxed">A</span></button>
         </div>
       </details>
 

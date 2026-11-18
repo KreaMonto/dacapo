@@ -1,13 +1,48 @@
-// The toolbar's bars: thin named groups of tools in one row. When the window
-// is too narrow for all of them, the last bars move behind a » button, in a
-// panel that opens below it, instead of wrapping to a second row. They are
-// the same elements, moved, so their controls keep working.
+// The toolbars: thin named groups of tools ("bars"), placed in zones around
+// the score. Each bar is an element with a data-bar-id; which zone it goes
+// in, and in what order, is data (DEFAULT_LAYOUT), so later steps can move
+// bars and save layouts without touching the bars themselves.
+//
+// In a zone that is a row, the bars that do not fit the window move behind
+// a » button, in a panel that opens below it, instead of wrapping to a
+// second row. They are the same elements, moved, so their controls keep
+// working.
+
+/** Partita's own layout: zone → bar ids, in order. */
+export const DEFAULT_LAYOUT = {
+  top1: ['file', 'edit', 'playback', 'view'],
+  // Tools first, right above the palette: next to the score and the figures.
+  top2: ['tools', 'measure', 'staves', 'indications'],
+};
+
+/** Puts every bar named in `layout` into its zone, in order. */
+export function applyLayout(root, layout = DEFAULT_LAYOUT) {
+  for (const [zone, ids] of Object.entries(layout)) {
+    const row = root.querySelector(`[data-zone="${zone}"] .tbar-row`);
+    if (!row) continue;
+    for (const id of ids) {
+      const bar = root.querySelector(`[data-bar-id="${id}"]`);
+      if (bar) row.append(bar);
+    }
+  }
+}
 
 /**
- * @param {HTMLElement} toolbar the `.toolbar` with a `.tbar-row`, a
- *   `.tbar-more` button and a `.tbar-overflow` panel.
+ * Lays out the bars under `root` and keeps each row fitting its width.
+ * Every `.toolbar` row has a `.tbar-row`, a `.tbar-more` button and a
+ * `.tbar-overflow` panel.
  */
-export function installBars(toolbar) {
+export function installBars(root) {
+  applyLayout(root);
+  const rows = [...root.querySelectorAll('.toolbar')].map(fitRow);
+  const fitAll = () => { for (const r of rows) r.fit(); };
+  // Each row also watches itself; this covers the window and the fonts.
+  window.addEventListener('resize', fitAll);
+  document.fonts?.ready.then(fitAll);
+  return { fit: fitAll };
+}
+
+function fitRow(toolbar) {
   const row = toolbar.querySelector('.tbar-row');
   const more = toolbar.querySelector('.tbar-more');
   const panel = toolbar.querySelector('.tbar-overflow');
@@ -22,7 +57,7 @@ export function installBars(toolbar) {
   };
 
   // Moving a control out from under the person typing in it would drop its
-  // focus: wait until they leave the toolbar.
+  // focus: wait until they leave the row.
   let pending = false;
   const fit = () => {
     if (toolbar.contains(document.activeElement) && document.activeElement !== more) { pending = true; return; }
@@ -54,7 +89,5 @@ export function installBars(toolbar) {
   }, 0));
 
   new ResizeObserver(fit).observe(toolbar);
-  window.addEventListener('resize', fit);
-  document.fonts?.ready.then(fit);
   return { fit };
 }
