@@ -112,9 +112,9 @@ The headings of page 1 also show above the music in the other views. MusicXML ke
 
 ## Entering music with the mouse
 
-This works like the note palette in Encore. The **palette** on the left holds the tools for entering music.
+This works like the note palette in Encore. The **entry bars** on the left of the score hold what you write with.
 
-1. Click a figure in the palette. The pointer turns into that figure.
+1. Click a figure in the **Figures** bar. The pointer turns into that figure.
 2. Move over a staff. The figure snaps to the nearest line or space and shows the pitch name (for example `F♯4`). A dashed line marks where it will be inserted.
 3. Click to place it. Notes you place one after another undo together with a single Ctrl+Z.
 4. Click **on an existing note** (the label shows `+`) to add the pitch to its chord. Clicking on a rest turns it into a note.
@@ -123,24 +123,24 @@ This works like the note palette in Encore. The **palette** on the left holds th
 
 With the **Select** tool, point at a notehead: the pointer becomes a vertical double arrow. Press and drag up or down to move the note one line or space at a time; it sounds at each step. In a chord, only the note you grabbed moves. Let go to drop it. One **Ctrl+Z** undoes the whole drag. The key signature's accidentals are not applied while dragging: an altered note keeps its accidental, as with **Alt+↑/↓**.
 
-## The palette
+## The entry bars and the palette
 
-The palette is grouped into collapsible categories. Click a heading to open or close it; Partita remembers your choice. Hover any button, or reach it with Tab, to see a tooltip with its name, what it does, and its keyboard shortcut.
+Left of the score, one column of buttons: the **Figures**, **Accidentals** and **Voice** bars. When the window is too short for all of them, the last ones go behind **»** at the bottom. Right of the score, the **palette** holds the marks that go on notes, in collapsible categories: click a heading to open or close it; Partita remembers your choice. Hover any button, or reach it with Tab, to see a tooltip with its name, what it does, its keyboard shortcut and the bar it belongs to.
 
-**Accidentals, articulations and dynamics** can be placed with the mouse: click the mark in the palette (it stays highlighted and follows the pointer), then click each note it goes on; the note under the pointer lights up first. An accidental clicked on a chord changes only that tone. **Esc**, a right-click or clicking the mark again puts it down. With a selection, clicking a mark applies it to every note in the selection at once. From the keyboard, marks apply to **the note just before the caret**.
+**Accidentals, articulations and dynamics** can be placed with the mouse: click the mark (it stays highlighted and follows the pointer) (it stays highlighted and follows the pointer), then click each note it goes on; the note under the pointer lights up first. An accidental clicked on a chord changes only that tone. **Esc**, a right-click or clicking the mark again puts it down. With a selection, clicking a mark applies it to every note in the selection at once. From the keyboard, marks apply to **the note just before the caret**.
 
 **Ties and slurs** work on what you select first: select the notes, then click Tie or Slur. Applying the same mark again removes it.
 
-| Category | Contents |
+| Bar or category | Contents |
 |---|---|
 | **↖ Select** (Tools bar) | Back to normal editing: click to place the caret, drag to select. **Esc**, a right-click or `N` leave entry mode. |
 | **Eraser** (Tools bar, next to Select, `X`) | The pointer becomes a crosshair. Aim at a note and click to erase just that note; in a chord, only the tone you aim at goes. Drag a box to erase every note and rest inside it. The note under the crosshair turns red before you click. One Ctrl+Z brings back everything erased in one go. **Esc**, a right-click or `X` leave the eraser. |
-| **Figures** | **Notes \| Rests** switches the figures between notes and their matching rests. **• Dot** makes the figure dotted. **View → Breve and 128th Notes** adds the breve (double whole note), the 64th and the 128th. |
-| **Accidentals** | ♯ ♭ ♮. The key signature's sharps and flats are applied automatically when you place a note. |
-| **Ties & slurs** | **Tie** (`T`) joins a note to the next one of the same pitch. **Slur** (`S`) draws a phrase mark over the selected notes, and needs a selection. Deleting a slurred note removes its slur; undo restores both. |
-| **Articulations** | Staccato, staccatissimo, tenuto, accent, marcato, fermata. They are placed on the notehead side; the fermata goes above and also works on rests. |
-| **Dynamics** | ppp … fff, sfz, fp. Printed below the staff. Choosing the dynamic a note already has removes it. |
-| **Voice** | Shows *Single voice* until you need more. **+ Voice** adds an independent line on the same staff, for example divisi strings or two melodies in one hand. Its buttons switch between voices (also `Alt+1`…`4`). A voice that contains no music disappears again once you leave it. |
+| **Figures** (left) | The first button switches the figures between notes and their matching rests; it shows a rest, highlighted, while they place rests. The **dot** below the figures makes the figure dotted. **View → Breve and 128th Notes** adds the breve (double whole note), the 64th and the 128th. |
+| **Accidentals** (left) | ♯ ♭ ♮. The key signature's sharps and flats are applied automatically when you place a note. |
+| **Ties & slurs** (palette) | **Tie** (`T`) joins a note to the next one of the same pitch. **Slur** (`S`) draws a phrase mark over the selected notes, and needs a selection. Deleting a slurred note removes its slur; undo restores both. |
+| **Articulations** (palette) | Staccato, staccatissimo, tenuto, accent, marcato, fermata. They are placed on the notehead side; the fermata goes above and also works on rests. |
+| **Dynamics** (palette) | ppp … fff, sfz, fp. Printed below the staff. Choosing the dynamic a note already has removes it. |
+| **Voice** (left) | Shows **1** until you need more. **+** adds an independent line on the same staff, for example divisi strings or two melodies in one hand. Its buttons switch between voices (also `Alt+1`…`4`). A voice that contains no music disappears again once you leave it. |
 
 ## Playback
 
@@ -290,7 +290,7 @@ Every staff has a **name**, a **sound** and a **clef**:
 - **Score → Staff → Add…** adds a staff at the bottom and asks for its instrument first. Keyboards, the harp and the organ come on **two braced staves** (treble and bass) in one step; the *Staves* field lets you choose one or two. Repeat it to build an ensemble, up to a full orchestra.
 - **Short name**: shown on the systems after the first (*Vln. I*, *Vc.*). It follows the name and the sound until you type your own; leave it empty for no name on later systems.
 - **Transposition**: for instruments that sound in another key than written. A clarinet in B♭ is written a major second higher than it sounds, so in a concert C major score its staff shows D major. Notes are entered and shown as written, and played at concert pitch. Picking a sound sets its usual transposition (B♭ clarinet and trumpet, F horn, E♭ alto saxophone, piccolo an octave up, guitar and double bass an octave down…). Changing it rewrites the staff's notes so the music keeps sounding the same.
-- **Brackets and braces**: select some music across the staves to join, then choose **Score → Group Staves → Bracket** (an instrument family: woodwinds, brass, strings) or **Brace** (one instrument on several staves: piano, harp, organ). **Ungroup** undoes it. Barlines run through a group, and when the staves of a brace share a name, it is shown once, centred.
+- **Brackets and braces**: select some music across the staves to join, then choose **Score → Staff → Group → Bracket** (an instrument family: woodwinds, brass, strings) or **Brace** (one instrument on several staves: piano, harp, organ). **Ungroup** undoes it. Barlines run through a group, and when the staves of a brace share a name, it is shown once, centred.
 
 
 ## Crash protection

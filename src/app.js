@@ -434,7 +434,8 @@ function fitGlyph(button) {
   glyphCtx.font = `${style.fontSize} Bravura`;
   const m = glyphCtx.measureText(button.textContent);
   const ink = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
-  const height = button.offsetHeight || 40;
+  // A hidden button (the breve, until it is shown) has no size yet: use its CSS height.
+  const height = button.offsetHeight || parseFloat(style.height) || 40;
   button.style.paddingTop = `${Math.round((height - ink) / 2 + m.actualBoundingBoxAscent)}px`;
 }
 
@@ -579,10 +580,18 @@ function syncControls(doc) {
     b.setAttribute('aria-label', b.dataset.tip);
     b.classList.toggle('on', b.dataset.dur === state.duration.base);
   });
-  document.querySelectorAll('[data-kind]').forEach((b) => {
-    b.classList.toggle('on', b.dataset.kind === state.kind);
-    b.setAttribute('aria-checked', String(b.dataset.kind === state.kind));
-  });
+  // One button for notes or rests: it shows the figure kind in use.
+  const kind = document.querySelector('[data-kind-toggle]');
+  const rests = state.kind === 'rest';
+  if (kind.textContent !== (rests ? '' : '')) {
+    kind.textContent = rests ? '' : '';
+    fitGlyph(kind);
+  }
+  kind.classList.toggle('on', rests);
+  kind.setAttribute('aria-pressed', String(rests));
+  kind.dataset.tip = t('palette.kind');
+  kind.dataset.desc = t(`palette.kind.${state.kind}.desc`);
+  kind.setAttribute('aria-label', t('palette.kind'));
   document.querySelector('[data-cmd=select]').classList.toggle('on', state.mode === 'select');
   document.querySelector('[data-cmd=erase]').classList.toggle('on', state.mode === 'erase');
   document.querySelector('[data-cmd=text]').classList.toggle('on', state.mode === 'text');
@@ -613,16 +622,15 @@ function voiceCount(doc) {
   return Math.max(used, doc.caret.voice + 1);
 }
 
-// Voices appear only when the user asks for them (e.g. divisi strings).
+// Voices appear only when the user asks for them (e.g. divisi strings):
+// the ones in use, numbered, then + for the next one.
 function renderVoices(doc) {
   const n = voiceCount(doc);
   const current = doc.caret.voice;
-  let html = n === 1
-    ? `<span class="label">${esc(t('palette.voice.single'))}</span>`
-    : Array.from({ length: n }, (_, v) =>
-      `<button data-voice="${v}" class="${v === current ? 'on' : ''}" data-tip="${esc(t('palette.voice.n', { n: v + 1 }))}" data-desc="${esc(t('palette.voice.desc'))}" data-key="Alt+${v + 1}">${v + 1}</button>`).join('');
-  if (n < 4) html += `<button data-voice="${n}" class="add" data-tip="${esc(t('palette.voice.add', { n: n + 1 }))}" data-desc="${esc(t('palette.voice.add.desc'))}" data-key="Alt+${n + 1}">${esc(t('palette.voice.add.button'))}</button>`;
-  $('voices').innerHTML = html;
+  let html = Array.from({ length: n }, (_, v) =>
+    `<button data-voice="${v}" class="${v === current ? 'on' : ''}" data-tip="${esc(t('palette.voice.n', { n: v + 1 }))}" data-desc="${esc(t('palette.voice.desc'))}" data-key="Alt+${v + 1}">${v + 1}</button>`).join('');
+  if (n < 4) html += `<button data-voice="${n}" class="add" data-tip="${esc(t('palette.voice.add', { n: n + 1 }))}" data-desc="${esc(t('palette.voice.add.desc'))}" data-key="Alt+${n + 1}" aria-label="${esc(t('palette.voice.add', { n: n + 1 }))}">+</button>`;
+  if ($('voices').innerHTML !== html) $('voices').innerHTML = html;
 }
 
 /** Measures that break the time signature, in score order. */
@@ -1209,9 +1217,12 @@ function setPref(key, value) {
   savePref(key, value);
 }
 
+let installedBars = null; // the toolbars, once laid out (installBars)
+
 /** Shows or hides the rarely used values (breve, 64th, 128th) in the palette. */
 function applyExtendedValues() {
-  $('palette').classList.toggle('extended-values', state.extendedValues);
+  $('entry').classList.toggle('extended-values', state.extendedValues);
+  installedBars?.fit();
 }
 
 /**
@@ -2662,7 +2673,7 @@ const onControlClick = (ev) => {
   if (!b) return;
   if (b.dataset.dur) setDuration(b.dataset.dur, true);
   else if (b.dataset.voice) setVoice(Number(b.dataset.voice));
-  else if (b.dataset.kind) setKind(b.dataset.kind);
+  else if ('kindToggle' in b.dataset) setKind(state.kind === 'rest' ? 'note' : 'rest');
   else if (b.dataset.alter || b.dataset.artic || b.dataset.dyn) useMark(b);
   else runCommand(b.dataset.cmd);
   // Back to the score, unless the button opened something to type in.
@@ -2696,7 +2707,7 @@ const choice = (key, cmd, checked) => ({
 });
 
 // Every label fits on one line: the menu that holds an item says what it is
-// about ("Group Staves › Brace"), and `desc` explains it in a tooltip.
+// about ("Group › Brace"), and `desc` explains it in a tooltip.
 const MENUS = [
   { label: t('menu.file'), items: [
     { label: t('menu.file.new'), cmd: 'new', key: 'Ctrl+N' },
@@ -2778,14 +2789,15 @@ const MENUS = [
     { label: t('menu.score.staff'), enabled: hasDoc, items: [
       { label: t('menu.score.staff.add'), cmd: 'add-staff', desc: t('toolbar.addstaff.desc') },
       { label: t('menu.score.staff.props'), cmd: 'staff-properties', desc: t('menu.score.staff.props.desc') },
+      // Brackets and braces belong to the staves they join.
+      { label: t('menu.score.group'), items: [
+        { label: t('menu.score.group.bracket'), cmd: 'group-bracket', desc: t('menu.score.group.bracket.desc') },
+        { label: t('menu.score.group.brace'), cmd: 'group-brace', desc: t('menu.score.group.brace.desc') },
+        { sep: true },
+        { label: t('menu.score.group.none'), cmd: 'group-none', desc: t('menu.score.group.none.desc') },
+      ] },
       { sep: true },
       { label: t('menu.score.staff.remove'), cmd: 'remove-staff', desc: t('toolbar.removestaff.desc') },
-    ] },
-    { label: t('menu.score.group'), enabled: hasDoc, items: [
-      { label: t('menu.score.group.bracket'), cmd: 'group-bracket', desc: t('menu.score.group.bracket.desc') },
-      { label: t('menu.score.group.brace'), cmd: 'group-brace', desc: t('menu.score.group.brace.desc') },
-      { sep: true },
-      { label: t('menu.score.group.none'), cmd: 'group-none', desc: t('menu.score.group.none.desc') },
     ] },
   ] },
   { label: t('menu.notes'), items: [
@@ -2827,7 +2839,9 @@ applyTheme();
 applyExtendedValues();
 
 installTooltips();
-installBars(document.querySelector('.toolbars'));
+installedBars = installBars(document.body);
+// Glyph buttons of the entry bars: centre accidentals and the dot like the figures.
+document.fonts?.ready.then(() => { for (const b of document.querySelectorAll('#entry .glyph:not([data-dur])')) fitGlyph(b); });
 
 // Palette sections: remember which ones the user keeps open.
 for (const d of document.querySelectorAll('.palette details')) {

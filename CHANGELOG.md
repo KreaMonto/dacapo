@@ -17,10 +17,11 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 ### Changed
 - **A thinner toolbar, in named bars.** Two thin rows: File, Edit, Playback and View; then Tools, Measure, Staves and Indications. A button's tooltip shows which bar it belongs to. In a narrow window a row's last bars go behind **»** instead of wrapping.
   - The Select, eraser and text box tools move from the palette to the **Tools** bar, right above the palette; the tempo marking and rehearsal mark buttons to the **Indications** bar. The palette section with *dolce* and *pizz.* is now called **Expressions**.
-  - The **Staves** bar has buttons for **Bracket**, **Brace** and **Ungroup**.
+  - The **Staves** bar has buttons for **Bracket**, **Brace** and **Ungroup**; in the menu they are under **Score → Staff → Group**.
+  - **Note entry has its own column of bars** left of the score: Figures (one button switches notes and rests, then the figures and the dot), Accidentals and Voice (**1**, **2**… and **+**). In a short window the last bars go behind **»**. The palette, with ties, articulations, dynamics and expressions, moves to the right of the score.
 - **The title and composer are drawn on the page** like the music, so they print exactly as shown, and the music moves down to make room for the texts of page 1.
 - Files that use the new page texts are saved as file format 7, which older versions cannot open; other files are still written in the older formats. Unsaved work from Partita 0.3.0 is still recovered after updating.
-- **The menus are organized in categories, with submenus.** **Insert** is replaced by **Score** (Measure, Staff, Group Staves) and **Notes** (ties, slurs, lyrics and marks). In **View**, Layout, Zoom, Paper, Theme and Language are submenus that show their current setting. Every item fits on one line; resting the pointer on an item explains what it does.
+- **The menus are organized in categories, with submenus.** **Insert** is replaced by **Score** (Measure, and Staff with its Group submenu) and **Notes** (ties, slurs, lyrics and marks). In **View**, Layout, Zoom, Paper, Theme and Language are submenus that show their current setting. Every item fits on one line; resting the pointer on an item explains what it does.
 
 ## [0.3.0] - 2026-11-16
 
