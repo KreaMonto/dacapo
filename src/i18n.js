@@ -12,6 +12,7 @@
 // Static HTML is tagged instead of filled from code:
 //   data-i18n="key"              → text content
 //   data-i18n-tip / -desc        → tooltip title / explanation
+//   data-i18n-bar                → a toolbar's name, shown in its tooltips
 //   data-i18n-aria / -placeholder / -title → those attributes
 
 import en from './locales/en.js';
@@ -75,7 +76,7 @@ export function tn(key, n, vars) {
 const KEY_WORDS = /\b(Ctrl|Shift|Alt|Space|Esc|Enter|Del|Backspace|Home|End|Tab)\b/g;
 export const keyLabel = (combo) => String(combo).replace(KEY_WORDS, (w) => t(`key.${w}`));
 
-const ATTRS = { tip: 'data-tip', desc: 'data-desc', aria: 'aria-label', placeholder: 'placeholder', title: 'title' };
+const ATTRS = { bar: 'data-bar-name', tip: 'data-tip', desc: 'data-desc', aria: 'aria-label', placeholder: 'placeholder', title: 'title' };
 
 /** Fills the tagged static HTML under `root` with the current language. */
 export function applyTranslations(root = document) {

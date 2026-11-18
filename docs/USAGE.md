@@ -265,6 +265,8 @@ A text field opens under the note. Type the syllable, then:
 
 ## Score structure (top toolbar)
 
+The toolbar is a row of thin bars: **File**, **Edit**, **Playback**, **Measure**, **Staves** and **View**. Rest the pointer on a button to see what it does; the name of its bar shows small in the corner. When the window is too narrow for all of them, the last bars move behind **»** at the right end: click it to reach them.
+
 - **Clef**: clef of the staff containing the caret.
 - **Key** and **Time**: apply from the caret's measure until the next change. For Time, type something like `3/4` and press Enter.
 - **+ Measure / − Measure**: insert after, or delete, the current measure.

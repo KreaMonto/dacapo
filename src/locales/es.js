@@ -304,6 +304,14 @@ export default {
 
   // ----- barra de herramientas ----------------------------------------------------
   'toolbar.label': 'Barra de herramientas',
+  'bar.file': 'Archivo',
+  'bar.edit': 'Edición',
+  'bar.playback': 'Reproducción',
+  'bar.measure': 'Compases',
+  'bar.staves': 'Pentagramas',
+  'bar.view': 'Vista',
+  'bar.more': 'Más herramientas',
+  'bar.more.desc': 'Las herramientas que no caben en la ventana.',
   'toolbar.new': 'Partitura nueva',
   'toolbar.new.desc': 'Abre una partitura vacía en una pestaña nueva.',
   'toolbar.open': 'Abrir',
@@ -314,7 +322,6 @@ export default {
   'toolbar.undo': 'Deshacer',
   'toolbar.undo.desc': 'Lo que escribiste de corrido se deshace en un solo paso, como en un procesador de texto.',
   'toolbar.redo': 'Rehacer',
-  'toolbar.playback': 'Reproducción',
   'toolbar.playstart': 'Reproducir desde el principio',
   'toolbar.play': 'Reproducir',
   'toolbar.pause': 'Pausar',

@@ -23,8 +23,11 @@ export function installTooltips(root = document) {
     current = el;
     const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
     const { tip: title, desc, key } = el.dataset;
+    // The bar the control belongs to, small in the corner: bars have no
+    // visible title.
+    const bar = el.closest('[data-bar-name]')?.dataset.barName;
     // On figure buttons data-key is the duration digit; show it as a key too.
-    tip.innerHTML = `<div class="tt-head"><strong>${esc(title)}</strong>${key ? `<kbd>${esc(keyLabel(key))}</kbd>` : ''}</div>`
+    tip.innerHTML = `<div class="tt-head"><strong>${esc(title)}</strong>${key ? `<kbd>${esc(keyLabel(key))}</kbd>` : ''}${bar ? `<span class="tt-bar">${esc(bar)}</span>` : ''}</div>`
       + (desc ? `<div class="tt-desc">${esc(desc)}</div>` : '');
     tip.hidden = false;
     // Below the element, or above when there is no room; kept on screen.
