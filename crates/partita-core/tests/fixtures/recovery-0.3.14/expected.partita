@@ -1,0 +1,300 @@
+{
+  "format": "partita",
+  "format_version": 7,
+  "score": {
+    "metadata": {
+      "title": "Rondino",
+      "composer": "Anonymous",
+      "subtitle": "for the 0.3.14 fixture",
+      "dedication": "",
+      "lyricist": "",
+      "part": "",
+      "copyright": "",
+      "header": "",
+      "footer": "",
+      "page_numbers": {
+        "show": true,
+        "edge": "top",
+        "align": "right",
+        "first_page": false,
+        "format": "{page}"
+      }
+    },
+    "measures": [
+      {
+        "time": {
+          "beats": 4,
+          "beat_type": 4
+        },
+        "key": {
+          "fifths": 0
+        },
+        "tempo": {
+          "text": "Allegretto",
+          "bpm": null,
+          "beat": "quarter",
+          "show_text": true,
+          "show_metronome": true
+        },
+        "rehearsal": null,
+        "barline": "single",
+        "repeat_start": false,
+        "repeat_end": null,
+        "ending": [],
+        "segno": false,
+        "coda": false,
+        "jump": null,
+        "length": 960,
+        "break_after": null
+      },
+      {
+        "time": {
+          "beats": 4,
+          "beat_type": 4
+        },
+        "key": {
+          "fifths": 0
+        },
+        "tempo": null,
+        "rehearsal": "A",
+        "barline": "double",
+        "repeat_start": true,
+        "repeat_end": null,
+        "ending": [],
+        "segno": true,
+        "coda": false,
+        "jump": null,
+        "length": null,
+        "break_after": null
+      },
+      {
+        "time": {
+          "beats": 4,
+          "beat_type": 4
+        },
+        "key": {
+          "fifths": 0
+        },
+        "tempo": null,
+        "rehearsal": null,
+        "barline": "single",
+        "repeat_start": false,
+        "repeat_end": 2,
+        "ending": [
+          1
+        ],
+        "segno": false,
+        "coda": false,
+        "jump": null,
+        "length": null,
+        "break_after": "page"
+      },
+      {
+        "time": {
+          "beats": 4,
+          "beat_type": 4
+        },
+        "key": {
+          "fifths": 0
+        },
+        "tempo": null,
+        "rehearsal": null,
+        "barline": "single",
+        "repeat_start": false,
+        "repeat_end": null,
+        "ending": [
+          2
+        ],
+        "segno": false,
+        "coda": false,
+        "jump": null,
+        "length": null,
+        "break_after": null
+      },
+      {
+        "time": {
+          "beats": 4,
+          "beat_type": 4
+        },
+        "key": {
+          "fifths": 0
+        },
+        "tempo": null,
+        "rehearsal": null,
+        "barline": "single",
+        "repeat_start": false,
+        "repeat_end": null,
+        "ending": [],
+        "segno": false,
+        "coda": false,
+        "jump": "dal_segno_al_fine",
+        "length": null,
+        "break_after": null
+      },
+      {
+        "time": {
+          "beats": 4,
+          "beat_type": 4
+        },
+        "key": {
+          "fifths": 0
+        },
+        "tempo": null,
+        "rehearsal": null,
+        "barline": "single",
+        "repeat_start": false,
+        "repeat_end": null,
+        "ending": [],
+        "segno": false,
+        "coda": false,
+        "jump": null,
+        "length": null,
+        "break_after": null
+      }
+    ],
+    "staves": [
+      {
+        "id": 1,
+        "name": "Staff 1",
+        "short_name": "",
+        "clef": "treble",
+        "instrument": 0,
+        "transposition": {
+          "diatonic": 0,
+          "chromatic": 0
+        },
+        "group": null,
+        "measures": [
+          {
+            "voices": [
+              [
+                {
+                  "id": 2,
+                  "duration": {
+                    "base": "Quarter",
+                    "dots": 0
+                  },
+                  "kind": {
+                    "chord": {
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "alter": 0,
+                          "octave": 4
+                        }
+                      ]
+                    }
+                  },
+                  "tie": false,
+                  "articulations": [],
+                  "dynamic": null,
+                  "lyrics": [],
+                  "texts": [
+                    {
+                      "kind": "expression",
+                      "text": "dolce"
+                    }
+                  ]
+                },
+                {
+                  "id": 3,
+                  "duration": {
+                    "base": "Quarter",
+                    "dots": 0
+                  },
+                  "kind": {
+                    "chord": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "alter": 0,
+                          "octave": 5
+                        }
+                      ]
+                    }
+                  },
+                  "tie": false,
+                  "articulations": [],
+                  "dynamic": null,
+                  "lyrics": [],
+                  "texts": []
+                }
+              ],
+              [],
+              [],
+              []
+            ]
+          },
+          {
+            "voices": [
+              [],
+              [],
+              [],
+              []
+            ]
+          },
+          {
+            "voices": [
+              [],
+              [],
+              [],
+              []
+            ]
+          },
+          {
+            "voices": [
+              [],
+              [],
+              [],
+              []
+            ]
+          },
+          {
+            "voices": [
+              [],
+              [],
+              [],
+              []
+            ]
+          },
+          {
+            "voices": [
+              [],
+              [],
+              [],
+              []
+            ]
+          }
+        ]
+      }
+    ],
+    "next_id": 6,
+    "slurs": [],
+    "tempo": 108,
+    "text_styles": {
+      "tempo": {
+        "font": "",
+        "size": 110,
+        "bold": null,
+        "italic": null
+      }
+    },
+    "text_boxes": [
+      {
+        "id": 4,
+        "page": 0,
+        "x": 200,
+        "y": 2700,
+        "text": "Fixture",
+        "style": {
+          "font": "",
+          "size": 0,
+          "bold": null,
+          "italic": null
+        },
+        "align": "left",
+        "frame": true
+      }
+    ]
+  }
+}
