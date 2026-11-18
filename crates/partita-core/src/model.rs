@@ -367,7 +367,7 @@ thread_local! {
 /// page texts), 5 (Partita 0.3.0: no page texts), or 6 to 8 (development
 /// builds before 0.4.0: no tempo markings in 6; no note texts or rehearsal
 /// marks in 6 and 7; no text styles or text boxes in 6 to 8; no barline
-/// types in 6 to 9; no repeats in any of them).
+/// types in 6 to 9; no repeats in 6 to 10; no endings in any of them).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
@@ -581,7 +581,16 @@ pub struct MeasureAttrs {
     /// all (2 for an ordinary repeat). Drawn instead of the barline. Since
     /// file format 7 (recovery format 11).
     pub repeat_end: Option<u8>,
+    /// The endings ("1.", "2.", "1., 2.") this measure belongs to, in order,
+    /// or empty. Consecutive measures with the same numbers form one ending
+    /// bracket; on the n-th time through a repeat, measures whose ending
+    /// does not include n are skipped. Since file format 7 (recovery
+    /// format 12).
+    pub ending: Vec<u8>,
 }
+
+/// The highest ending number.
+pub const MAX_ENDING: u8 = 8;
 
 /// How many times a repeated passage can be played in all.
 pub const REPEAT_TIMES: std::ops::RangeInclusive<u8> = 2..=10;
@@ -596,6 +605,7 @@ impl Default for MeasureAttrs {
             barline: Barline::Single,
             repeat_start: false,
             repeat_end: None,
+            ending: Vec::new(),
         }
     }
 }
@@ -613,6 +623,20 @@ struct MeasureAttrsFields {
     #[serde(default)]
     repeat_start: bool,
     #[serde(default)]
+    repeat_end: Option<u8>,
+    #[serde(default)]
+    ending: Vec<u8>,
+}
+
+/// [`MeasureAttrs`] as written to recovery format 11 (before endings).
+#[derive(Deserialize)]
+struct MeasureAttrsPreEnding {
+    time: TimeSignature,
+    key: KeySignature,
+    tempo: Option<TempoMark>,
+    rehearsal: Option<String>,
+    barline: Barline,
+    repeat_start: bool,
     repeat_end: Option<u8>,
 }
 
@@ -691,6 +715,19 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
                 ..MeasureAttrs::default()
             });
         }
+        if legacy_format() == 11 {
+            let a = MeasureAttrsPreEnding::deserialize(deserializer)?;
+            return Ok(MeasureAttrs {
+                time: a.time,
+                key: a.key,
+                tempo: a.tempo,
+                rehearsal: a.rehearsal,
+                barline: a.barline,
+                repeat_start: a.repeat_start,
+                repeat_end: a.repeat_end,
+                ending: Vec::new(),
+            });
+        }
         let a = MeasureAttrsFields::deserialize(deserializer)?;
         Ok(MeasureAttrs {
             time: a.time,
@@ -700,6 +737,7 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
             barline: a.barline,
             repeat_start: a.repeat_start,
             repeat_end: a.repeat_end,
+            ending: a.ending,
         })
     }
 }
@@ -1346,6 +1384,7 @@ impl Score {
                     || a.barline != Barline::Single
                     || a.repeat_start
                     || a.repeat_end.is_some()
+                    || !a.ending.is_empty()
             })
             || self
                 .staves

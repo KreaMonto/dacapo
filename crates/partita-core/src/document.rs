@@ -18,8 +18,8 @@ use crate::model::{
     is_measure_rest, Articulation, Barline, Clef, Duration, Dynamic, Event, EventId, EventKind,
     GroupKind, KeySignature, LyricJoin, MeasureAttrs, Metadata, NoteText, NoteTextKind, Pitch,
     Score, Slur, StaffGroup, Step, Syllable, TempoMark, TextBox, TextKind, TextStyle,
-    TimeSignature, Transposition, MAX_NOTE_TEXT_CHARS, MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS,
-    MAX_TEXT_BOX_CHARS, MAX_VERSES, REPEAT_TIMES, TEXT_SIZE_RANGE,
+    TimeSignature, Transposition, MAX_ENDING, MAX_NOTE_TEXT_CHARS, MAX_STAFF_NAME_CHARS,
+    MAX_SYLLABLE_CHARS, MAX_TEXT_BOX_CHARS, MAX_VERSES, REPEAT_TIMES, TEXT_SIZE_RANGE,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
 
@@ -1452,6 +1452,47 @@ impl Document {
         self.commit(TxKind::Edit, ops, caret, now_ms, false)
     }
 
+    /// Measures `first` to `last` become the ending `numbers` ("1." is
+    /// `[1]`, "1., 2." is `[1, 2]`; empty removes the ending), in one undo
+    /// step. An ending that is not the last one goes back to the repeat, so
+    /// with `close` its last measure gets an end repeat if it has none.
+    pub fn set_ending(
+        &mut self,
+        first: usize,
+        last: usize,
+        numbers: &[u8],
+        close: bool,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let (lo, hi) = (first.min(last), first.max(last));
+        if hi >= self.score.measures.len() {
+            return Err(crate::ops::OpError::MeasureIndex(hi).into());
+        }
+        let mut numbers: Vec<u8> = numbers
+            .iter()
+            .copied()
+            .filter(|n| (1..=MAX_ENDING).contains(n))
+            .collect();
+        numbers.sort_unstable();
+        numbers.dedup();
+        let mut ops = Vec::new();
+        for m in lo..=hi {
+            let mut attrs = self.score.measures[m].clone();
+            attrs.ending = numbers.clone();
+            if close && m == hi && !numbers.is_empty() && attrs.repeat_end.is_none() {
+                attrs.repeat_end = Some(2);
+            }
+            if attrs != self.score.measures[m] {
+                ops.push(Op::SetMeasureAttrs { index: m, attrs });
+            }
+        }
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
+    }
+
     // ----- clipboard -----------------------------------------------------
 
     pub fn copy(&self) -> Option<Clipboard> {
@@ -1545,6 +1586,7 @@ impl Document {
             barline: Barline::Single,
             repeat_start: false,
             repeat_end: None,
+            ending: Vec::new(),
             ..self.score.measures[index.saturating_sub(1).min(self.score.measures.len() - 1)]
                 .clone()
         };
@@ -2063,6 +2105,41 @@ mod tests {
         doc.insert_measure(4, 3_000).unwrap();
         assert!(!doc.score.measures[4].repeat_start && doc.score.measures[4].repeat_end.is_none());
         assert!(doc.set_repeat(0, 9, true, None, 4_000).is_err());
+    }
+
+    #[test]
+    fn endings_are_set_in_one_step_and_close_with_a_repeat() {
+        let mut doc = Document::new(Score::new("Etude", 5));
+        doc.set_ending(2, 3, &[1], true, 1_000).unwrap();
+        assert_eq!(doc.score.measures[2].ending, vec![1]);
+        assert_eq!(doc.score.measures[3].ending, vec![1]);
+        assert_eq!(
+            doc.score.measures[3].repeat_end,
+            Some(2),
+            "the first ending goes back"
+        );
+        doc.set_ending(4, 4, &[2, 2, 9], false, 2_000).unwrap();
+        assert_eq!(
+            doc.score.measures[4].ending,
+            vec![2],
+            "numbers kept in range, once each"
+        );
+        assert!(doc.score.measures[4].repeat_end.is_none());
+        doc.undo().unwrap();
+        doc.undo().unwrap();
+        assert!(doc
+            .score
+            .measures
+            .iter()
+            .all(|a| a.ending.is_empty() && a.repeat_end.is_none()));
+        doc.redo().unwrap();
+        doc.set_ending(2, 3, &[], false, 3_000).unwrap();
+        assert!(doc.score.measures[2].ending.is_empty(), "empty removes");
+        assert_eq!(
+            doc.score.measures[3].repeat_end,
+            Some(2),
+            "the repeat stays"
+        );
     }
 
     #[test]

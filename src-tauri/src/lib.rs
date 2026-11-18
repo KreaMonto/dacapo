@@ -315,6 +315,14 @@ enum Action {
         start: bool,
         end: Option<u8>,
     },
+    /// Measures `first` to `last` as the ending `numbers` (empty removes
+    /// it); with `close`, the last one goes back to the repeat.
+    SetEnding {
+        first: usize,
+        last: usize,
+        numbers: Vec<u8>,
+        close: bool,
+    },
     /// The barline at the end of measures `first` to `last`.
     SetBarline {
         first: usize,
@@ -571,6 +579,12 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
                 start,
                 end,
             } => d.set_repeat(first, last, start, end, now),
+            Action::SetEnding {
+                first,
+                last,
+                numbers,
+                close,
+            } => d.set_ending(first, last, &numbers, close, now),
             Action::SetBarline {
                 first,
                 last,

@@ -13,6 +13,10 @@ import { t } from './i18n.js';
 export const SP = 10; // one staff space, in px (CSS .m uses font-size 4·SP)
 // Room a repeat sign takes: thick and thin line and the dots.
 const REPEAT_W = 1.4 * SP;
+// Room above a system with ending brackets, and how much higher its
+// tempo and rehearsal marks then go.
+const ENDING_ROOM = 2.8 * SP;
+const ENDING_LIFT = 1.4 * SP;
 const STAFF_GAP = 10 * SP; // staff top to next staff top inside a system
 const SYSTEM_GAP = 7 * SP;
 const MARGIN_X = 28;
@@ -434,6 +438,7 @@ export function layout(view, width, opts = {}) {
       barline: attrs.barline || 'single', // the line closing the measure
       repeatStart: !!attrs.repeat_start,
       repeatEnd: attrs.repeat_end ?? null, // times the passage is played
+      ending: attrs.ending ?? [], // the endings ("1.", "2.") it belongs to
       overfull,
       // An end repeat takes room before the barline for its dots.
       content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP, Math.min(lyricW, 80 * SP) + 2.6 * SP) + (attrs.repeat_end ? REPEAT_W : 0),
@@ -450,7 +455,7 @@ export function layout(view, width, opts = {}) {
     let j = i;
     if (opts.multiRest && single[i].restOnly) {
       // A tempo marking (even a hidden one) starts a new run: it may change the tempo.
-      while (j + 1 < single.length && single[j].barline === 'single' && !single[j].repeatEnd && !single[j + 1].repeatStart && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo && !single[j + 1].rehearsal) j++;
+      while (j + 1 < single.length && single[j].barline === 'single' && !single[j].repeatEnd && !single[j + 1].repeatStart && !single[j].ending.length && !single[j + 1].ending.length && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo && !single[j + 1].rehearsal) j++;
     }
     if (j > i) {
       measures.push({ ...single[i], mEnd: single[j].m, multi: j - i + 1, barline: single[j].barline, repeatEnd: single[j].repeatEnd, content: 13 * SP + (single[j].repeatEnd ? REPEAT_W : 0) });
@@ -566,10 +571,14 @@ export function layout(view, width, opts = {}) {
   let page = 0;
   let y = heading.top + heading.height + MARGIN_TOP;
   systems.forEach((s, i) => {
-    // Room above for a tempo marking.
-    const above = s.measures.some((ms) => ms.tempoShown || ms.rehearsal)
+    // Room above for a tempo marking, and for ending brackets (the
+    // markings go above those).
+    const marked = s.measures.some((ms) => ms.tempoShown || ms.rehearsal);
+    s.hasEnding = s.measures.some((ms) => ms.ending.length);
+    const tempoAbove = marked
       ? TEMPO_ROOM + Math.max(0, Math.max(currentStyle('tempo').size, currentStyle('rehearsal').size) - 2 * SP)
       : 0;
+    const above = s.hasEnding ? Math.max(tempoAbove, ENDING_ROOM) + (marked ? ENDING_LIFT : 0) : tempoAbove;
     if (geo && i > 0 && y + above + s.height + 2 * SP > pageTop(page) + geo.h - geo.margin) {
       page++;
       y = pageTop(page) + geo.margin + MARGIN_TOP;
@@ -673,6 +682,40 @@ export function hitTest(lay, view, x, y, voice) {
 }
 
 /**
+ * Draws the ending brackets ("1.", "2.") over the top staff: a line over
+ * the measures of each ending, with a hook down at its start and, when it
+ * goes back to the repeat, at its end. An ending that runs on to the next
+ * system is drawn in pieces; only the first has the number.
+ */
+function drawEndings(lay, score, push, onPage) {
+  const key = (e) => e.join(',');
+  let run = null;
+  const flush = () => {
+    if (!run) return;
+    const { first, last, y } = run;
+    const startsHere = key(score.measures[first.m - 1]?.ending ?? []) !== key(first.ending);
+    const endsHere = key(score.measures[last.mEnd + 1]?.ending ?? []) !== key(last.ending);
+    const x0 = first.x + (first.systemStart ? first.prefix - 0.6 * SP : 0) + 1;
+    const x1 = last.x + last.w - (endsHere ? 3 : 0);
+    const hook = 1.4 * SP;
+    const closed = endsHere && !!last.repeatEnd;
+    const path = `M${x0} ${startsHere ? y + hook : y}V${y}H${x1}${closed ? `V${y + hook}` : ''}`;
+    let g = `<g class="ending"><path d="${path}"/>`;
+    if (startsHere) g += `<text x="${x0 + 0.45 * SP}" y="${y + 1.25 * SP}">${esc(first.ending.map((n) => `${n}.`).join(', '))}</text>`;
+    push(`${g}</g>`);
+    run = null;
+  };
+  for (const ms of lay.measures) {
+    if (!ms.ending.length) { flush(); continue; }
+    if (run && (run.last.system !== ms.system || key(run.last.ending) !== key(ms.ending) || run.last.mEnd + 1 !== ms.m)) flush();
+    onPage(ms.system.page);
+    if (!run) run = { first: ms, last: ms, y: lay.staffTop(ms, 0) - ENDING_ROOM + 0.4 * SP };
+    else run.last = ms;
+  }
+  flush();
+}
+
+/**
  * Draws the tempo markings that print something, above the top staff at the
  * start of their measure (over the clef at the start of a system). Each
  * carries `data-tempo` (its measure): a click opens it.
@@ -684,7 +727,8 @@ function drawTempoMarks(lay, score, push, onPage) {
     if (!ms.tempoShown && !ms.rehearsal) continue;
     onPage(ms.system.page);
     if (ms.system !== system) { system = ms.system; right = -Infinity; }
-    const y = lay.staffTop(ms, 0) - 3.2 * SP;
+    // Above the ending brackets, when the system has some.
+    const y = lay.staffTop(ms, 0) - 3.2 * SP - (ms.system.hasEnding ? ENDING_LIFT : 0);
     // A rehearsal mark sits in a box on the barline (over the clef at the
     // start of a system); the tempo marking follows it.
     if (ms.rehearsal) {
@@ -894,6 +938,7 @@ export function renderScore(view, width, opts = {}) {
   drawPageTexts(lay, push, onPage, opts);
   drawTextBoxes(lay, score, push, onPage, opts);
   drawTempoMarks(lay, score, push, onPage);
+  drawEndings(lay, score, push, onPage);
 
   // Drawn events, for ties and slurs: per staff+voice in score order, and by id.
   const seqs = new Map();

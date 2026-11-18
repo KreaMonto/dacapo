@@ -827,6 +827,23 @@ function setRepeatTimes(times) {
   setRepeat(m, m, doc.score.measures[m].repeat_start, times);
 }
 
+/**
+ * The caret's measure (or the selected ones) as an ending: '1', '2', '3',
+ * '1,2', or '' for none. An ending other than the last goes back to the
+ * repeat, so the first one (and "1., 2.") gets an end repeat if it has none.
+ */
+function setEnding(value) {
+  const doc = active();
+  if (!doc) return;
+  const [first, last] = selectedMeasures(doc);
+  const numbers = value ? value.split(',').map(Number) : [];
+  act({ type: 'set_ending', first, last, numbers, close: numbers.includes(1) });
+}
+const endingAt = () => {
+  const doc = active();
+  return doc ? (doc.score.measures[doc.caret.measure]?.ending ?? []).join(',') : '';
+};
+
 const barlineAt = () => {
   const doc = active();
   return doc?.score.measures[doc.caret.measure]?.barline ?? 'single';
@@ -2797,6 +2814,7 @@ const onControlClick = (ev) => {
   else if (b.dataset.voice) setVoice(Number(b.dataset.voice));
   else if (b.dataset.alter || b.dataset.artic || b.dataset.dyn) useMark(b);
   else if (b.dataset.barline) setBarline(b.dataset.barline);
+  else if (b.dataset.ending !== undefined) setEnding(b.dataset.ending);
   else runCommand(b.dataset.cmd);
   // Back to the score, unless the button opened something to type in.
   if (!textEdit.key && !$('dialog').open) page.focus();
@@ -2824,6 +2842,8 @@ for (const k of BARLINES) commands[`barline:${k}`] = () => setBarline(k);
 commands['repeat-start'] = toggleRepeatStart;
 commands['repeat-end'] = toggleRepeatEnd;
 commands['repeat-selection'] = repeatSelection;
+const ENDINGS = [['', 'none'], ['1', '1'], ['2', '2'], ['3', '3'], ['1,2', '12']];
+for (const [v, k] of ENDINGS) commands[`ending:${k}`] = () => setEnding(v);
 const REPEAT_COUNTS = [2, 3, 4, 5, 6];
 for (const n of REPEAT_COUNTS) commands[`repeat-times:${n}`] = () => setRepeatTimes(n);
 
@@ -2971,6 +2991,8 @@ const MENUS = [
       { sep: true },
       { label: t('menu.score.measure.barline'), value: () => t(`barline.${barlineAt()}.short`), items: BARLINES.map((k) =>
         ({ ...choice(`barline.${k}`, `barline:${k}`, () => barlineAt() === k), desc: t(`barline.${k}.desc`) })) },
+      { label: t('menu.score.measure.ending'), value: () => t(`ending.${ENDINGS.find(([v]) => v === endingAt())?.[1] ?? 'none'}.short`), items: ENDINGS.map(([v, k]) =>
+        ({ ...choice(`ending.${k}`, `ending:${k}`, () => endingAt() === v), desc: t(`ending.${k}.desc`) })) },
       { label: t('menu.score.measure.repeat'), items: [
         { label: t('repeat.start'), cmd: 'repeat-start', checked: repeatStartAt, desc: t('repeat.start.desc') },
         { label: t('repeat.end'), cmd: 'repeat-end', checked: () => !!repeatEndAt(), desc: t('repeat.end.desc') },

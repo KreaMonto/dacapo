@@ -421,7 +421,7 @@ function installDrop(drop, onChange) {
 }
 
 /** What an item of a drop-down stands for, to remember it. */
-const markValue = (b) => b.dataset.dyn ?? b.dataset.artic ?? b.dataset.barline ?? b.dataset.cmd ?? b.textContent;
+const markValue = (b) => b.dataset.dyn ?? b.dataset.artic ?? b.dataset.barline ?? b.dataset.ending ?? b.dataset.cmd ?? b.textContent;
 
 // ----- moving bars -----------------------------------------------------------
 

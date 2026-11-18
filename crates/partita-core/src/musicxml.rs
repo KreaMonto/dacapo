@@ -90,6 +90,33 @@ fn tempo_direction(score: &Score, m: usize) -> Option<String> {
 }
 
 /// Writes `score` as MusicXML text.
+/// An ending's MusicXML number ("1, 2") and printed text ("1., 2.").
+fn ending_label(numbers: &[u8]) -> (String, String) {
+    let number = numbers
+        .iter()
+        .map(u8::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let text = numbers
+        .iter()
+        .map(|n| format!("{n}."))
+        .collect::<Vec<_>>()
+        .join(", ");
+    (number, text)
+}
+
+/// The numbers of an ending, from MusicXML's "1, 2" (or "1 2", "1,2").
+fn ending_numbers(number: &str) -> Vec<u8> {
+    let mut out: Vec<u8> = number
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter_map(|n| n.trim().parse::<u8>().ok())
+        .filter(|n| (1..=MAX_ENDING).contains(n))
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 pub fn export(score: &Score) -> String {
     let divisions = divisions_for(score);
     let to_div = |ticks: u32| ticks / (TICKS_PER_QUARTER / divisions);
@@ -205,8 +232,25 @@ pub fn export(score: &Score) -> String {
             let attrs = &score.measures[m];
             let capacity = attrs.time.measure_ticks();
             let _ = writeln!(x, "    <measure number=\"{}\">", m + 1);
-            if attrs.repeat_start {
-                x.push_str("      <barline location=\"left\"><bar-style>heavy-light</bar-style><repeat direction=\"forward\"/></barline>\n");
+            // Left side: a start repeat and/or the start of an ending.
+            let ending_starts = !attrs.ending.is_empty()
+                && m.checked_sub(1).map(|p| &score.measures[p].ending) != Some(&attrs.ending);
+            if attrs.repeat_start || ending_starts {
+                x.push_str("      <barline location=\"left\">");
+                if attrs.repeat_start {
+                    x.push_str("<bar-style>heavy-light</bar-style>");
+                }
+                if ending_starts {
+                    let (number, text) = ending_label(&attrs.ending);
+                    let _ = write!(
+                        x,
+                        "<ending number=\"{number}\" type=\"start\">{text}</ending>"
+                    );
+                }
+                if attrs.repeat_start {
+                    x.push_str("<repeat direction=\"forward\"/>");
+                }
+                x.push_str("</barline>\n");
             }
             let prev_attrs = m.checked_sub(1).map(|p| &score.measures[p]);
             // Transposing staves show their written key.
@@ -336,31 +380,47 @@ pub fn export(score: &Score) -> String {
             }
             // The measure's barline; the last measure ends with a final one
             // unless it says otherwise.
+            // Right side: the barline (an end repeat draws its own), the
+            // end of an ending, an end repeat.
+            let a = &score.measures[m];
             let last = m + 1 == staff.measures.len();
-            if let Some(times) = score.measures[m].repeat_end {
-                let times = if times == 2 {
-                    String::new()
-                } else {
-                    format!(" times=\"{times}\"")
-                };
-                let _ = writeln!(
-                    x,
-                    "      <barline location=\"right\"><bar-style>light-heavy</bar-style><repeat direction=\"backward\"{times}/></barline>"
-                );
-            }
-            let style = match score.measures[m].barline {
-                _ if score.measures[m].repeat_end.is_some() => None,
+            let style = match a.barline {
+                _ if a.repeat_end.is_some() => Some("light-heavy"),
                 Barline::Single if last => Some("light-heavy"),
                 Barline::Single => None,
                 Barline::Double => Some("light-light"),
                 Barline::Final => Some("light-heavy"),
                 Barline::Dashed => Some("dashed"),
             };
-            if let Some(style) = style {
-                let _ = writeln!(
-                    x,
-                    "      <barline location=\"right\"><bar-style>{style}</bar-style></barline>"
-                );
+            let ending_ends = !a.ending.is_empty()
+                && score.measures.get(m + 1).map(|n| &n.ending) != Some(&a.ending);
+            if style.is_some() || ending_ends {
+                x.push_str("      <barline location=\"right\">");
+                if let Some(style) = style {
+                    let _ = write!(x, "<bar-style>{style}</bar-style>");
+                }
+                if ending_ends {
+                    // Closed when it goes back to the repeat, open otherwise.
+                    let kind = if a.repeat_end.is_some() {
+                        "stop"
+                    } else {
+                        "discontinue"
+                    };
+                    let _ = write!(
+                        x,
+                        "<ending number=\"{}\" type=\"{kind}\"/>",
+                        ending_label(&a.ending).0
+                    );
+                }
+                if let Some(times) = a.repeat_end {
+                    let times = if times == 2 {
+                        String::new()
+                    } else {
+                        format!(" times=\"{times}\"")
+                    };
+                    let _ = write!(x, "<repeat direction=\"backward\"{times}/>");
+                }
+                x.push_str("</barline>\n");
             }
             x.push_str("    </measure>\n");
         }
@@ -887,6 +947,9 @@ struct Importer {
     /// times it is played), from the first part.
     repeat_starts: std::collections::HashSet<usize>,
     repeat_ends: HashMap<usize, u8>,
+    /// Endings by measure, and the one still open while it runs.
+    endings: HashMap<usize, Vec<u8>>,
+    open_ending: Option<Vec<u8>>,
 }
 
 impl Importer {
@@ -1052,6 +1115,7 @@ impl Importer {
                 barline: self.barlines.remove(&m).unwrap_or_default(),
                 repeat_start: self.repeat_starts.remove(&m),
                 repeat_end: self.repeat_ends.remove(&m),
+                ending: self.endings.remove(&m).unwrap_or_default(),
                 ..last.clone()
             });
         }
@@ -1192,6 +1256,12 @@ impl Importer {
             let ticks_of =
                 |d: f64, divisions: f64| (d * TICKS_PER_QUARTER as f64 / divisions).round() as i64;
 
+            // An ending begun in an earlier measure runs through this one.
+            if first_part {
+                if let Some(numbers) = &self.open_ending {
+                    self.endings.insert(m, numbers.clone());
+                }
+            }
             for el in measure.children().filter(|c| c.is_element()) {
                 match el.tag_name().name() {
                     "attributes" => {
@@ -1267,6 +1337,25 @@ impl Importer {
                     // The line closing the measure (on the right, which is
                     // where a barline goes when it does not say).
                     "barline" if first_part => {
+                        // An ending: from its start to its stop (closed) or
+                        // discontinue (open).
+                        if let Some(end) = el.children().find(|n| n.has_tag_name("ending")) {
+                            let numbers = ending_numbers(end.attribute("number").unwrap_or(""));
+                            match end.attribute("type") {
+                                Some("start") if !numbers.is_empty() => {
+                                    self.endings.insert(m, numbers.clone());
+                                    self.open_ending = Some(numbers);
+                                }
+                                Some("stop" | "discontinue") => {
+                                    if let Some(open) = self.open_ending.take() {
+                                        self.endings.insert(m, open);
+                                    } else if !numbers.is_empty() {
+                                        self.endings.insert(m, numbers);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
                         // A repeat sign: forward on the left, backward on the
                         // right (where a barline goes when it does not say).
                         let right = el.attribute("location").unwrap_or("right") == "right";
@@ -1872,6 +1961,29 @@ mod tests {
             !back.measures[1].repeat_start,
             "not carried on to the next measure"
         );
+    }
+
+    #[test]
+    fn endings_round_trip() {
+        let mut score = sample();
+        score.measures.push(MeasureAttrs::default());
+        for st in &mut score.staves {
+            st.measures.push(StaffMeasure::default());
+        }
+        score.measures[1].ending = vec![1, 2];
+        score.measures[1].repeat_end = Some(3);
+        score.measures[2].ending = vec![3];
+        let xml = export(&score);
+        assert!(xml.contains("<ending number=\"1, 2\" type=\"start\">1., 2.</ending>"));
+        assert!(xml.contains(
+            "<ending number=\"1, 2\" type=\"stop\"/><repeat direction=\"backward\" times=\"3\"/>"
+        ));
+        assert!(xml.contains("<ending number=\"3\" type=\"discontinue\"/>"));
+        let back = import(&xml, "x").unwrap().score;
+        assert_eq!(back.measures[1].ending, vec![1, 2]);
+        assert_eq!(back.measures[1].repeat_end, Some(3));
+        assert_eq!(back.measures[2].ending, vec![3]);
+        assert!(back.measures[0].ending.is_empty());
     }
 
     #[test]

@@ -474,6 +474,8 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .score .barthick { fill: var(--ink); }
 .score .bar.dashed { stroke-dasharray: 4 3; }
 .score .repeat-dot { fill: var(--ink); }
+.score .ending path { fill: none; stroke: var(--ink); stroke-width: 1.2; }
+.score .ending text { font: 12px Georgia, serif; fill: var(--ink); }
 .score .repeat-times { font: italic 11px Georgia, serif; fill: var(--ink); }
 .score .stem { stroke: currentColor; stroke-width: 1.2; }
 .score .ev { color: var(--ink); fill: var(--ink); }

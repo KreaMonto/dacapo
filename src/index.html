@@ -106,6 +106,18 @@
           <button data-cmd="remove-measure" class="ibtn" data-i18n-aria="toolbar.removemeasure" data-i18n-tip="toolbar.removemeasure" data-i18n-desc="toolbar.removemeasure.desc"><svg class="icon"><use href="#i-measure-remove"/></svg></button>
           <button data-cmd="repeat-start" class="ibtn" aria-pressed="false" data-i18n-tip="repeat.start" data-i18n-desc="repeat.start.desc" data-i18n-aria="repeat.start"><svg class="icon"><use href="#i-rep-start"/></svg></button>
           <button data-cmd="repeat-end" class="ibtn" aria-pressed="false" data-i18n-tip="repeat.end" data-i18n-desc="repeat.end.desc" data-i18n-aria="repeat.end"><svg class="icon"><use href="#i-rep-end"/></svg></button>
+          <!-- First and second endings for the caret's measure (or the
+               selection): the button shows the last one chosen. -->
+          <div class="drop" data-drop="ending">
+            <button class="text-btn drop-btn" aria-haspopup="true" aria-expanded="false" data-i18n-tip="toolbar.ending" data-i18n-desc="toolbar.ending.desc" data-i18n-aria="toolbar.ending">1.</button>
+            <div class="drop-pop" role="group" data-i18n-aria="toolbar.ending" hidden>
+              <button data-ending="" class="text-btn" data-i18n-tip="ending.none" data-i18n-desc="ending.none.desc" data-i18n-aria="ending.none">—</button>
+              <button data-ending="1" class="text-btn" data-i18n-tip="ending.1" data-i18n-desc="ending.1.desc" data-i18n-aria="ending.1">1.</button>
+              <button data-ending="2" class="text-btn" data-i18n-tip="ending.2" data-i18n-desc="ending.2.desc" data-i18n-aria="ending.2">2.</button>
+              <button data-ending="3" class="text-btn" data-i18n-tip="ending.3" data-i18n-desc="ending.3.desc" data-i18n-aria="ending.3">3.</button>
+              <button data-ending="1,2" class="text-btn" data-i18n-tip="ending.12" data-i18n-desc="ending.12.desc" data-i18n-aria="ending.12">1.2.</button>
+            </div>
+          </div>
           <!-- The barline closing the caret's measure (or each measure of the
                selection): the button shows the last kind chosen. -->
           <div class="drop" data-drop="barline">

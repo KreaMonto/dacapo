@@ -19,7 +19,9 @@
 //! - **Repeats** are played: at an end repeat the music goes back to the
 //!   last start repeat (or to the beginning, or to just after the previous
 //!   end repeat) until the passage has sounded the times it says. Ties and
-//!   dynamics carry on in the order the measures are played.
+//!   dynamics carry on in the order the measures are played. **Endings**
+//!   ("1.", "2.") are played on their time through only: the n-th time,
+//!   measures whose ending does not include n are skipped.
 //! - Fermatas do not change timing yet.
 
 use std::collections::{HashMap, HashSet};
@@ -199,9 +201,28 @@ pub fn play_order(score: &Score) -> Vec<usize> {
     let mut start = 0;
     // How many times each end repeat has sent the music back.
     let mut sent_back: HashMap<usize, u8> = HashMap::new();
+    // Which time through the current repeated passage this is (1, 2…), for
+    // the endings; back to 1 once the music is past them.
+    let mut pass: u8 = 1;
+    let mut in_endings = false;
     let mut m = 0;
     while m < n {
         let attrs = &score.measures[m];
+        if attrs.ending.is_empty() {
+            if in_endings {
+                // Past the endings: what follows starts afresh.
+                in_endings = false;
+                pass = 1;
+                start = m;
+            }
+        } else {
+            in_endings = true;
+            if !attrs.ending.contains(&pass) {
+                // Not this time through: skipped, end repeat and all.
+                m += 1;
+                continue;
+            }
+        }
         if attrs.repeat_start && !sent_back.contains_key(&m) {
             start = m;
         }
@@ -210,11 +231,17 @@ pub fn play_order(score: &Score) -> Vec<usize> {
             let done = sent_back.entry(m).or_insert(0);
             if *done + 1 < times.max(1) {
                 *done += 1;
+                pass = pass.saturating_add(1);
+                // Back to the start of the passage, out of the endings.
+                in_endings = false;
                 m = start;
                 continue;
             }
             // Played enough: what follows can be repeated on its own.
             start = m + 1;
+            if !in_endings {
+                pass = 1;
+            }
         }
         m += 1;
     }
@@ -388,6 +415,30 @@ mod tests {
         assert_eq!(tl.position(2 * bar + 10), (0, 10));
         assert_eq!(tl.position(6 * bar), (3, 0));
         assert_eq!(tl.tick_at(4, 0), 8 * bar);
+    }
+
+    #[test]
+    fn first_and_second_endings_are_played_on_their_time() {
+        // |: 0 | 1 |1.[ 2 :|] 2.[ 3 ] | 4
+        let mut s = Score::new("t", 5);
+        s.measures[0].repeat_start = true;
+        s.measures[2].ending = vec![1];
+        s.measures[2].repeat_end = Some(2);
+        s.measures[3].ending = vec![2];
+        assert_eq!(play_order(&s), vec![0, 1, 2, 0, 1, 3, 4]);
+        // 1.–2. then 3.: the first ending is played twice.
+        let mut s = Score::new("t", 4);
+        s.measures[1].ending = vec![1, 2];
+        s.measures[1].repeat_end = Some(3);
+        s.measures[2].ending = vec![3];
+        assert_eq!(play_order(&s), vec![0, 1, 0, 1, 0, 2, 3]);
+        // A later repeat after the endings starts afresh.
+        let mut s = Score::new("t", 5);
+        s.measures[1].ending = vec![1];
+        s.measures[1].repeat_end = Some(2);
+        s.measures[2].ending = vec![2];
+        s.measures[4].repeat_end = Some(2);
+        assert_eq!(play_order(&s), vec![0, 1, 0, 2, 3, 4, 3, 4]);
     }
 
     #[test]

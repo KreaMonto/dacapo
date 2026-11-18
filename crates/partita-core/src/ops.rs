@@ -525,6 +525,7 @@ mod tests {
                     barline: crate::model::Barline::Double,
                     repeat_start: true,
                     repeat_end: Some(3),
+                    ending: vec![1, 2],
                 },
             },
             Op::SetTextStyle {
