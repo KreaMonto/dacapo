@@ -46,7 +46,7 @@ export function installTooltips(root = document) {
     if ((el.closest('.vzone') && !el.closest('.drop-pop')) || list) {
       const side = list ? list.getBoundingClientRect() : r;
       x = side.right + 8;
-      if (el.closest('[data-zone="right"]') || (list && x + t.width > window.innerWidth - margin)) x = side.left - t.width - 8;
+      if (el.closest('.side[data-side="right"]') || (list && x + t.width > window.innerWidth - margin)) x = side.left - t.width - 8;
       y = Math.max(margin, Math.min(r.top + r.height / 2 - t.height / 2, window.innerHeight - t.height - margin));
     }
     tip.style.left = `${x}px`;
