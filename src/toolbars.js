@@ -1,24 +1,33 @@
-// The toolbars: thin named groups of tools ("bars"), placed in zones around
-// the score. Each bar is an element with a data-bar-id; which zone it goes
-// in, and in what order, is data (DEFAULT_LAYOUT), so later steps can move
-// bars and save layouts without touching the bars themselves.
+// The toolbars: thin named groups of tools ("bars") around the score. Each
+// bar is an element with a data-bar-id. Each side of the score (`.side`:
+// top, left, right) holds any number of lanes: rows above the score,
+// columns beside it. Which bar goes in which lane, and in what order, is
+// data (DEFAULT_LAYOUT), so bars can be moved and layouts saved without
+// touching the bars themselves.
 //
-// The bars that do not fit their zone move behind a » button, in a panel
-// that opens beside it (below a row, to the right of a column), instead of
-// wrapping. They are the same elements, moved, so their controls keep
-// working.
+// Any bar can go anywhere: drag it by its grip to another place in its lane,
+// to another lane, or past the first or last lane of a side, which opens a
+// new one. A lane left empty disappears.
+//
+// The bars that do not fit their lane move behind a » button, in a panel
+// that opens beside it, instead of wrapping. They are the same elements,
+// moved, so their controls keep working.
 
 import { t } from './i18n.js';
 
-/** Partita's own layout: zone → bar ids, in order. */
+const SIDES = ['top', 'left', 'right'];
+
+/** Partita's own layout: side → lanes → bar ids, in order. */
 export const DEFAULT_LAYOUT = {
-  top1: ['file', 'edit', 'playback', 'view'],
-  // Tools first, right above the palette: next to the score and the figures.
-  top2: ['tools', 'measure', 'staves', 'indications'],
-  // A column left of the score: what you write with.
-  left: ['figures', 'accidentals', 'voice'],
-  // A column right of the score: what goes on the notes.
-  right: ['lines', 'articulations', 'dynamics', 'expressions'],
+  top: [
+    ['file', 'edit', 'playback', 'view'],
+    // Tools first, right above the entry bars: next to the score and the figures.
+    ['tools', 'measure', 'staves', 'indications'],
+  ],
+  // Left of the score: what you write with.
+  left: [['figures', 'accidentals', 'voice']],
+  // Right of the score: what goes on the notes.
+  right: [['lines', 'articulations', 'dynamics', 'expressions']],
 };
 
 /**
@@ -44,8 +53,8 @@ let active = stored.active && findLayout(stored.active) ? stored.active : 'parti
 let hidden = new Set(stored.hidden);
 let layout = mergeLayout(stored.layout);
 let rootEl = null;
-let fitAll = () => {};
 let refitBar = () => {};
+const lanes = new Map(); // lane element → { fit, close, owns(target), stop() }
 
 function load(key) {
   try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
@@ -113,37 +122,54 @@ export function deleteLayout(id) {
   if (active === id) chooseLayout(mine.base ?? 'partita');
 }
 
-function showLayout() {
-  if (!rootEl) return;
-  applyLayout(rootEl, layout);
-  for (const bar of rootEl.querySelectorAll('[data-bar-id]')) refitBar(bar);
-  applyVisibility();
+/**
+ * Back to the built-in layout the one on screen comes from, as Partita made
+ * it. The person's own layouts are kept: choosing one brings it back.
+ */
+export function resetBars() {
+  chooseLayout(builtInOf(active));
 }
 
 /**
- * A saved layout, made safe: unknown zones and bars are dropped, each bar
- * appears once, and a bar it does not mention (one added in a later
- * version) goes where Partita puts it.
+ * A saved layout, made safe: unknown sides and bars are dropped, each bar
+ * appears once, empty lanes go, and a bar it does not mention (one added in
+ * a later version) goes where Partita puts it. Layouts saved before sides
+ * had lanes ({ top1, top2, left, right } of bar ids) are read too.
  */
 function mergeLayout(saved) {
-  const result = Object.fromEntries(Object.keys(DEFAULT_LAYOUT).map((z) => [z, []]));
-  const known = new Set(Object.values(DEFAULT_LAYOUT).flat());
+  const lanesOf = (v) => {
+    if (!Array.isArray(v)) return [];
+    return v.every((x) => typeof x === 'string') ? [v] : v.filter(Array.isArray);
+  };
+  const src = saved && typeof saved === 'object' ? saved : {};
+  const given = {
+    top: src.top ? lanesOf(src.top) : [src.top1, src.top2].filter(Array.isArray),
+    left: lanesOf(src.left),
+    right: lanesOf(src.right),
+  };
+  const known = new Set(Object.values(DEFAULT_LAYOUT).flat(2));
   const seen = new Set();
-  if (saved && typeof saved === 'object') {
-    for (const zone of Object.keys(result)) {
-      for (const id of Array.isArray(saved[zone]) ? saved[zone] : []) {
-        if (known.has(id) && !seen.has(id)) { seen.add(id); result[zone].push(id); }
+  const result = {};
+  for (const side of SIDES) {
+    result[side] = given[side].map((lane) => lane.filter((id) => known.has(id) && !seen.has(id) && seen.add(id)));
+  }
+  // Bars it does not mention: in their own lane if it is still there.
+  for (const side of SIDES) {
+    DEFAULT_LAYOUT[side].forEach((lane, i) => {
+      for (const id of lane) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        while (result[side].length <= i) result[side].push([]);
+        result[side][Math.min(i, result[side].length - 1)].push(id);
       }
-    }
+    });
   }
-  for (const [zone, ids] of Object.entries(DEFAULT_LAYOUT)) {
-    for (const id of ids) if (!seen.has(id)) result[zone].push(id);
-  }
+  for (const side of SIDES) result[side] = result[side].filter((lane) => lane.length);
   return result;
 }
 
-/** The bars of the default layout, zone by zone: { zone, ids }. */
-export const barZones = () => Object.entries(DEFAULT_LAYOUT).map(([zone, ids]) => ({ zone, ids }));
+/** Every bar, side by side as Partita places them (for View → Toolbars → Show Bars). */
+export const barZones = () => SIDES.map((side) => ({ zone: side, ids: DEFAULT_LAYOUT[side].flat() }));
 
 /** The i18n key of a bar's name. */
 export const barNameKey = (id) => document.querySelector(`[data-bar-id="${id}"]`)?.dataset.i18nBar;
@@ -156,55 +182,179 @@ export function setBarShown(id, shown) {
   applyVisibility();
 }
 
-/**
- * Back to the built-in layout the one on screen comes from, as Partita made
- * it. The person's own layouts are kept: choosing one brings it back.
- */
-export function resetBars() {
-  chooseLayout(builtInOf(active));
+// ----- lanes -----------------------------------------------------------------
+
+const sideEl = (side) => rootEl?.querySelector(`.side[data-side="${side}"]`);
+const laneEls = (side) => [...(sideEl(side)?.children ?? [])].filter((el) => lanes.has(el));
+const isColumn = (side) => side !== 'top';
+
+/** A new, empty lane for `side`: the same parts as the ones in index.html. */
+function makeLane(side) {
+  const lane = document.createElement('div');
+  lane.className = isColumn(side) ? 'toolbar vzone' : 'toolbar';
+  lane.setAttribute('role', 'toolbar');
+  lane.setAttribute('aria-label', t(`toolbar.lane.${side}`));
+  lane.innerHTML = `<div class="tbar-row"></div>
+    <button class="ibtn tbar-more" hidden aria-haspopup="true" aria-expanded="false"><svg class="icon"><use href="#i-more"/></svg></button>
+    <div class="tbar-overflow" hidden></div>`;
+  const more = lane.querySelector('.tbar-more');
+  more.dataset.tip = t('bar.more');
+  more.dataset.desc = t('bar.more.desc');
+  more.setAttribute('aria-label', t('bar.more'));
+  return lane;
 }
 
-/** Hides the hidden bars, and a zone with nothing left to show. */
-function applyVisibility() {
-  if (!rootEl) return;
-  for (const bar of rootEl.querySelectorAll('[data-bar-id]')) bar.hidden = hidden.has(bar.dataset.barId);
-  for (const zone of rootEl.querySelectorAll('.toolbar[data-zone]')) {
-    zone.hidden = ![...zone.querySelectorAll('[data-bar-id]')].some((b) => !b.hidden);
+/** Makes the lanes on screen match `layout`, and puts each bar in its own. */
+function applyLayout() {
+  // In three passes, so that no lane is removed while it still holds a bar
+  // that belongs to another side: first enough lanes everywhere, then every
+  // bar in its place, then away with the lanes left over.
+  for (const side of SIDES) {
+    const box = sideEl(side);
+    if (!box) continue;
+    while (laneEls(side).length < layout[side].length) {
+      const lane = makeLane(side);
+      box.append(lane);
+      lanes.set(lane, fitLane(lane));
+    }
   }
-  fitAll();
-}
-
-/** Puts every bar named in `layout` into its zone, in order. */
-export function applyLayout(root, layout = DEFAULT_LAYOUT) {
-  for (const [zone, ids] of Object.entries(layout)) {
-    const row = root.querySelector(`[data-zone="${zone}"] .tbar-row`);
-    if (!row) continue;
-    for (const id of ids) {
-      const bar = root.querySelector(`[data-bar-id="${id}"]`);
-      if (bar) row.append(bar);
+  for (const side of SIDES) {
+    const els = laneEls(side);
+    layout[side].forEach((ids, i) => {
+      const row = els[i]?.querySelector('.tbar-row');
+      for (const id of ids) {
+        const bar = rootEl.querySelector(`[data-bar-id="${id}"]`);
+        if (bar && row) row.append(bar);
+      }
+    });
+  }
+  for (const side of SIDES) {
+    for (const lane of laneEls(side).slice(layout[side].length)) {
+      // Anything still in it (a bar no layout names) is kept, out of sight.
+      for (const bar of lane.querySelectorAll('[data-bar-id]')) pool().append(bar);
+      lanes.get(lane).stop();
+      lanes.delete(lane);
+      lane.remove();
     }
   }
 }
 
+/** Where bars that no lane holds wait, hidden. */
+function pool() {
+  let el = document.getElementById('bar-pool');
+  if (!el) {
+    el = Object.assign(document.createElement('div'), { id: 'bar-pool', hidden: true });
+    document.body.append(el);
+  }
+  return el;
+}
+
+/** Hides the hidden bars, and a lane with nothing left to show. */
+function applyVisibility() {
+  if (!rootEl) return;
+  for (const bar of rootEl.querySelectorAll('[data-bar-id]')) bar.hidden = hidden.has(bar.dataset.barId);
+  for (const lane of lanes.keys()) lane.hidden = ![...lane.querySelectorAll('[data-bar-id]')].some((b) => !b.hidden);
+  fitAll();
+}
+
+function fitAll() {
+  for (const l of lanes.values()) l.fit();
+}
+
+function showLayout() {
+  if (!rootEl) return;
+  applyLayout();
+  for (const bar of rootEl.querySelectorAll('[data-bar-id]')) refitBar(bar);
+  applyVisibility();
+}
+
 /**
- * Lays out the bars under `root` and keeps each zone fitting its room: a
- * row its width, a column (`.vzone`) its height. Every `.toolbar` zone has
- * a `.tbar-row`, a `.tbar-more` button and a `.tbar-overflow` panel.
+ * Lays out the bars under `root` and keeps each lane fitting its room: a
+ * row its width, a column (`.vzone`) its height. Every lane has a
+ * `.tbar-row`, a `.tbar-more` button and a `.tbar-overflow` panel.
  */
 export function installBars(root, { onChange, onMove } = {}) {
   rootEl = root;
   if (onMove) refitBar = onMove;
-  applyLayout(root, layout);
+  // The lanes written in index.html are the first ones of their sides.
+  for (const lane of root.querySelectorAll('.side > .toolbar')) lanes.set(lane, fitLane(lane));
+  applyLayout();
   for (const drop of root.querySelectorAll('.drop')) installDrop(drop, onChange);
   for (const bar of root.querySelectorAll('[data-bar-id]')) installGrip(bar);
-  const rows = [...root.querySelectorAll('.toolbar')].map(fitRow);
-  fitAll = () => { for (const r of rows) r.fit(); };
   applyVisibility();
-  // Each row also watches itself; this covers the window and the fonts.
+  // One set of listeners for every lane's » panel, whatever lanes come and go.
+  document.addEventListener('pointerdown', (ev) => {
+    for (const l of lanes.values()) if (!l.owns(ev.target)) l.close();
+  }, true);
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') for (const l of lanes.values()) l.close(true);
+  }, true);
+  // Each lane also watches itself; this covers the window and the fonts.
   window.addEventListener('resize', fitAll);
   document.fonts?.ready.then(fitAll);
   return { fit: fitAll };
 }
+
+function fitLane(lane) {
+  const row = lane.querySelector('.tbar-row');
+  const more = lane.querySelector('.tbar-more');
+  const panel = lane.querySelector('.tbar-overflow');
+  const vertical = lane.classList.contains('vzone');
+  const overflows = () => (vertical
+    ? row.scrollHeight > row.clientHeight
+    : row.scrollWidth > row.clientWidth);
+
+  const close = (focus = false) => {
+    if (panel.hidden) return;
+    panel.hidden = true;
+    more.setAttribute('aria-expanded', 'false');
+    if (focus) more.focus();
+  };
+  const open = () => {
+    panel.hidden = false;
+    more.setAttribute('aria-expanded', 'true');
+  };
+
+  // Moving a control out from under the person typing in it would drop its
+  // focus: wait until they leave the lane.
+  let pending = false;
+  const fit = () => {
+    if (!lane.isConnected) return;
+    if (lane.contains(document.activeElement) && document.activeElement !== more) { pending = true; return; }
+    pending = false;
+    // Everything back in the row, in order, then out again from the end
+    // while the row overflows.
+    row.append(...panel.children);
+    more.hidden = true;
+    if (!overflows()) { close(); return; }
+    more.hidden = false;
+    // Keep at least one shown bar in the lane.
+    const shown = () => [...row.children].filter((b) => !b.hidden).length;
+    while (shown() > 1 && overflows()) panel.prepend(row.lastElementChild);
+  };
+
+  more.addEventListener('click', (ev) => {
+    ev.stopPropagation(); // not a command for the toolbar's click handler
+    if (panel.hidden) open(); else close();
+  });
+  // A button in the panel does its work and closes it; lists and fields
+  // keep it open while they are used.
+  panel.addEventListener('click', (ev) => { if (ev.target.closest('button')) close(); });
+  lane.addEventListener('focusout', () => setTimeout(() => {
+    if (pending && !lane.contains(document.activeElement)) fit();
+  }, 0));
+
+  const ro = new ResizeObserver(fit);
+  ro.observe(lane);
+  return {
+    fit,
+    close,
+    owns: (target) => panel.contains(target) || more.contains(target),
+    stop: () => ro.disconnect(),
+  };
+}
+
+// ----- drop-down groups ------------------------------------------------------
 
 /**
  * A drop-down button for a large group (the dynamics): the button shows the
@@ -212,7 +362,7 @@ export function installBars(root, { onChange, onMove } = {}) {
  * item does what the item does (the toolbar's click handler sees the click)
  * and closes the group. The last choice is remembered.
  *
- * The group is placed with fixed coordinates, so the column's clipping
+ * The group is placed with fixed coordinates, so the lane's clipping
  * (overflow: hidden, for ») does not cut it.
  */
 function installDrop(drop, onChange) {
@@ -235,14 +385,14 @@ function installDrop(drop, onChange) {
   const open = () => {
     pop.hidden = false;
     face.setAttribute('aria-expanded', 'true');
-    // Towards the score: below a button in a row, left of one in the right
-    // column, right of one in the left column; kept inside the window.
+    // Towards the score: below a button in a row, left of one on the right
+    // side, right of one on the left side; kept inside the window.
     const r = face.getBoundingClientRect();
     const p = pop.getBoundingClientRect();
-    const zone = drop.closest('[data-zone]');
+    const side = drop.closest('.side')?.dataset.side;
     let x; let y;
-    if (!zone?.classList.contains('vzone')) { x = r.left; y = r.bottom + 4; }
-    else { x = zone.dataset.zone === 'right' ? r.left - p.width - 6 : r.right + 6; y = r.top; }
+    if (!isColumn(side)) { x = r.left; y = r.bottom + 4; }
+    else { x = side === 'right' ? r.left - p.width - 6 : r.right + 6; y = r.top; }
     x = Math.max(4, Math.min(x, window.innerWidth - p.width - 4));
     y = Math.max(4, Math.min(y, window.innerHeight - p.height - 4));
     pop.style.left = `${x}px`;
@@ -269,16 +419,15 @@ function installDrop(drop, onChange) {
   window.addEventListener('resize', close);
 }
 
+/** What an item of a drop-down stands for, to remember it. */
+const markValue = (b) => b.dataset.dyn ?? b.dataset.artic ?? b.dataset.cmd ?? b.textContent;
+
 // ----- moving bars -----------------------------------------------------------
 
-const zoneKind = (zone) => (zone.classList.contains('vzone') ? 'column' : 'row');
-/** Can `bar` go in `zone`? Bars with fields and lists fit rows only (data-fits). */
-const fits = (bar, zone) => !bar.dataset.fits || bar.dataset.fits === zoneKind(zone);
-
 /**
- * A grip (⋮⋮) at the start of a bar: drag it to another place in its zone,
- * or to another zone. While dragging, empty zones show up so a bar can go
- * back into them, and a line marks where it will land. Esc cancels.
+ * A grip (⋮⋮) at the start of a bar: drag it to another place in its lane,
+ * to another lane, or onto the thin strip at either end of a side, which
+ * opens a new lane there. A line marks where the bar will land. Esc cancels.
  */
 function installGrip(bar) {
   const grip = document.createElement('span');
@@ -296,26 +445,47 @@ function installGrip(bar) {
     document.body.append(mark);
     bar.classList.add('dragging');
     document.body.classList.add('moving-bar');
-    // Empty zones take part too: show them, with room to drop into.
-    const zones = [...rootEl.querySelectorAll('.toolbar[data-zone]')];
-    for (const z of zones) if (z.hidden) { z.hidden = false; z.classList.add('empty-zone'); }
-    let target = null; // { zone, before }: the bar to land in front of, or null for the end
+    // Lanes with every bar hidden take part too; and every side gets a strip
+    // at each end (only one when it has no lane), to open a new lane there.
+    const shownAgain = [...lanes.keys()].filter((l) => l.hidden);
+    for (const l of shownAgain) { l.hidden = false; l.classList.add('empty-zone'); }
+    const strips = [];
+    for (const side of SIDES) {
+      const box = sideEl(side);
+      if (!box) continue;
+      for (const at of laneEls(side).length ? ['start', 'end'] : ['end']) {
+        const strip = document.createElement('div');
+        strip.className = `new-lane${isColumn(side) ? ' vzone' : ''}`;
+        Object.assign(strip.dataset, { side, at });
+        if (at === 'start') box.prepend(strip); else box.append(strip);
+        strips.push(strip);
+      }
+    }
+    let target = null; // { side, lane, before } or { side, at } for a new lane
 
     const place = (x, y) => {
       target = null;
       mark.hidden = true;
-      const zone = document.elementFromPoint(x, y)?.closest('.toolbar[data-zone]');
-      document.body.classList.toggle('no-drop', !!zone && !fits(bar, zone));
-      if (!zone || !fits(bar, zone)) return;
-      const column = zoneKind(zone) === 'column';
-      const others = [...zone.querySelectorAll('.tbar-row > [data-bar-id]')].filter((b) => b !== bar && !b.hidden);
+      for (const s of strips) s.classList.remove('over');
+      const hit = document.elementFromPoint(x, y);
+      const strip = hit?.closest('.new-lane');
+      if (strip) {
+        strip.classList.add('over');
+        target = { side: strip.dataset.side, at: strip.dataset.at };
+        return;
+      }
+      const lane = hit?.closest('.side > .toolbar');
+      if (!lane || !lanes.has(lane)) return;
+      const side = lane.parentElement.dataset.side;
+      const column = isColumn(side);
+      const others = [...lane.querySelectorAll('.tbar-row > [data-bar-id]')].filter((b) => b !== bar && !b.hidden);
       const before = others.find((b) => {
         const r = b.getBoundingClientRect();
         return column ? y < r.top + r.height / 2 : x < r.left + r.width / 2;
       }) ?? null;
-      target = { zone, before };
+      target = { side, lane: laneEls(side).indexOf(lane), before };
       // The landing line: in front of `before`, or after the last bar.
-      const box = zone.querySelector('.tbar-row').getBoundingClientRect();
+      const box = lane.querySelector('.tbar-row').getBoundingClientRect();
       const last = others.at(-1)?.getBoundingClientRect();
       const ref = before?.getBoundingClientRect();
       const at = column
@@ -336,10 +506,13 @@ function installGrip(bar) {
       grip.removeEventListener('pointercancel', cancel);
       document.removeEventListener('keydown', key, true);
       mark.remove();
+      for (const s of strips) s.remove();
       bar.classList.remove('dragging');
-      document.body.classList.remove('moving-bar', 'no-drop');
-      for (const z of zones) z.classList.remove('empty-zone');
-      if (drop && target) moveBar(bar.dataset.barId, target.zone.dataset.zone, target.before?.dataset.barId ?? null);
+      document.body.classList.remove('moving-bar');
+      for (const l of shownAgain) l.classList.remove('empty-zone');
+      const id = bar.dataset.barId;
+      if (drop && target?.at) moveBarToNewLane(id, target.side, target.at);
+      else if (drop && target) moveBar(id, target.side, target.lane, target.before?.dataset.barId ?? null);
       else applyVisibility();
     }
     grip.addEventListener('pointermove', move);
@@ -349,76 +522,38 @@ function installGrip(bar) {
   });
 }
 
-/** Moves bar `id` into `zone`, in front of bar `before` (or last), and keeps it there. */
-export function moveBar(id, zone, before = null) {
-  for (const ids of Object.values(layout)) {
-    const i = ids.indexOf(id);
-    if (i >= 0) ids.splice(i, 1);
+/** Takes bar `id` out of wherever it is. */
+function takeOut(id) {
+  for (const side of SIDES) {
+    for (const lane of layout[side]) {
+      const i = lane.indexOf(id);
+      if (i >= 0) lane.splice(i, 1);
+    }
   }
-  const ids = layout[zone];
-  const at = before ? ids.indexOf(before) : -1;
-  if (at >= 0) ids.splice(at, 0, id); else ids.push(id);
+}
+
+/** Saves the layout after a move and puts it on screen; empty lanes go. */
+function afterMove(id) {
+  for (const side of SIDES) layout[side] = layout[side].filter((lane) => lane.length);
   save();
-  applyLayout(rootEl, layout);
+  applyLayout();
   refitBar(rootEl.querySelector(`[data-bar-id="${id}"]`));
   applyVisibility();
 }
 
-/** What an item of a drop-down stands for, to remember it. */
-const markValue = (b) => b.dataset.dyn ?? b.dataset.artic ?? b.dataset.cmd ?? b.textContent;
+/** Moves bar `id` into lane `lane` of `side`, in front of bar `before` (or last). */
+export function moveBar(id, side, lane, before = null) {
+  const target = layout[side][lane];
+  if (!target) return;
+  takeOut(id);
+  const at = before ? target.indexOf(before) : -1;
+  if (at >= 0) target.splice(at, 0, id); else target.push(id);
+  afterMove(id);
+}
 
-function fitRow(toolbar) {
-  const row = toolbar.querySelector('.tbar-row');
-  const more = toolbar.querySelector('.tbar-more');
-  const panel = toolbar.querySelector('.tbar-overflow');
-  const vertical = toolbar.classList.contains('vzone');
-  const overflows = () => (vertical
-    ? row.scrollHeight > row.clientHeight
-    : row.scrollWidth > row.clientWidth);
-
-  const close = () => {
-    panel.hidden = true;
-    more.setAttribute('aria-expanded', 'false');
-  };
-  const open = () => {
-    panel.hidden = false;
-    more.setAttribute('aria-expanded', 'true');
-  };
-
-  // Moving a control out from under the person typing in it would drop its
-  // focus: wait until they leave the row.
-  let pending = false;
-  const fit = () => {
-    if (toolbar.contains(document.activeElement) && document.activeElement !== more) { pending = true; return; }
-    pending = false;
-    // Everything back in the row, in order, then out again from the end
-    // while the row overflows.
-    row.append(...panel.children);
-    more.hidden = true;
-    if (!overflows()) { close(); return; }
-    more.hidden = false;
-    // Keep at least one shown bar in the zone.
-    const shown = () => [...row.children].filter((b) => !b.hidden).length;
-    while (shown() > 1 && overflows()) panel.prepend(row.lastElementChild);
-  };
-
-  more.addEventListener('click', (ev) => {
-    ev.stopPropagation(); // not a command for the toolbar's click handler
-    if (panel.hidden) open(); else close();
-  });
-  // A button in the panel does its work and closes it; lists and fields
-  // keep it open while they are used.
-  panel.addEventListener('click', (ev) => { if (ev.target.closest('button')) close(); });
-  document.addEventListener('pointerdown', (ev) => {
-    if (!panel.hidden && !panel.contains(ev.target) && !more.contains(ev.target)) close();
-  }, true);
-  document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && !panel.hidden) { close(); more.focus(); }
-  }, true);
-  toolbar.addEventListener('focusout', () => setTimeout(() => {
-    if (pending && !toolbar.contains(document.activeElement)) fit();
-  }, 0));
-
-  new ResizeObserver(fit).observe(toolbar);
-  return { fit };
+/** Moves bar `id` into a new lane at the start or the end of `side`. */
+export function moveBarToNewLane(id, side, at) {
+  takeOut(id);
+  if (at === 'start') layout[side].unshift([id]); else layout[side].push([id]);
+  afterMove(id);
 }

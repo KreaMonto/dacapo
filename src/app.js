@@ -1254,7 +1254,7 @@ let installedBars = null; // the toolbars, once laid out (installBars)
 
 /** Shows or hides the rarely used values (breve, 64th, 128th) in the palette. */
 function applyExtendedValues() {
-  $('entry').classList.toggle('extended-values', state.extendedValues);
+  document.body.classList.toggle('extended-values', state.extendedValues);
   for (const b of document.querySelectorAll('.figures .extended')) fitGlyph(b);
   installedBars?.fit();
 }
@@ -2718,7 +2718,8 @@ const onControlClick = (ev) => {
   // Back to the score, unless the button opened something to type in.
   if (!textEdit.key && !$('dialog').open) page.focus();
 };
-for (const bar of document.querySelectorAll('.toolbar')) bar.addEventListener('click', onControlClick);
+// One listener for every lane: lanes come and go as bars are moved.
+document.addEventListener('click', (ev) => { if (ev.target.closest('.toolbar')) onControlClick(ev); });
 
 // ----- menu bar --------------------------------------------------------------
 

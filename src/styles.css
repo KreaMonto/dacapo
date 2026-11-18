@@ -204,8 +204,21 @@ body.no-drop, body.no-drop * { cursor: not-allowed !important; }
 .vzone .voices { flex-direction: column; flex-wrap: nowrap; gap: 3px; }
 .vzone .voices button { width: 32px; min-width: 0; }
 /* The marks column, right of the score. */
-.toolbar.vzone[data-zone="right"] { border-right: none; border-left: 1px solid var(--chrome-border); }
-.vzone[data-zone="right"] .tbar-overflow { left: auto; right: calc(100% + 2px); }
+/* The sides of the score: rows on top, columns left and right, as many as
+   the bars need (toolbars.js). Columns on the right have their border on
+   the score's side. */
+.side[data-side="left"], .side[data-side="right"] { display: flex; min-height: 0; }
+.side[data-side="right"] > .toolbar.vzone { border-right: none; border-left: 1px solid var(--chrome-border); }
+.side[data-side="right"] .tbar-overflow { left: auto; right: calc(100% + 2px); }
+/* A bar with fields, in a column: each label over its field. */
+.vzone .tbar label { flex-direction: column; align-items: stretch; gap: 2px; font-size: 11px; }
+.vzone .tbar label.tempo { flex-direction: row; align-items: center; }
+.vzone .tbar select { max-width: 120px; }
+/* While a bar is dragged: a strip at each end of every side opens a new lane. */
+.new-lane { flex: none; border: 1px dashed var(--accent); border-radius: 4px; opacity: 0.6; }
+.side[data-side="top"] > .new-lane { height: 10px; margin: 2px 8px; }
+.new-lane.vzone { width: 10px; margin: 8px 2px; }
+.new-lane.over { opacity: 1; background: var(--accent); }
 .vzone .text-btn { width: auto; min-width: 32px; padding: 0 3px; font-size: 12.5px; }
 /* Drop-down group (the dynamics): the group opens beside the button. */
 .drop-btn { position: relative; }
@@ -302,8 +315,8 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 }
 /* Between the entry bars and the palette: tabs, recovery banner, then the
    page filling the rest. */
-#entry { grid-area: left; }
-#marks { grid-area: right; }
+.side[data-side="left"] { grid-area: left; }
+.side[data-side="right"] { grid-area: right; }
 .document {
   grid-area: doc;
   display: flex;

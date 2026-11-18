@@ -16,7 +16,8 @@ This step goes first, because every later item needs a place on screen. Agreed o
 
 - **Small, granular bars** rather than a few big ones, so each can sit where it is most convenient.
 - **No visible titles.** The name of a button's bar shows in its tooltip, small and grey in the top right corner (the tooltip of *Key* says *Measure*).
-- **Docking zones first:** bars can be dragged between the zones around the score (top, left, right, bottom) and reordered. A bar on the left or right turns vertical. Floating bars may come later, if they are needed.
+- **Docking zones, no floating bars** (decided 2026-11-18): bars are dragged between the sides of the score and reordered. A bar on the left or right turns vertical.
+- **Total freedom:** any bar can go on any side, and each side holds as many rows or columns as needed, created by dropping a bar beyond the last one and removed when they empty. Someone could put every bar on the right, in several columns side by side, without scrolling.
 - **Every bar is defined as data** (name, buttons, zone, order) from the first step, so moving bars and saving layouts later need no rework.
 - **Layouts:** Partita's own layouts (later one per mode: percussion, guitar, choir…) cannot be changed. People save their own from any of them, and **Reset** goes back to the built-in layout it came from.
 
@@ -47,7 +48,7 @@ The steps, one pull request each:
 - [x] **0.5 View → Toolbars.** Show or hide each bar, remembered; **Reset** brings back the default layout.
 - [x] **0.6 Moving bars.** Drag a bar by its handle (⋮⋮) to another zone or another place in its zone; remembered between sessions.
 - [x] **0.7 Layouts.** Built-in layouts and the user's own: **Save Layout As…**, choose one, **Reset** to its built-in layout. The base for the instrument modes.
-- [ ] *Later:* floating bars.
+- [x] **0.8 Dynamic lanes.** Every bar fits every side (the Measure and Playback bars too, stacked in a column). Each side has any number of rows (top) or columns (left, right): dropping a bar past the first or last one opens a new one, and an empty one disappears.
 
 ## 1. Common base
 
