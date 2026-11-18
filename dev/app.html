@@ -50,7 +50,7 @@
       const cell = (events) => ({ voices: [events, [], [], []] });
       const E = 'Eighth', S = 'Sixteenth', Q = 'Quarter', H = 'Half', W = 'Whole';
       const rh = [
-        [n('G4', E, { dynamic: 'mp' }), n('B4', E), n('D5', E), n('G5', E), n('F#5', Q, { articulations: ['tenuto'] }), n('E5', Q)],
+        [n('G4', E, { dynamic: 'mp' }), n('B4', E), n('D5', E), n('G5', E), n('F#5', Q, { articulations: ['tenuto'], texts: [{ kind: 'expression', text: 'dolce' }] }), n('E5', Q)],
         [n('D5', Q, { dots: 1 }), n('C5', E), n('B4', S), n('C5', S), n('D5', E), n('G4', Q)],
         [n('B4,D5,G5', H), r(Q), n('A4', E), n('B4', E)],
         [n('C5', E, { articulations: ['staccato'], dynamic: 'f' }), n('E5', E, { articulations: ['staccato'] }), n('A5', E, { articulations: ['staccato'] }), n('G5', E, { articulations: ['staccato'] }), n('F#5', S), n('E5', S), n('D5', S), n('C5', S), n('B4', Q, { articulations: ['accent'] })],
@@ -68,6 +68,9 @@
       view.name = 'Morning Song';
       view.score.metadata = { title: 'Morning Song', composer: 'Partita demo' };
       view.score.measures = rh.map(() => ({ time: { beats: 4, beat_type: 4 }, key: { fifths: 1 } }));
+      view.score.tempo = 76;
+      view.score.measures[0].tempo = { text: 'Andante con moto', bpm: null, beat: 'Quarter', show_text: true, show_metronome: true };
+      view.score.measures[3].rehearsal = 'A';
       view.score.staves[0].measures = rh.map(cell);
       view.score.staves[1].measures = lh.map(cell);
       view.score.slurs = [
@@ -293,7 +296,7 @@
     };
     // Fake sound engine: "downloads" in ~6 s, then plays silently on a
     // clock so the playhead and transport can be tried.
-    view.score.tempo = 100;
+    view.score.tempo ??= 100;
     const sound = { state: 'missing', t0: 0, playing: false, fromTick: 0, startedAt: 0 };
     const MEASURE = 3840;
     const audio = {
