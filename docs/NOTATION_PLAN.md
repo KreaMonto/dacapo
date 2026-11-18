@@ -99,6 +99,16 @@ Every mode needs these. The order inside each group is the planned order of work
 - [ ] **Reorder staves, and choose where a new one goes** *(new, to discuss)*: today a new staff is always added at the bottom. Moving staves up and down, and placing a new one, should be easy to guess and visual.
 - [ ] **Edit one staff or voice alone** *(new)*: as in Encore, take one instrument or voice out of a large score, work on it by itself, and have the result saved back in the full score. Especially useful for large choral scores.
 
+## Architecture check (after the common base, before the modes)
+
+Noted on 2026-11-18 while building the rhythm group. Partita is a functional core (`partita-core`: model, reversible ops, document commands, recovery journal) behind a thin Tauri adapter, with a frontend that only draws the state it receives. That works well, but three things grew while adding notation and are worth restructuring before the modes and the file exports pile more on top. Best done once 0.4 is out: the common base will have shown everything the model needs, and PDF export (section 3) needs the first point anyway.
+
+- [ ] **Layout rules live in JavaScript, and some are written twice.** The core knows the music; `render.js` decides how it is grouped and placed. Rules both need are duplicated: tuplet groups (`tuplet_groups` in Rust and `tupletGroups` in JS), the length of an event in ticks (in `render.js`, `app.js` and the dev backend), beam groups (JS only, so MusicXML cannot write beams). Every model change touches three or four places, and they can drift apart.
+  - First step: the core computes what the frontend needs (event start ticks, tuplet groups, beam groups, the clef in force) and sends it with the view, so the JS only draws.
+  - Later, if PDF export or automatic parts call for it: move the engraving itself (spacing, systems, pages) into the core.
+- [ ] **Every action returns the whole view.** Simple and robust, but a large score sends everything after each keystroke. Measure it with a big score (an orchestral one, a long choral one). If it is slow, send only what changed (measures, staves) or the visible pages.
+- [ ] **The dev backend (`dev/app.html`) is a third implementation.** It fakes the core for the browser preview and falls behind (it has no caret moves, a simpler clef change, its own tick counting). Options: run the real core in the browser (Rust to WebAssembly), or keep the fake minimal and test behaviour in the core's tests only.
+
 ## 2. Modes
 
 Two kinds of mode:
