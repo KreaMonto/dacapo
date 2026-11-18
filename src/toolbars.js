@@ -3,9 +3,9 @@
 // in, and in what order, is data (DEFAULT_LAYOUT), so later steps can move
 // bars and save layouts without touching the bars themselves.
 //
-// In a zone that is a row, the bars that do not fit the window move behind
-// a » button, in a panel that opens below it, instead of wrapping to a
-// second row. They are the same elements, moved, so their controls keep
+// The bars that do not fit their zone move behind a » button, in a panel
+// that opens beside it (below a row, to the right of a column), instead of
+// wrapping. They are the same elements, moved, so their controls keep
 // working.
 
 /** Partita's own layout: zone → bar ids, in order. */
@@ -13,6 +13,8 @@ export const DEFAULT_LAYOUT = {
   top1: ['file', 'edit', 'playback', 'view'],
   // Tools first, right above the palette: next to the score and the figures.
   top2: ['tools', 'measure', 'staves', 'indications'],
+  // A column left of the score: what you write with.
+  left: ['figures', 'accidentals', 'voice'],
 };
 
 /** Puts every bar named in `layout` into its zone, in order. */
@@ -28,9 +30,9 @@ export function applyLayout(root, layout = DEFAULT_LAYOUT) {
 }
 
 /**
- * Lays out the bars under `root` and keeps each row fitting its width.
- * Every `.toolbar` row has a `.tbar-row`, a `.tbar-more` button and a
- * `.tbar-overflow` panel.
+ * Lays out the bars under `root` and keeps each zone fitting its room: a
+ * row its width, a column (`.vzone`) its height. Every `.toolbar` zone has
+ * a `.tbar-row`, a `.tbar-more` button and a `.tbar-overflow` panel.
  */
 export function installBars(root) {
   applyLayout(root);
@@ -46,6 +48,10 @@ function fitRow(toolbar) {
   const row = toolbar.querySelector('.tbar-row');
   const more = toolbar.querySelector('.tbar-more');
   const panel = toolbar.querySelector('.tbar-overflow');
+  const vertical = toolbar.classList.contains('vzone');
+  const overflows = () => (vertical
+    ? row.scrollHeight > row.clientHeight
+    : row.scrollWidth > row.clientWidth);
 
   const close = () => {
     panel.hidden = true;
@@ -66,9 +72,9 @@ function fitRow(toolbar) {
     // while the row overflows.
     row.append(...panel.children);
     more.hidden = true;
-    if (row.scrollWidth <= row.clientWidth) { close(); return; }
+    if (!overflows()) { close(); return; }
     more.hidden = false;
-    while (row.children.length > 1 && row.scrollWidth > row.clientWidth) panel.prepend(row.lastElementChild);
+    while (row.children.length > 1 && overflows()) panel.prepend(row.lastElementChild);
   };
 
   more.addEventListener('click', (ev) => {

@@ -116,39 +116,58 @@
   </header>
 
   <div class="workspace">
-    <aside class="palette" id="palette" data-i18n-aria="palette.label">
-      <!-- Each category is collapsible; app.js remembers which are open.
-           Glyphs are SMuFL code points in Bravura. Marks apply to the note
-           before the caret, or to every note in the selection. -->
-      <details data-section="figures" open>
-        <summary data-i18n="palette.figures"></summary>
-        <div class="switch" role="radiogroup" data-i18n-aria="palette.kind">
-          <button data-kind="note" role="radio" data-i18n-tip="palette.notes" data-i18n-desc="palette.notes.desc" data-i18n="palette.notes"></button>
-          <button data-kind="rest" role="radio" data-i18n-tip="palette.rests" data-i18n-desc="palette.rests.desc" data-i18n="palette.rests"></button>
+    <!-- Left of the score: note entry, one column of bars (see toolbars.js). -->
+    <aside class="toolbar vzone" id="entry" role="toolbar" data-zone="left" data-i18n-aria="toolbar.label.entry">
+      <div class="tbar-row">
+        <div class="tbar" role="group" data-bar-id="figures" data-i18n-bar="bar.figures" data-i18n-aria="bar.figures">
+          <!-- Its glyph, tooltip and state follow state.kind (syncControls). -->
+          <button class="glyph kind-toggle" data-kind-toggle aria-pressed="false"></button>
+          <div class="figures" data-i18n-aria="palette.value">
+            <button data-dur="Breve" data-note="&#xE1D0;" data-rest="&#xE4E2;" data-key="8" class="glyph extended"></button>
+            <button data-dur="Whole" data-note="&#xE1D2;" data-rest="&#xE4E3;" data-key="7" class="glyph"></button>
+            <button data-dur="Half" data-note="&#xE1D3;" data-rest="&#xE4E4;" data-key="6" class="glyph"></button>
+            <button data-dur="Quarter" data-note="&#xE1D5;" data-rest="&#xE4E5;" data-key="5" class="glyph"></button>
+            <button data-dur="Eighth" data-note="&#xE1D7;" data-rest="&#xE4E6;" data-key="4" class="glyph"></button>
+            <button data-dur="Sixteenth" data-note="&#xE1D9;" data-rest="&#xE4E7;" data-key="3" class="glyph"></button>
+            <button data-dur="ThirtySecond" data-note="&#xE1DB;" data-rest="&#xE4E8;" data-key="2" class="glyph"></button>
+            <button data-dur="SixtyFourth" data-note="&#xE1DD;" data-rest="&#xE4E9;" data-key="1" class="glyph extended"></button>
+            <button data-dur="HundredTwentyEighth" data-note="&#xE1DF;" data-rest="&#xE4EA;" data-key="9" class="glyph extended"></button>
+          </div>
+          <button data-cmd="dot" class="glyph" data-i18n-tip="palette.dot" data-i18n-desc="palette.dot.desc" data-i18n-aria="palette.dot" data-key=".">&#xE1E7;</button>
         </div>
-        <div class="figures" data-i18n-aria="palette.value">
-          <button data-dur="Breve" data-note="&#xE1D0;" data-rest="&#xE4E2;" data-key="8" class="glyph extended"></button>
-          <button data-dur="Whole" data-note="&#xE1D2;" data-rest="&#xE4E3;" data-key="7" class="glyph"></button>
-          <button data-dur="Half" data-note="&#xE1D3;" data-rest="&#xE4E4;" data-key="6" class="glyph"></button>
-          <button data-dur="Quarter" data-note="&#xE1D5;" data-rest="&#xE4E5;" data-key="5" class="glyph"></button>
-          <button data-dur="Eighth" data-note="&#xE1D7;" data-rest="&#xE4E6;" data-key="4" class="glyph"></button>
-          <button data-dur="Sixteenth" data-note="&#xE1D9;" data-rest="&#xE4E7;" data-key="3" class="glyph"></button>
-          <button data-dur="ThirtySecond" data-note="&#xE1DB;" data-rest="&#xE4E8;" data-key="2" class="glyph"></button>
-          <button data-dur="SixtyFourth" data-note="&#xE1DD;" data-rest="&#xE4E9;" data-key="1" class="glyph extended"></button>
-          <button data-dur="HundredTwentyEighth" data-note="&#xE1DF;" data-rest="&#xE4EA;" data-key="9" class="glyph extended"></button>
-        </div>
-        <button data-cmd="dot" class="wide" data-i18n-tip="palette.dot" data-i18n-desc="palette.dot.desc" data-key="." data-i18n="palette.dot.button"></button>
-      </details>
-
-      <details data-section="accidentals" open>
-        <summary data-i18n="palette.accidentals"></summary>
-        <div class="row">
+        <div class="tbar" role="group" data-bar-id="accidentals" data-i18n-bar="bar.accidentals" data-i18n-aria="bar.accidentals">
           <button data-alter="1" class="glyph" data-i18n-aria="palette.sharp" data-i18n-tip="palette.sharp" data-i18n-desc="palette.sharp.desc" data-key="+">&#xE262;</button>
           <button data-alter="-1" class="glyph" data-i18n-aria="palette.flat" data-i18n-tip="palette.flat" data-i18n-desc="palette.flat.desc" data-key="-">&#xE260;</button>
           <button data-alter="0" class="glyph" data-i18n-aria="palette.natural" data-i18n-tip="palette.natural" data-i18n-desc="palette.natural.desc">&#xE261;</button>
         </div>
-      </details>
+        <div class="tbar" role="group" data-bar-id="voice" data-i18n-bar="bar.voice" data-i18n-aria="bar.voice">
+          <div class="voices" id="voices"></div>
+        </div>
+      </div>
+      <button class="ibtn tbar-more" hidden aria-haspopup="true" aria-expanded="false" data-i18n-tip="bar.more" data-i18n-desc="bar.more.desc" data-i18n-aria="bar.more"><svg class="icon"><use href="#i-more"/></svg></button>
+      <div class="tbar-overflow" hidden></div>
+    </aside>
 
+    <!-- The document area: tabs and the recovery banner sit above the page,
+         between the entry bars and the palette. -->
+    <div class="document">
+    <nav class="tabs" id="tabs" role="tablist" data-i18n-aria="tabs.label"></nav>
+
+    <div id="recovery" class="recovery" hidden></div>
+
+    <main id="page" class="page" tabindex="0" data-i18n-aria="score.label">
+      <div class="sheet">
+        <div id="score" class="score"></div>
+      </div>
+    </main>
+    </div>
+
+    <aside class="palette" id="palette" data-i18n-aria="palette.label">
+      <!-- Right of the score, for now: the marks that go on notes, until
+           they become the Marks bar (docs/NOTATION_PLAN.md, step 0.4).
+           Each category is collapsible; app.js remembers which are open.
+           Glyphs are SMuFL code points in Bravura. Marks apply to the note
+           before the caret, or to every note in the selection. -->
       <details data-section="lines" open>
         <summary data-i18n="palette.lines"></summary>
         <div class="row">
@@ -198,26 +217,7 @@
           <button data-cmd="note-text:technique" class="text-btn" data-i18n-tip="palette.technique" data-i18n-desc="palette.technique.desc" data-i18n-aria="palette.technique">pizz.</button>
         </div>
       </details>
-
-      <details data-section="voice" open>
-        <summary data-i18n="palette.voice"></summary>
-        <div class="voices" id="voices" data-i18n-aria="palette.voice"></div>
-      </details>
     </aside>
-
-    <!-- The document area: tabs and the recovery banner sit above the page,
-         to the right of the palette, which runs from the toolbar down. -->
-    <div class="document">
-    <nav class="tabs" id="tabs" role="tablist" data-i18n-aria="tabs.label"></nav>
-
-    <div id="recovery" class="recovery" hidden></div>
-
-    <main id="page" class="page" tabindex="0" data-i18n-aria="score.label">
-      <div class="sheet">
-        <div id="score" class="score"></div>
-      </div>
-    </main>
-    </div>
   </div>
 
   <footer class="status" id="status" aria-live="polite"></footer>
