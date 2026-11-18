@@ -16,8 +16,8 @@ use partita_core::document::StaffProps;
 use partita_core::document::{Clipboard, Document};
 use partita_core::file;
 use partita_core::model::{
-    Articulation, Clef, Duration, Dynamic, GroupKind, Issue, KeySignature, LyricJoin, Metadata,
-    NoteTextKind, Score, Step, TempoMark, TextBox, TextKind, TextStyle, TimeSignature,
+    Articulation, Barline, Clef, Duration, Dynamic, GroupKind, Issue, KeySignature, LyricJoin,
+    Metadata, NoteTextKind, Score, Step, TempoMark, TextBox, TextKind, TextStyle, TimeSignature,
     Transposition,
 };
 use partita_core::musicxml;
@@ -306,6 +306,12 @@ enum Action {
         measure: usize,
         text: Option<String>,
     },
+    /// The barline at the end of measures `first` to `last`.
+    SetBarline {
+        first: usize,
+        last: usize,
+        barline: Barline,
+    },
     /// A tempo marking at the start of a measure (`None` removes it).
     SetTempoMark {
         measure: usize,
@@ -550,6 +556,11 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::SetTextBox { text_box } => d.set_text_box(text_box, now),
             Action::RemoveTextBox { id } => d.remove_text_box(id, now),
             Action::SetRehearsal { measure, text } => d.set_rehearsal(measure, text, now),
+            Action::SetBarline {
+                first,
+                last,
+                barline,
+            } => d.set_barline(first, last, barline, now),
             Action::SetStaff {
                 staff,
                 props,

@@ -331,8 +331,21 @@ pub fn export(score: &Score) -> String {
                     );
                 }
             }
-            if m + 1 == staff.measures.len() {
-                x.push_str("      <barline location=\"right\"><bar-style>light-heavy</bar-style></barline>\n");
+            // The measure's barline; the last measure ends with a final one
+            // unless it says otherwise.
+            let last = m + 1 == staff.measures.len();
+            let style = match score.measures[m].barline {
+                Barline::Single if last => Some("light-heavy"),
+                Barline::Single => None,
+                Barline::Double => Some("light-light"),
+                Barline::Final => Some("light-heavy"),
+                Barline::Dashed => Some("dashed"),
+            };
+            if let Some(style) = style {
+                let _ = writeln!(
+                    x,
+                    "      <barline location=\"right\"><bar-style>{style}</bar-style></barline>"
+                );
             }
             x.push_str("    </measure>\n");
         }
@@ -853,6 +866,8 @@ struct Importer {
     tempo_marks: HashMap<usize, TempoMark>,
     /// Rehearsal marks by measure, from the first part.
     rehearsals: HashMap<usize, String>,
+    /// Barlines other than single at the end of measures, from the first part.
+    barlines: HashMap<usize, Barline>,
 }
 
 impl Importer {
@@ -1014,8 +1029,17 @@ impl Importer {
             attrs.push(MeasureAttrs {
                 tempo: self.tempo_marks.remove(&m),
                 rehearsal: self.rehearsals.remove(&m),
+                // A barline belongs to its measure: it is not carried on.
+                barline: self.barlines.remove(&m).unwrap_or_default(),
                 ..last.clone()
             });
+        }
+        // The last measure is drawn with a final barline anyway: one written
+        // there is the usual ending, not a choice to keep.
+        if let Some(end) = attrs.last_mut() {
+            if end.barline == Barline::Final {
+                end.barline = Barline::Single;
+            }
         }
         for staff in &mut self.score_staves {
             staff.measures.resize_with(count, StaffMeasure::default);
@@ -1218,6 +1242,26 @@ impl Importer {
                     }
                     "backup" => {
                         pos -= ticks_of(number_of(el, "duration").unwrap_or(0.0), divisions)
+                    }
+                    // The line closing the measure (on the right, which is
+                    // where a barline goes when it does not say).
+                    "barline"
+                        if first_part && el.attribute("location").unwrap_or("right") == "right" =>
+                    {
+                        let style = el
+                            .children()
+                            .find(|n| n.has_tag_name("bar-style"))
+                            .and_then(|n| n.text())
+                            .map(str::trim);
+                        let kind = match style {
+                            Some("light-light") => Some(Barline::Double),
+                            Some("light-heavy" | "heavy-heavy") => Some(Barline::Final),
+                            Some("dashed" | "dotted") => Some(Barline::Dashed),
+                            _ => None,
+                        };
+                        if let Some(kind) = kind {
+                            self.barlines.insert(m, kind);
+                        }
                     }
                     "forward" => {
                         pos += ticks_of(number_of(el, "duration").unwrap_or(0.0), divisions)
@@ -1743,6 +1787,27 @@ mod tests {
         );
         assert_eq!(m.copyright, "© 2026 Anon");
         assert!(m.footer.is_empty());
+    }
+
+    #[test]
+    fn barlines_round_trip() {
+        let mut score = sample();
+        score.measures[0].barline = Barline::Double;
+        let xml = export(&score);
+        assert!(xml.contains("<bar-style>light-light</bar-style>"));
+        // The last measure still ends with a final barline.
+        assert!(xml.contains("<bar-style>light-heavy</bar-style>"));
+        let back = import(&xml, "x").unwrap().score;
+        assert_eq!(back.measures[0].barline, Barline::Double);
+        assert_eq!(
+            back.measures[1].barline,
+            Barline::Single,
+            "the usual ending"
+        );
+
+        score.measures[0].barline = Barline::Dashed;
+        let back = import(&export(&score), "x").unwrap().score;
+        assert_eq!(back.measures[0].barline, Barline::Dashed);
     }
 
     #[test]

@@ -750,6 +750,28 @@ function setDuration(base, enterMode = false) {
   else render();
 }
 
+/**
+ * The barline closing the caret's measure, or every measure the selection
+ * covers (a selection ending at a measure's start leaves that one out).
+ */
+function setBarline(barline) {
+  const doc = active();
+  if (!doc) return;
+  const sel = doc.selection;
+  let first = doc.caret.measure;
+  let last = first;
+  if (sel) {
+    first = sel.start.measure;
+    last = sel.end.tick === 0 && sel.end.measure > first ? sel.end.measure - 1 : sel.end.measure;
+  }
+  last = Math.min(last, doc.score.measures.length - 1);
+  act({ type: 'set_barline', first, last, barline });
+}
+const barlineAt = () => {
+  const doc = active();
+  return doc?.score.measures[doc.caret.measure]?.barline ?? 'single';
+};
+
 function setVoice(voice) {
   const doc = active();
   if (!doc) return;
@@ -2714,6 +2736,7 @@ const onControlClick = (ev) => {
   }
   else if (b.dataset.voice) setVoice(Number(b.dataset.voice));
   else if (b.dataset.alter || b.dataset.artic || b.dataset.dyn) useMark(b);
+  else if (b.dataset.barline) setBarline(b.dataset.barline);
   else runCommand(b.dataset.cmd);
   // Back to the score, unless the button opened something to type in.
   if (!textEdit.key && !$('dialog').open) page.focus();
@@ -2736,6 +2759,9 @@ for (const a of ARTICULATIONS) commands[`artic:${a}`] = () => act({ type: 'toggl
 for (const d of DYNAMICS) commands[`dyn:${d}`] = () => act({ type: 'set_dynamic', dynamic: d });
 commands['page-texts'] = () => pageTextsDialog();
 commands['tempo-mark'] = () => { const doc = active(); if (doc) tempoDialog(doc.caret.measure); };
+const BARLINES = ['single', 'double', 'final', 'dashed'];
+for (const k of BARLINES) commands[`barline:${k}`] = () => setBarline(k);
+
 // View → Toolbars: show or hide each bar; Reset brings back Partita's layout.
 for (const { ids } of barZones()) for (const id of ids) commands[`toolbar:${id}`] = () => setBarShown(id, !isBarShown(id));
 commands['toolbars-reset'] = () => resetBars();
@@ -2877,6 +2903,9 @@ const MENUS = [
     { label: t('menu.score.measure'), enabled: hasDoc, items: [
       { label: t('menu.score.measure.add'), cmd: 'add-measure', key: 'Ctrl+Enter', desc: t('toolbar.addmeasure.desc') },
       { label: t('menu.score.measure.remove'), cmd: 'remove-measure', desc: t('toolbar.removemeasure.desc') },
+      { sep: true },
+      { label: t('menu.score.measure.barline'), value: () => t(`barline.${barlineAt()}.short`), items: BARLINES.map((k) =>
+        ({ ...choice(`barline.${k}`, `barline:${k}`, () => barlineAt() === k), desc: t(`barline.${k}.desc`) })) },
     ] },
     { label: t('menu.score.staff'), enabled: hasDoc, items: [
       { label: t('menu.score.staff.add'), cmd: 'add-staff', desc: t('toolbar.addstaff.desc') },

@@ -366,7 +366,8 @@ thread_local! {
 /// instruments, no page texts), 4 (Da Capo 0.2.2: no staff instruments, no
 /// page texts), 5 (Partita 0.3.0: no page texts), or 6 to 8 (development
 /// builds before 0.4.0: no tempo markings in 6; no note texts or rehearsal
-/// marks in 6 and 7; no text styles or text boxes in any of them).
+/// marks in 6 and 7; no text styles or text boxes in 6 to 8; no barline
+/// types in any of them).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
@@ -540,11 +541,27 @@ pub struct KeySignature {
     pub fifths: i8,
 }
 
+/// The barline at the end of a measure.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Barline {
+    /// One thin line. The last measure of a score is drawn with a final
+    /// barline anyway.
+    #[default]
+    Single,
+    /// Two thin lines: the end of a section.
+    Double,
+    /// A thin and a thick line: the end of the piece (or of a movement).
+    Final,
+    /// A dashed line: a subdivision inside a long measure, or a phrase.
+    Dashed,
+}
+
 /// Attributes shared by every staff in one measure column.
 ///
 /// `time` and `key` are in force in the measure (repeated in every measure
 /// until they change); `tempo` is a marking printed at the start of this
-/// measure only.
+/// measure only, `barline` the line that closes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct MeasureAttrs {
     pub time: TimeSignature,
@@ -554,6 +571,9 @@ pub struct MeasureAttrs {
     /// A rehearsal mark at the start of this measure ("A", "12"), printed
     /// in a box. Since file format 7 (recovery format 8).
     pub rehearsal: Option<String>,
+    /// The barline at the end of this measure. Since file format 7
+    /// (recovery format 10).
+    pub barline: Barline,
 }
 
 impl Default for MeasureAttrs {
@@ -563,6 +583,7 @@ impl Default for MeasureAttrs {
             key: KeySignature::default(),
             tempo: None,
             rehearsal: None,
+            barline: Barline::Single,
         }
     }
 }
@@ -574,6 +595,17 @@ struct MeasureAttrsFields {
     #[serde(default)]
     tempo: Option<TempoMark>,
     #[serde(default)]
+    rehearsal: Option<String>,
+    #[serde(default)]
+    barline: Barline,
+}
+
+/// [`MeasureAttrs`] as written to recovery formats 8 and 9 (before barlines).
+#[derive(Deserialize)]
+struct MeasureAttrsPreBarline {
+    time: TimeSignature,
+    key: KeySignature,
+    tempo: Option<TempoMark>,
     rehearsal: Option<String>,
 }
 
@@ -602,6 +634,7 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
                 key: a.key,
                 tempo: None,
                 rehearsal: None,
+                barline: Barline::Single,
             });
         }
         if legacy_format() == 7 {
@@ -611,6 +644,17 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
                 key: a.key,
                 tempo: a.tempo,
                 rehearsal: None,
+                barline: Barline::Single,
+            });
+        }
+        if matches!(legacy_format(), 8 | 9) {
+            let a = MeasureAttrsPreBarline::deserialize(deserializer)?;
+            return Ok(MeasureAttrs {
+                time: a.time,
+                key: a.key,
+                tempo: a.tempo,
+                rehearsal: a.rehearsal,
+                barline: Barline::Single,
             });
         }
         let a = MeasureAttrsFields::deserialize(deserializer)?;
@@ -619,6 +663,7 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
             key: a.key,
             tempo: a.tempo,
             rehearsal: a.rehearsal,
+            barline: a.barline,
         })
     }
 }
@@ -1254,12 +1299,16 @@ impl Score {
     }
 
     /// Whether the score has tempo markings, rehearsal marks, texts on
-    /// notes, text styles or text boxes (which need file format 7).
+    /// notes, text styles, text boxes or barlines other than single (which
+    /// need file format 7).
     pub fn has_markings(&self) -> bool {
         self.has_tempo_marks()
             || !self.text_styles.is_empty()
             || !self.text_boxes.is_empty()
-            || self.measures.iter().any(|a| a.rehearsal.is_some())
+            || self
+                .measures
+                .iter()
+                .any(|a| a.rehearsal.is_some() || a.barline != Barline::Single)
             || self
                 .staves
                 .iter()

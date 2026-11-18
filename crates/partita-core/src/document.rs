@@ -15,10 +15,10 @@ use thiserror::Error;
 use crate::cursor::{self, Caret, Move, SelectionRange};
 use crate::history::{History, Transaction, TxKind};
 use crate::model::{
-    is_measure_rest, Articulation, Clef, Duration, Dynamic, Event, EventId, EventKind, GroupKind,
-    KeySignature, LyricJoin, MeasureAttrs, Metadata, NoteText, NoteTextKind, Pitch, Score, Slur,
-    StaffGroup, Step, Syllable, TempoMark, TextBox, TextKind, TextStyle, TimeSignature,
-    Transposition, MAX_NOTE_TEXT_CHARS, MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS,
+    is_measure_rest, Articulation, Barline, Clef, Duration, Dynamic, Event, EventId, EventKind,
+    GroupKind, KeySignature, LyricJoin, MeasureAttrs, Metadata, NoteText, NoteTextKind, Pitch,
+    Score, Slur, StaffGroup, Step, Syllable, TempoMark, TextBox, TextKind, TextStyle,
+    TimeSignature, Transposition, MAX_NOTE_TEXT_CHARS, MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS,
     MAX_TEXT_BOX_CHARS, MAX_VERSES, TEXT_SIZE_RANGE,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
@@ -1380,6 +1380,35 @@ impl Document {
         self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
     }
 
+    /// The barline at the end of measures `first` to `last` (one undo step).
+    pub fn set_barline(
+        &mut self,
+        first: usize,
+        last: usize,
+        barline: Barline,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let (lo, hi) = (first.min(last), first.max(last));
+        if hi >= self.score.measures.len() {
+            return Err(crate::ops::OpError::MeasureIndex(hi).into());
+        }
+        let ops: Vec<Op> = (lo..=hi)
+            .filter(|&m| self.score.measures[m].barline != barline)
+            .map(|m| Op::SetMeasureAttrs {
+                index: m,
+                attrs: MeasureAttrs {
+                    barline,
+                    ..self.score.measures[m].clone()
+                },
+            })
+            .collect();
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
+    }
+
     // ----- clipboard -----------------------------------------------------
 
     pub fn copy(&self) -> Option<Clipboard> {
@@ -1466,10 +1495,11 @@ impl Document {
     pub fn insert_measure(&mut self, index: usize, now_ms: u64) -> Result<(), EditError> {
         let index = index.min(self.score.measures.len());
         // The time and key in force, without the tempo and rehearsal marks
-        // (which belong to their own measure).
+        // and the barline (which belong to their own measure).
         let attrs = MeasureAttrs {
             tempo: None,
             rehearsal: None,
+            barline: Barline::Single,
             ..self.score.measures[index.saturating_sub(1).min(self.score.measures.len() - 1)]
                 .clone()
         };
@@ -1941,6 +1971,33 @@ mod tests {
         doc.undo().unwrap();
         assert_eq!(doc.score.text_boxes.len(), 1);
         assert!(doc.score.has_markings());
+    }
+
+    #[test]
+    fn barlines_change_in_one_step_and_stay_with_their_measure() {
+        let mut doc = Document::new(Score::new("Etude", 4));
+        doc.set_barline(2, 1, Barline::Double, 1_000).unwrap();
+        assert_eq!(doc.score.measures[1].barline, Barline::Double);
+        assert_eq!(doc.score.measures[2].barline, Barline::Double);
+        assert_eq!(doc.score.measures[0].barline, Barline::Single);
+        doc.undo().unwrap();
+        assert!(
+            doc.score
+                .measures
+                .iter()
+                .all(|a| a.barline == Barline::Single),
+            "one undo step"
+        );
+        doc.redo().unwrap();
+        // A measure inserted after a double barline gets a single one.
+        doc.insert_measure(2, 2_000).unwrap();
+        assert_eq!(doc.score.measures[2].barline, Barline::Single);
+        assert_eq!(doc.score.measures[1].barline, Barline::Double);
+        // Setting what is already there is no step at all.
+        let before = doc.can_undo();
+        doc.set_barline(1, 1, Barline::Double, 3_000).unwrap();
+        assert_eq!(doc.can_undo(), before);
+        assert!(doc.set_barline(0, 99, Barline::Final, 4_000).is_err());
     }
 
     #[test]

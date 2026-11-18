@@ -522,6 +522,7 @@ mod tests {
                         ..Default::default()
                     }),
                     rehearsal: Some("C".into()),
+                    barline: crate::model::Barline::Double,
                 },
             },
             Op::SetTextStyle {

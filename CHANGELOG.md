@@ -5,6 +5,7 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 ## [Unreleased]
 
 ### Added
+- **Barline types**: the line closing a measure can be single, double (the end of a section), final or dashed. The **Measure** bar has a button for it (it shows the last kind chosen), and so does **Score → Measure → Barline**; it changes the caret's measure or every measure in the selection, in one undo step. Multi-measure rests stop at them, and MusicXML import and export keep them. Recovery data is now format 10; unsaved work from earlier builds is still recovered.
 - **Text boxes**: the **T** tool writes anywhere on a page; a box stays where it is put, whatever the music does. Drag it to move it, click it to change it; several lines, alignment and an optional frame.
 - **Text styles**: every kind of text (title, tempo markings, expressions, lyrics, staff names, header, page numbers…) has its font, size, bold and italic. A format bar appears above any text being typed, and **Score → Text Styles…** shows them all. Sizes are in points; spacing follows them.
 - **Words in the music**: expressions under the staff (*dolce*, *espressivo*; **Ctrl+E**) and techniques over it (*pizz.*, *arco*), attached to a note so they move, copy and delete with it; and boxed **rehearsal marks** (A, B, C… in order). They are in the palette and the toolbar with the tempo marking; click any of them in the score to change it. MusicXML keeps them.

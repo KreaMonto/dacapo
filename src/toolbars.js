@@ -371,8 +371,9 @@ function installDrop(drop, onChange) {
   const key = `partita.drop.${drop.dataset.drop}`;
   const show = (item) => {
     if (!item) return;
-    face.textContent = item.textContent;
-    onChange?.(face);
+    // A glyph (the dynamics) or an icon (the barlines).
+    face.innerHTML = item.innerHTML;
+    if (face.classList.contains('glyph')) onChange?.(face);
   };
   let saved = null;
   try { saved = localStorage.getItem(key); } catch { /* no storage: the default stays */ }
@@ -420,7 +421,7 @@ function installDrop(drop, onChange) {
 }
 
 /** What an item of a drop-down stands for, to remember it. */
-const markValue = (b) => b.dataset.dyn ?? b.dataset.artic ?? b.dataset.cmd ?? b.textContent;
+const markValue = (b) => b.dataset.dyn ?? b.dataset.artic ?? b.dataset.barline ?? b.dataset.cmd ?? b.textContent;
 
 // ----- moving bars -----------------------------------------------------------
 

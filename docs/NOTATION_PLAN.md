@@ -56,7 +56,7 @@ Every mode needs these. The order inside each group is the planned order of work
 
 ### Structure
 
-- [ ] Barline types: double, final, dashed *(new)*.
+- [x] Barline types: double, final, dashed *(new)*.
 - [ ] Repeat barlines, and playback that repeats *(new)*.
 - [ ] First and second endings (volta brackets) *(new)*.
 - [ ] D.C., D.S., Coda, Segno and *Fine*, and playback that follows them *(new)*.

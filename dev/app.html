@@ -223,6 +223,13 @@
           e.texts.sort((a, b) => a.kind.localeCompare(b.kind));
         }
       },
+      // As Document::set_barline: one undo step for the measures first..last.
+      set_barline({ first, last, barline }) {
+        snapshot();
+        for (let m = Math.min(first, last); m <= Math.max(first, last); m++) {
+          view.score.measures[m] = { ...view.score.measures[m], barline };
+        }
+      },
       set_rehearsal({ measure, text }) {
         snapshot();
         view.score.measures[measure] = { ...view.score.measures[measure], rehearsal: text?.trim() || null };

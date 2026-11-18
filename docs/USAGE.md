@@ -280,6 +280,7 @@ The toolbar is two rows of thin bars. Rest the pointer on a button to see what i
 - **Clef**: clef of the staff containing the caret.
 - **Key** and **Time**: apply from the caret's measure until the next change. For Time, type something like `3/4` and press Enter.
 - **+ Measure / − Measure**: insert after, or delete, the current measure.
+- **Barline**: the line that closes the caret's measure, or every measure in the selection: **single**, **double** (the end of a section), **final** (the end of the piece or a movement) or **dashed** (a subdivision of a long measure). The button shows the last kind you chose; click it to choose. **Score → Measure → Barline** does the same and shows the kind of the caret's measure. The last measure of a score ends with a final barline anyway. A multi-measure rest stops at a barline that is not single. MusicXML keeps barlines.
 - **+ Staff / − Staff**: add a staff at the bottom, or delete the current staff.
 - **Bracket / Brace / Ungroup**: group the staves of the selection (see [Staves and instruments](#staves-and-instruments)).
 

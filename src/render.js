@@ -429,6 +429,7 @@ export function layout(view, width, opts = {}) {
       tempo: attrs.tempo || null,
       tempoShown: tempoShown(attrs.tempo, m, score),
       rehearsal: attrs.rehearsal || null,
+      barline: attrs.barline || 'single', // the line closing the measure
       overfull,
       content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP, Math.min(lyricW, 80 * SP) + 2.6 * SP),
       timeChange: !prev || prev.time.beats !== attrs.time.beats || prev.time.beat_type !== attrs.time.beat_type,
@@ -437,16 +438,17 @@ export function layout(view, width, opts = {}) {
   });
 
   // Multi-measure rests: a run of 2+ rest-only measures with no time or
-  // key change inside becomes a single wide entry.
+  // key change inside becomes a single wide entry. A barline other than a
+  // single one ends the run: the sections stay apart.
   const measures = [];
   for (let i = 0; i < single.length; i++) {
     let j = i;
     if (opts.multiRest && single[i].restOnly) {
       // A tempo marking (even a hidden one) starts a new run: it may change the tempo.
-      while (j + 1 < single.length && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo && !single[j + 1].rehearsal) j++;
+      while (j + 1 < single.length && single[j].barline === 'single' && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo && !single[j + 1].rehearsal) j++;
     }
     if (j > i) {
-      measures.push({ ...single[i], mEnd: single[j].m, multi: j - i + 1, content: 13 * SP });
+      measures.push({ ...single[i], mEnd: single[j].m, multi: j - i + 1, barline: single[j].barline, content: 13 * SP });
     } else {
       measures.push(single[i]);
     }
@@ -935,11 +937,19 @@ export function renderScore(view, width, opts = {}) {
       const bx = ms.x + ms.w;
       const joined = lay.groups.some((g) => st >= g.first && st < g.last);
       const barBottom = joined ? lay.staffTop(ms, st + 1) : top + 4 * SP;
-      if (lastMeasure) {
-        push(`<line class="bar" x1="${bx - 6}" x2="${bx - 6}" y1="${top}" y2="${barBottom}"/>`);
+      // Its kind: a single barline at the very end is drawn as a final one.
+      const kind = ms.barline === 'single' && lastMeasure ? 'final' : ms.barline;
+      const thin = (x, cls = 'bar') => push(`<line class="${cls}" x1="${x}" x2="${x}" y1="${top}" y2="${barBottom}"/>`);
+      if (kind === 'final') {
+        thin(bx - 6);
         push(`<rect class="barthick" x="${bx - 3.5}" y="${top}" width="3.5" height="${barBottom - top}"/>`);
+      } else if (kind === 'double') {
+        thin(bx - 5);
+        thin(bx);
+      } else if (kind === 'dashed') {
+        thin(bx, 'bar dashed');
       } else {
-        push(`<line class="bar" x1="${bx}" x2="${bx}" y1="${top}" y2="${barBottom}"/>`);
+        thin(bx);
       }
 
       // Multi-measure rest: thick bar on the middle line, count above.
