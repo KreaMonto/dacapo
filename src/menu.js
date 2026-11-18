@@ -9,7 +9,8 @@
 //   ]}]
 //
 // `checked`, `enabled` and `value` are functions, evaluated every time a
-// menu opens. An item with `items` opens a submenu; its `value` (the current
+// menu opens. An item with `items` (an array, or a function returning one
+// when the submenu opens) opens a submenu; its `value` (the current
 // choice, e.g. the theme) shows on the right, where shortcuts go. `desc`
 // becomes a tooltip; a label too long for the menu is cut with "…" and shown
 // whole in a tooltip too, so every item stays on one line.
@@ -97,6 +98,8 @@ export function installMenuBar(bar, menus, run, onClose) {
     const level = levelOf(button);
     const it = itemOf(button);
     if (!it?.items || button.disabled) return;
+    // `items` may be a function, for lists that change (saved layouts).
+    const list = typeof it.items === 'function' ? it.items() : it.items;
     if (levels[level + 1]?.parent === button) {
       if (focusFirst) enabledItems(levels[level + 1].pop)[0]?.focus();
       return;
@@ -106,9 +109,9 @@ export function installMenuBar(bar, menus, run, onClose) {
     pop.className = 'menu-pop sub';
     pop.setAttribute('role', 'menu');
     pop.dataset.level = String(level + 1);
-    pop.innerHTML = render(it.items);
+    pop.innerHTML = render(list);
     bar.querySelector('.menu-top.open').parentElement.append(pop);
-    levels.push({ pop, list: it.items, parent: button });
+    levels.push({ pop, list, parent: button });
     button.setAttribute('aria-expanded', 'true');
     button.classList.add('sub-open');
     const r = button.getBoundingClientRect();
@@ -124,7 +127,7 @@ export function installMenuBar(bar, menus, run, onClose) {
     let top = r.top - 5; // the list's first item lines up with the parent item
     if (top + box.height > window.innerHeight - 4) top = Math.max(4, window.innerHeight - box.height - 4);
     Object.assign(pop.style, { left: `${left}px`, top: `${top}px` });
-    tipTruncated(pop, it.items);
+    tipTruncated(pop, list);
     if (focusFirst) enabledItems(pop)[0]?.focus();
   }
 
