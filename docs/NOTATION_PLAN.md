@@ -184,6 +184,13 @@ The foundation is a **staff type** in the model: normal, percussion or tablature
 - [ ] Recent files and the `.partita` file association.
 - [ ] MusicXML for every new item above.
 
+## 4. Look and feel *(new)*
+
+Partita should look like the professional app it is from the first moment. To discuss and design with the user first.
+
+- [ ] **A beautiful installer.** The Windows installers (NSIS and MSI) with their own images: the header and the side panel in Partita's look (the gold P on dark walnut, the manuscript feel of the website), and the same care for the macOS disk image (a background with the app and an arrow to Applications).
+- [ ] **A splash screen** while Partita starts: a window about a fifth of the screen, in the middle, with the logo and the name in large, elegant type, the version, and a quiet note of what is loading (the sound bank, the documents recovered). It closes as soon as the main window is ready, and never makes startup slower.
+
 ## Further ahead
 
 - Version history (see [ROADMAP.md](ROADMAP.md)).
