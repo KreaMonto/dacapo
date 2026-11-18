@@ -105,17 +105,44 @@ body > .workspace { flex: 1 1 auto; }
 
 .glyph { font-family: Bravura, "Segoe UI Symbol", serif; }
 
-/* Toolbar */
+/* Toolbar: thin bars in one row. Bars that do not fit go behind » (see
+   toolbars.js) instead of wrapping to a second row. */
 .toolbar {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  padding: 8px 12px;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
   background: var(--chrome);
   border-bottom: 1px solid var(--chrome-border);
 }
-.group { display: flex; align-items: center; gap: 4px; }
-.group label { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+.tbar-row { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.tbar { display: flex; align-items: center; gap: 3px; flex: none; padding: 0 8px; }
+.tbar-row > .tbar:first-child { padding-left: 0; }
+.tbar-row > .tbar + .tbar { border-left: 1px solid var(--chrome-border); }
+.tbar label { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+.toolbar button, .toolbar select, .toolbar input { min-height: 26px; padding: 2px 7px; }
+.toolbar .ibtn { width: 28px; padding: 0; }
+.toolbar .icon { width: 16px; height: 16px; }
+.tbar-more { flex: none; }
+.tbar-more[hidden] { display: none; }
+.tbar-overflow {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 2px);
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 4px;
+  background: var(--chrome);
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+.tbar-overflow[hidden] { display: none; }
+.tbar-overflow > .tbar + .tbar { border-top: 1px solid var(--chrome-border); padding-top: 6px; }
 button, select, input {
   font: inherit;
   color: var(--text);
@@ -163,7 +190,11 @@ button.on { background: var(--button-active); border-color: var(--accent); color
   pointer-events: none;
 }
 .tooltip[hidden] { display: none; }
-.tt-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tt-head { display: flex; align-items: center; gap: 12px; }
+.tt-head kbd { margin-left: auto; }
+/* The bar's name: small and grey in the top right corner. */
+.tt-bar { margin-left: auto; align-self: flex-start; font-size: 10px; opacity: 0.55; }
+.tt-head kbd + .tt-bar { margin-left: 0; }
 .tt-desc { margin-top: 3px; opacity: 0.75; }
 .tooltip kbd {
   font: 600 11px "Segoe UI", system-ui, sans-serif;

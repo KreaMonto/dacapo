@@ -7,6 +7,7 @@ import {
   currentStyle, cssFont, resolveStyle, TEXT_KINDS, TEXT_DEFAULTS, UNITS_PER_PT, UNITS_PER_TENTH_MM,
 } from './render.js';
 import { installTooltips } from './tooltip.js';
+import { installBars } from './toolbars.js';
 import { installMenuBar } from './menu.js';
 import {
   t, tn, has, keyLabel, applyTranslations, LANGUAGES, LANGUAGE_NAMES, languageChoice,
@@ -2826,6 +2827,7 @@ applyTheme();
 applyExtendedValues();
 
 installTooltips();
+installBars(document.querySelector('.toolbar'));
 
 // Palette sections: remember which ones the user keeps open.
 for (const d of document.querySelectorAll('.palette details')) {

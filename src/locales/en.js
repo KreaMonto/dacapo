@@ -300,6 +300,14 @@ export default {
 
   // ----- toolbar --------------------------------------------------------------
   'toolbar.label': 'Main toolbar',
+  'bar.file': 'File',
+  'bar.edit': 'Edit',
+  'bar.playback': 'Playback',
+  'bar.measure': 'Measure',
+  'bar.staves': 'Staves',
+  'bar.view': 'View',
+  'bar.more': 'More tools',
+  'bar.more.desc': 'The tools that do not fit the window.',
   'toolbar.new': 'New score',
   'toolbar.new.desc': 'Open an empty score in a new tab.',
   'toolbar.open': 'Open',
@@ -310,7 +318,6 @@ export default {
   'toolbar.undo': 'Undo',
   'toolbar.undo.desc': 'A burst of typing is undone in one step, as in a word processor.',
   'toolbar.redo': 'Redo',
-  'toolbar.playback': 'Playback',
   'toolbar.playstart': 'Play from the beginning',
   'toolbar.play': 'Play',
   'toolbar.pause': 'Pause',

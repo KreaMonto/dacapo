@@ -1,6 +1,6 @@
 # Partita Roadmap
 
-This document tracks the development goals and major stages toward a complete open source notation editor.
+This document tracks the development goals and major stages toward a complete open source notation editor. The detailed list of missing notation, the order of work and the editing modes are in [NOTATION_PLAN.md](NOTATION_PLAN.md).
 
 ## Phase 1: Foundation and MVP *(in progress)*
 
