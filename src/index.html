@@ -120,19 +120,9 @@
     <aside class="toolbar vzone" id="entry" role="toolbar" data-zone="left" data-i18n-aria="toolbar.label.entry">
       <div class="tbar-row">
         <div class="tbar" role="group" data-bar-id="figures" data-i18n-bar="bar.figures" data-i18n-aria="bar.figures">
-          <!-- Its glyph, tooltip and state follow state.kind (syncControls). -->
-          <button class="glyph kind-toggle" data-kind-toggle aria-pressed="false"></button>
-          <div class="figures" data-i18n-aria="palette.value">
-            <button data-dur="Breve" data-note="&#xE1D0;" data-rest="&#xE4E2;" data-key="8" class="glyph extended"></button>
-            <button data-dur="Whole" data-note="&#xE1D2;" data-rest="&#xE4E3;" data-key="7" class="glyph"></button>
-            <button data-dur="Half" data-note="&#xE1D3;" data-rest="&#xE4E4;" data-key="6" class="glyph"></button>
-            <button data-dur="Quarter" data-note="&#xE1D5;" data-rest="&#xE4E5;" data-key="5" class="glyph"></button>
-            <button data-dur="Eighth" data-note="&#xE1D7;" data-rest="&#xE4E6;" data-key="4" class="glyph"></button>
-            <button data-dur="Sixteenth" data-note="&#xE1D9;" data-rest="&#xE4E7;" data-key="3" class="glyph"></button>
-            <button data-dur="ThirtySecond" data-note="&#xE1DB;" data-rest="&#xE4E8;" data-key="2" class="glyph"></button>
-            <button data-dur="SixtyFourth" data-note="&#xE1DD;" data-rest="&#xE4E9;" data-key="1" class="glyph extended"></button>
-            <button data-dur="HundredTwentyEighth" data-note="&#xE1DF;" data-rest="&#xE4EA;" data-key="9" class="glyph extended"></button>
-          </div>
+          <!-- Two columns, notes and rests, each figure beside its rest; app.js
+               fills them (FIGURES). -->
+          <div class="figures" data-i18n-aria="palette.value"></div>
           <button data-cmd="dot" class="glyph" data-i18n-tip="palette.dot" data-i18n-desc="palette.dot.desc" data-i18n-aria="palette.dot" data-key=".">&#xE1E7;</button>
         </div>
         <div class="tbar" role="group" data-bar-id="accidentals" data-i18n-bar="bar.accidentals" data-i18n-aria="bar.accidentals">

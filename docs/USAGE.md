@@ -114,7 +114,7 @@ The headings of page 1 also show above the music in the other views. MusicXML ke
 
 This works like the note palette in Encore. The **entry bars** on the left of the score hold what you write with.
 
-1. Click a figure in the **Figures** bar. The pointer turns into that figure.
+1. Click a figure (or a rest, in the column beside it) in the **Figures** bar. The pointer turns into that figure.
 2. Move over a staff. The figure snaps to the nearest line or space and shows the pitch name (for example `F♯4`). A dashed line marks where it will be inserted.
 3. Click to place it. Notes you place one after another undo together with a single Ctrl+Z.
 4. Click **on an existing note** (the label shows `+`) to add the pitch to its chord. Clicking on a rest turns it into a note.
@@ -135,7 +135,7 @@ Left of the score, one column of buttons: the **Figures**, **Accidentals** and *
 |---|---|
 | **↖ Select** (Tools bar) | Back to normal editing: click to place the caret, drag to select. **Esc**, a right-click or `N` leave entry mode. |
 | **Eraser** (Tools bar, next to Select, `X`) | The pointer becomes a crosshair. Aim at a note and click to erase just that note; in a chord, only the tone you aim at goes. Drag a box to erase every note and rest inside it. The note under the crosshair turns red before you click. One Ctrl+Z brings back everything erased in one go. **Esc**, a right-click or `X` leave the eraser. |
-| **Figures** (left) | The first button switches the figures between notes and their matching rests; it shows a rest, highlighted, while they place rests. The **dot** below the figures makes the figure dotted. **View → Breve and 128th Notes** adds the breve (double whole note), the 64th and the 128th. |
+| **Figures** (left) | Two columns: the notes, and beside each one its rest. Click either to place it. The **dot** below them makes the figure dotted. **View → Breve and 128th Notes** adds the breve (double whole note), the 64th and the 128th. |
 | **Accidentals** (left) | ♯ ♭ ♮. The key signature's sharps and flats are applied automatically when you place a note. |
 | **Ties & slurs** (right) | **Tie** (`T`) joins a note to the next one of the same pitch. **Slur** (`S`) draws a phrase mark over the selected notes, and needs a selection. Deleting a slurred note removes its slur; undo restores both. |
 | **Articulations** (right) | Staccato, staccatissimo, tenuto, accent, marcato, fermata. They are placed on the notehead side; the fermata goes above and also works on rests. |

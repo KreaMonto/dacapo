@@ -42,7 +42,7 @@ The steps, one pull request each:
 
 - [x] **0.1 The shared bar.** One thin look for every bar (about 30 px, icons in one row, names in tooltips as in the menus), the bar's name in its tooltips, and a **»** button holding what does not fit, instead of wrapping to a second row.
 - [x] **0.2 Granular bars.** Split the top bar into File, Edit, Playback, Tools, Measure, Staves and Indications, in the default layout above.
-- [x] **0.3 Entry bar.** The palette becomes one column on the left, without section titles; one button switches notes and rests. Done as three bars (Figures, Accidentals, Voice); until 0.4, the rest of the palette sits right of the score.
+- [x] **0.3 Entry bar.** The palette becomes one column on the left, without section titles; one button switches notes and rests. Done as three bars (Figures, Accidentals, Voice). Figures is the only bar with two columns: each note beside its rest, instead of a notes/rests switch.
 - [x] **0.4 Marks bar.** What goes on notes moves to the right, with drop-down buttons for the large groups.
 - [ ] **0.5 View → Toolbars.** Show or hide each bar, remembered; **Reset** brings back the default layout.
 - [ ] **0.6 Moving bars.** Drag a bar by its handle (⋮⋮) to another zone or another place in its zone; remembered between sessions.
