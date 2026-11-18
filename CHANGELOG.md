@@ -4,6 +4,12 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Tuplets**: triplets, quintuplets, sextuplets, duplets and quadruplets. The **Tuplet** button of the **Figures** bar (or **Notes → Tuplet**, or **Ctrl+3**, **Ctrl+5**, **Ctrl+6**, **Ctrl+2**, **Ctrl+4**) writes the next notes and rests in the group until it is turned off; the value in use when it is turned on is what the group counts in, so a quarter and an eighth can share a triplet of eighths. On a selection it changes the selected notes. A beamed group shows its number; any other gets a bracket. Playback, the error check and MusicXML import and export follow them (septuplets and other groups that do not divide evenly still import with their written values).
+
+### Changed
+- Scores with tuplets are saved as file format 8, which Partita 0.3.14 can't open; other scores are saved as before.
+
 ## [0.3.14] - 2026-11-18
 
 ### Added

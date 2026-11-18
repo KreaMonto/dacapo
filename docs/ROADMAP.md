@@ -46,11 +46,11 @@ This document tracks the development goals and major stages toward a complete op
 - [ ] **New score wizard**, like Encore's: title, tempo, key, time signature, number of measures, and instrument templates (piano grand staff, string quartet, voice + piano, guitar with tablature).
 - [ ] Note property panel.
 - [ ] Insert vs. overwrite mode (the Insert key, as in a word processor).
-- [ ] Tuplets.
+- [x] Tuplets (3, 5, 6, 2, 4).
 
 ## Phase 3: Export and formats
 
-- [x] MusicXML import (`.musicxml`, `.xml`, `.mxl`). Next: tuplets, grace notes and clef changes, once the model has them.
+- [x] MusicXML import (`.musicxml`, `.xml`, `.mxl`). Tuplets are imported too. Next: grace notes and clef changes, once the model has them.
 - [ ] PDF export with page layout.
 - [ ] Print.
 - [ ] Recent files list and file association for `.partita`.

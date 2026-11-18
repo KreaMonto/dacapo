@@ -634,6 +634,11 @@ function syncControls(doc) {
   });
   document.querySelector('.figures').classList.toggle('placing', entering());
   document.querySelector('[data-cmd=dot]').classList.toggle('on', state.duration.dots > 0);
+  const tupletFace = document.querySelector('.tuplet-face');
+  tupletFace.classList.toggle('on', !!state.duration.tuplet);
+  document.querySelectorAll('[data-cmd^="tuplet:"]').forEach((b) => {
+    b.classList.toggle('on', b.dataset.cmd === `tuplet:${state.duration.tuplet?.actual}`);
+  });
   const mr = document.querySelector('[data-cmd=multirest]');
   mr.classList.toggle('on', state.multiRest);
   mr.setAttribute('aria-pressed', String(state.multiRest));
@@ -700,7 +705,8 @@ function renderStatus() {
     parts.push(esc((number === null ? t('status.position.pickup', { staff: c.staff + 1 }) : t('status.position', { staff: c.staff + 1, measure: number })) + voice));
     const d = state.duration;
     const base = t(`value.${d.base}`);
-    const value = d.dots ? t('value.dotted', { value: base }) : base;
+    const plain = d.dots ? t('value.dotted', { value: base }) : base;
+    const value = d.tuplet ? t('value.tuplet', { value: plain, name: t(`tuplet.${d.tuplet.actual}.name`) }) : plain;
     const verse = state.lyric && state.layout?.verses[state.lyric.staff] > 1 ? t('status.lyrics.verse', { n: state.lyric.verse + 1 }) : '';
     const bold = (head, help) => `<b>${esc(head)}</b> ${esc(t(help))}`;
     parts.push(state.lyric
@@ -759,8 +765,32 @@ function scrollCaretIntoView() {
 // ----- input -----------------------------------------------------------------
 
 function setDuration(base, enterMode = false) {
-  state.duration = { base, dots: 0 };
+  state.duration = { base, dots: 0, tuplet: state.duration.tuplet ?? null };
   if (enterMode) state.mode = state.kind;
+  const doc = active();
+  if (doc && doc.selection) act({ type: 'set_duration', duration: state.duration });
+  else render();
+}
+
+/**
+ * Tuplets: n notes in the time of TUPLETS[n] of the same value. The value
+ * the group counts in is the figure in use when the tuplet is turned on,
+ * so a quarter and an eighth can share a triplet of eighths.
+ */
+const TUPLETS = { 3: 2, 5: 4, 6: 4, 2: 3, 4: 3 };
+
+/** Turns tuplet n on for the next notes (or the selection), or off when it is on. */
+function setTuplet(n) {
+  const on = state.duration.tuplet;
+  const tuplet = on && on.actual === n ? null : { actual: n, normal: TUPLETS[n], unit: state.duration.base };
+  state.duration = { ...state.duration, tuplet };
+  // The drop-down's face shows the tuplet in use, however it was chosen.
+  const face = document.querySelector('.tuplet-face');
+  const item = document.querySelector(`[data-cmd="tuplet:${n}"]`);
+  if (tuplet && face && item && face.innerHTML !== item.innerHTML) {
+    face.innerHTML = item.innerHTML;
+    fitGlyph(face);
+  }
   const doc = active();
   if (doc && doc.selection) act({ type: 'set_duration', duration: state.duration });
   else render();
@@ -931,7 +961,8 @@ function eventTicks(e) {
   let ticks = BASE_TICKS[e.duration.base] ?? 0;
   let add = ticks;
   for (let d = 0; d < (e.duration.dots || 0); d++) { add /= 2; ticks += add; }
-  return ticks;
+  const tp = e.duration.tuplet;
+  return tp && tp.actual > 0 ? (ticks * tp.normal) / tp.actual : ticks;
 }
 
 function setVoice(voice) {
@@ -997,6 +1028,9 @@ document.addEventListener('keydown', (ev) => {
       case 'ArrowRight': return run({ type: 'move', to: 'next_measure', extend: ev.shiftKey });
       case 'Home': return run({ type: 'move', to: 'score_start', extend: ev.shiftKey });
       case 'End': return run({ type: 'move', to: 'score_end', extend: ev.shiftKey });
+      case '2': case '3': case '4': case '5': case '6':
+        ev.preventDefault();
+        return setTuplet(Number(lower));
     }
     if (!ev.altKey) return;
   }
@@ -2589,6 +2623,7 @@ const SHORTCUTS = [
     ['1 – 7', 'entry.value'],
     ['8 / 9', 'entry.extended'],
     ['.', 'entry.dot'],
+    ['Ctrl + 3', 'entry.tuplet'],
     ['+ / −', 'entry.accidental'],
     ['Alt + ↑ / ↓', 'entry.move'],
     ['T', 'entry.tie'],
@@ -2947,6 +2982,7 @@ const ENDINGS = [['', 'none'], ['1', '1'], ['2', '2'], ['3', '3'], ['1,2', '12']
 const JUMPS = ['fine', 'to_coda', 'da_capo', 'da_capo_al_fine', 'da_capo_al_coda', 'dal_segno', 'dal_segno_al_fine', 'dal_segno_al_coda'];
 for (const k of ['segno', 'coda', 'none', ...JUMPS]) commands[`jump:${k}`] = () => setJump(k);
 for (const [v, k] of ENDINGS) commands[`ending:${k}`] = () => setEnding(v);
+for (const n of Object.keys(TUPLETS)) commands[`tuplet:${n}`] = () => setTuplet(Number(n));
 const REPEAT_COUNTS = [2, 3, 4, 5, 6];
 for (const n of REPEAT_COUNTS) commands[`repeat-times:${n}`] = () => setRepeatTimes(n);
 
@@ -3134,6 +3170,8 @@ const MENUS = [
     { label: t('menu.notes.lyrics'), cmd: 'lyrics', key: 'Ctrl+L', enabled: hasDoc, checked: () => !!state.lyric, desc: t('menu.notes.lyrics.desc') },
     { label: t('menu.notes.expression'), cmd: 'note-text:expression', key: 'Ctrl+E', enabled: hasDoc, desc: t('notetext.expression.desc') },
     { label: t('menu.notes.technique'), cmd: 'note-text:technique', enabled: hasDoc, desc: t('notetext.technique.desc') },
+    { label: t('toolbar.tuplet'), enabled: hasDoc, items: [3, 5, 6, 2, 4].map((n) =>
+      ({ label: t(`tuplet.${n}`), cmd: `tuplet:${n}`, key: `Ctrl+${n}`, checked: () => state.duration.tuplet?.actual === n, desc: t(`tuplet.${n}.desc`) })) },
     { sep: true },
     { label: t('palette.accidentals'), enabled: hasDoc, items: ACCIDENTALS.map(([name]) =>
       ({ label: t(`palette.${name}`), cmd: `alter:${name}`, desc: t(`palette.${name}.desc`) })) },

@@ -5,7 +5,8 @@
 //! staff. Import reads `.musicxml` / `.xml` and compressed `.mxl` files.
 //! A part with several staves (a piano) becomes several staves. What the
 //! model cannot hold yet is simplified, and [`Import::notes`] says what:
-//! tuplets keep their written value, grace notes are left out, voices
+//! septuplets and other tuplets that do not come out in whole ticks keep
+//! their written value, grace notes are left out, voices
 //! beyond four per staff are dropped, and only the first clef of a staff
 //! is kept.
 
@@ -416,7 +417,13 @@ pub fn export(score: &Score) -> String {
                     written = capacity;
                     prev_in_voice[v] = events.last();
                 } else {
-                    for e in events {
+                    // Where each tuplet group starts and ends.
+                    let groups = tuplet_groups(events);
+                    for (i, e) in events.iter().enumerate() {
+                        let tuplet_mark = (
+                            groups.iter().any(|&(a, _)| a == i),
+                            groups.iter().any(|&(_, b)| b == i),
+                        );
                         for nt in &e.texts {
                             let (placement, style) = match nt.kind {
                                 NoteTextKind::Expression => ("below", " font-style=\"italic\""),
@@ -444,6 +451,7 @@ pub fn export(score: &Score) -> String {
                             to_div(e.ticks()),
                             prev_in_voice[v],
                             slur_marks.get(&e.id).map(Vec::as_slice).unwrap_or(&[]),
+                            tuplet_mark,
                             &mut hyphen_open[v],
                         );
                         written += e.ticks();
@@ -531,6 +539,7 @@ pub fn export_to(path: &Path, score: &Score) -> std::io::Result<()> {
     crate::file::atomic_write(path, export(score).as_bytes())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_event(
     x: &mut String,
     e: &Event,
@@ -538,6 +547,7 @@ fn write_event(
     duration: u32,
     prev: Option<&Event>,
     slurs: &[(&'static str, usize)],
+    tuplet_mark: (bool, bool),
     hyphen_open: &mut [bool; MAX_VERSES],
 ) {
     let pitches: Vec<Option<Pitch>> = match &e.kind {
@@ -580,6 +590,17 @@ fn write_event(
         for _ in 0..e.duration.dots {
             x.push_str("<dot/>");
         }
+        if let Some(t) = e.duration.tuplet {
+            let _ = write!(
+                x,
+                "<time-modification><actual-notes>{}</actual-notes><normal-notes>{}</normal-notes>",
+                t.actual, t.normal
+            );
+            if t.unit != e.duration.base {
+                let _ = write!(x, "<normal-type>{}</normal-type>", type_name(t.unit));
+            }
+            x.push_str("</time-modification>");
+        }
 
         let mut notations = String::new();
         if tie_stop {
@@ -587,6 +608,14 @@ fn write_event(
         }
         if tie_start {
             notations.push_str("<tied type=\"start\"/>");
+        }
+        if i == 0 && e.duration.tuplet.is_some() {
+            if tuplet_mark.0 {
+                notations.push_str("<tuplet type=\"start\" bracket=\"yes\"/>");
+            }
+            if tuplet_mark.1 {
+                notations.push_str("<tuplet type=\"stop\"/>");
+            }
         }
         if i == 0 {
             for (kind, n) in slurs {
@@ -796,7 +825,7 @@ impl fmt::Display for ImportNote {
         match self.kind {
             ImportNoteKind::Tuplets => write!(
                 f,
-                "{} kept their written values, because tuplets are not supported yet. Those measures may show as too full.",
+                "{} kept their written values: Partita writes triplets, quintuplets, sextuplets, duplets and quadruplets, not septuplets and the like yet. Those measures may show as too full.",
                 plural("One tuplet note", "tuplet notes")
             ),
             ImportNoteKind::GraceNotes => write!(
@@ -1726,9 +1755,31 @@ impl Importer {
                                 .next()
                                 .unwrap_or(Duration::new(DurationBase::Quarter))
                         };
-                        if child(el, "time-modification").is_some() {
-                            self.tuplets += 1;
-                        }
+                        // A tuplet: its ratio, and the value it counts in.
+                        let duration = match child(el, "time-modification") {
+                            Some(tm) if !measure_rest => {
+                                let actual = number_of(tm, "actual-notes").unwrap_or(0.0) as u8;
+                                let normal = number_of(tm, "normal-notes").unwrap_or(0.0) as u8;
+                                let unit = text_of(tm, "normal-type")
+                                    .and_then(|t| {
+                                        TYPES.iter().find(|(_, n)| *n == t).map(|(b, _)| *b)
+                                    })
+                                    .unwrap_or(duration.base);
+                                let tupled = duration
+                                    .in_tuplet(Tuplet {
+                                        actual,
+                                        normal,
+                                        unit,
+                                    })
+                                    .exact();
+                                if tupled.tuplet.is_none() {
+                                    // Not in whole ticks (a septuplet): as written.
+                                    self.tuplets += 1;
+                                }
+                                tupled
+                            }
+                            _ => duration,
+                        };
 
                         let id = self.alloc();
                         let kind = match pitch {
@@ -2178,6 +2229,54 @@ mod tests {
     }
 
     #[test]
+    fn tuplets_round_trip() {
+        let mut score = sample();
+        let t = Tuplet {
+            actual: 3,
+            normal: 2,
+            unit: DurationBase::Eighth,
+        };
+        let eighth = Duration::new(DurationBase::Eighth).in_tuplet(t);
+        let quarter = Duration::new(DurationBase::Quarter).in_tuplet(t);
+        let n = |id, d, step| {
+            Event::new(
+                id,
+                d,
+                EventKind::Chord {
+                    pitches: vec![Pitch::new(step, 4)],
+                },
+            )
+        };
+        // A triplet of eighths, then a quarter and an eighth in a triplet,
+        // then a half note: a whole 4/4 measure.
+        score.staves[0].measures[0].voices[0] = vec![
+            n(600, eighth, Step::C),
+            n(601, eighth, Step::D),
+            n(602, eighth, Step::E),
+            n(603, quarter, Step::F),
+            n(604, eighth, Step::G),
+            n(605, Duration::new(DurationBase::Half), Step::A),
+        ];
+        assert!(
+            score.validate().is_empty(),
+            "the measure is full, not overfull"
+        );
+        let xml = export(&score);
+        assert!(xml.contains("<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>"));
+        assert!(
+            xml.contains("<normal-type>eighth</normal-type>"),
+            "the quarter counts in eighths"
+        );
+        assert_eq!(xml.matches("<tuplet type=\"start\"").count(), 2);
+        let back = import(&xml, "x").unwrap();
+        assert!(back.notes.is_empty(), "{:?}", back.notes);
+        let voice = &back.score.staves[0].measures[0].voices[0];
+        assert_eq!(voice[0].duration, eighth);
+        assert_eq!(voice[3].duration, quarter);
+        assert_eq!(tuplet_groups(voice), vec![(0, 2), (3, 4)]);
+    }
+
+    #[test]
     fn jumps_round_trip() {
         let mut score = sample();
         score.measures[0].segno = true;
@@ -2376,7 +2475,7 @@ mod tests {
       <backup><duration>6</duration></backup>
       <note><grace/><pitch><step>A</step><octave>2</octave></pitch><voice>5</voice><type>eighth</type><staff>2</staff></note>
       <note><pitch><step>G</step><octave>2</octave></pitch><duration>2</duration><voice>5</voice><type>eighth</type><staff>2</staff>
-        <time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note>
+        <time-modification><actual-notes>7</actual-notes><normal-notes>4</normal-notes></time-modification></note>
     </measure>
   </part>
 </score-partwise>"#;

@@ -324,8 +324,45 @@ export function durationTicks(d) {
   const base = (2 * TICKS_WHOLE) >> valueIdx(d);
   let t = 0;
   for (let i = 0; i <= d.dots; i++) t += base >> i;
-  return t;
+  const tp = d.tuplet;
+  return tp && tp.actual > 0 ? (t * tp.normal) / tp.actual : t;
 }
+
+const sameTuplet = (a, b) => !!a && !!b && a.actual === b.actual && a.normal === b.normal && a.unit === b.unit;
+
+/**
+ * The tuplet groups of a voice as [first, last] event indices: notes in the
+ * same tuplet that follow each other, until they fill its span (as the core
+ * reads them).
+ */
+export function tupletGroups(events) {
+  const groups = [];
+  let open = null; // { start, tuplet, filled }
+  events.forEach((e, i) => {
+    const tp = e.duration.tuplet;
+    if (!tp) {
+      if (open) groups.push([open.start, i - 1]);
+      open = null;
+      return;
+    }
+    const span = durationTicks({ base: tp.unit, dots: 0 }) * tp.normal;
+    const ticks = durationTicks(e.duration);
+    if (open && sameTuplet(open.tuplet, tp) && open.filled < span) {
+      open.filled += ticks;
+      if (open.filled >= span) { groups.push([open.start, i]); open = null; }
+      return;
+    }
+    if (open) groups.push([open.start, i - 1]);
+    open = null;
+    if (ticks >= span) groups.push([i, i]);
+    else open = { start: i, tuplet: tp, filled: ticks };
+  });
+  if (open) groups.push([open.start, events.length - 1]);
+  return groups;
+}
+
+/** A tuplet number in Bravura's tuplet digits. */
+const tupletDigits = (n) => String(n).split('').map((d) => String.fromCharCode(0xe880 + Number(d))).join('');
 
 const diatonic = (p) => p.octave * 7 + STEP_INDEX[p.step];
 // The ticks a measure holds: its own length when it is shorter than its
@@ -1120,6 +1157,11 @@ export function renderScore(view, width, opts = {}) {
         });
         const starts = eventStarts(events);
         groups.forEach((g, gi) => drawBeams(push, g.map((i) => infos[i]), g.map((i) => starts[i]), groupUp[gi], multi ? null : yOf(mid), cls));
+        for (const [a, b] of tupletGroups(events)) {
+          const g = groupOf.get(a);
+          const beamed = g !== undefined && groups[g][0] === a && groups[g][groups[g].length - 1] === b;
+          drawTuplet(push, infos.slice(a, b + 1), beamed, multi ? v % 2 === 0 : null, cls);
+        }
         infos.forEach((info) => {
           drawAttachments(push, info);
           hits.push({
@@ -1393,6 +1435,45 @@ function drawEvent(push, e, x, top, yOf, mid, voice, multi, fifths, cls, opts = 
   };
 }
 
+// ----- tuplets ------------------------------------------------------------------
+
+/**
+ * Draws a tuplet's number, on the stem side: alone beyond the beam when the
+ * group is beamed by itself, with a bracket otherwise. `above` is forced
+ * with several voices (the voice's own side), else follows the stems.
+ * Updates each info's ink extent.
+ */
+function drawTuplet(push, infos, beamed, above, cls) {
+  const notes = infos.filter((n) => !n.rest);
+  const up = above ?? (notes.length ? notes.filter((n) => n.up).length * 2 >= notes.length : true);
+  const centre = (n) => n.left + n.w / 2;
+  const first = infos[0];
+  const last = infos[infos.length - 1];
+  const x1 = first.left - 0.2 * SP;
+  const x2 = last.left + last.w + 0.2 * SP;
+  // Clear of every note, stem and beam of the group, and of the staff.
+  const top = first.top;
+  const y = up
+    ? Math.min(top - 0.8 * SP, ...infos.map((n) => n.hi)) - 0.8 * SP
+    : Math.max(top + 4.8 * SP, ...infos.map((n) => n.lo)) + 0.8 * SP;
+  const xm = beamed ? (centre(first) + centre(last)) / 2 : (x1 + x2) / 2;
+  const tp = first.e.duration.tuplet;
+  push(`<g class="${cls} tuplet">`);
+  // The digits sit centred on the bracket's line.
+  push(`<text class="m tuplet-num" x="${xm}" y="${y + 0.8 * SP}">${tupletDigits(tp.actual)}</text>`);
+  if (!beamed) {
+    const gap = (0.7 + 0.45 * String(tp.actual).length) * SP;
+    const hook = up ? 0.6 * SP : -0.6 * SP;
+    push(`<polyline class="tuplet-bracket" points="${x1},${y + hook} ${x1},${y} ${xm - gap / 2},${y}"/>`);
+    push(`<polyline class="tuplet-bracket" points="${xm + gap / 2},${y} ${x2},${y} ${x2},${y + hook}"/>`);
+  }
+  push('</g>');
+  for (const n of infos) {
+    if (up) n.hi = Math.min(n.hi, y - 0.9 * SP);
+    else n.lo = Math.max(n.lo, y + 0.9 * SP);
+  }
+}
+
 // ----- beams -------------------------------------------------------------------
 
 /** Start tick of each event in a voice. */
@@ -1420,6 +1501,9 @@ export function beamGroups(events, time) {
       : unitOf;
   const starts = eventStarts(events);
   const beamable = (e) => e.kind !== 'rest' && valueIdx(e.duration) >= V_EIGHTH;
+  // A tuplet is beamed on its own: its edges break the beam.
+  const tupletOf = new Map();
+  tupletGroups(events).forEach(([a, b], g) => { for (let i = a; i <= b; i++) tupletOf.set(i, g); });
 
   let groups = [];
   let cur = [];
@@ -1427,8 +1511,8 @@ export function beamGroups(events, time) {
   const flush = () => { if (cur.length > 1) groups.push(cur); cur = []; };
   events.forEach((e, i) => {
     if (!beamable(e)) { flush(); return; }
-    const beat = Math.floor(starts[i] / unit);
-    if (cur.length && beat !== curBeat) flush();
+    const beat = tupletOf.has(i) ? `t${tupletOf.get(i)}` : Math.floor(starts[i] / unit);
+    if (cur.length && (beat !== curBeat || tupletOf.get(i) !== tupletOf.get(cur[cur.length - 1]))) flush();
     cur.push(i);
     curBeat = beat;
   });

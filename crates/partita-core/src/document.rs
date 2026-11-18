@@ -505,6 +505,7 @@ impl Document {
         duration: Duration,
         now_ms: u64,
     ) -> Result<(), EditError> {
+        let duration = duration.exact();
         let (mut ops, mut caret, tx) = match self.delete_selection_ops() {
             Some((ops, caret)) => (ops, caret, TxKind::Edit),
             None => (Vec::new(), self.caret, TxKind::Typing),
@@ -547,6 +548,7 @@ impl Document {
         duration: Duration,
         now_ms: u64,
     ) -> Result<(), EditError> {
+        let duration = duration.exact();
         let reference = self.reference_pitch(self.caret);
         let mut pitch = nearest_pitch(step, reference);
         pitch.alter = key_alter(
@@ -563,6 +565,7 @@ impl Document {
     }
 
     pub fn insert_rest(&mut self, duration: Duration, now_ms: u64) -> Result<(), EditError> {
+        let duration = duration.exact();
         self.insert_event(EventKind::Rest, duration, now_ms)
     }
 
@@ -585,6 +588,7 @@ impl Document {
         duration: Duration,
         now_ms: u64,
     ) -> Result<(), EditError> {
+        let duration = duration.exact();
         self.set_caret(at, false);
         let pitch = self.pitch_in_key(self.caret.staff, self.caret.measure, step, octave);
         self.insert_event(
@@ -603,6 +607,7 @@ impl Document {
         duration: Duration,
         now_ms: u64,
     ) -> Result<(), EditError> {
+        let duration = duration.exact();
         self.set_caret(at, false);
         self.insert_rest(duration, now_ms)
     }
@@ -941,6 +946,7 @@ impl Document {
 
     /// Changes the rhythmic value of the selection / previous event.
     pub fn set_duration(&mut self, duration: Duration, now_ms: u64) -> Result<(), EditError> {
+        let duration = duration.exact();
         let ops: Vec<Op> = self
             .pitch_targets()
             .into_iter()
@@ -2048,6 +2054,7 @@ mod tests {
     const Q: Duration = Duration {
         base: DurationBase::Quarter,
         dots: 0,
+        tuplet: None,
     };
 
     fn steps(doc: &Document, staff: usize, measure: usize) -> Vec<Option<Step>> {
@@ -2057,6 +2064,36 @@ mod tests {
             .iter()
             .map(|e| e.pitches().first().map(|p| p.step))
             .collect()
+    }
+
+    #[test]
+    fn tuplets_are_entered_only_when_exact() {
+        use crate::model::Tuplet;
+        let mut doc = Document::new(Score::new("t", 1));
+        let triplet = Tuplet {
+            actual: 3,
+            normal: 2,
+            unit: DurationBase::Eighth,
+        };
+        let e = Duration::new(DurationBase::Eighth).in_tuplet(triplet);
+        for s in [C, D, E] {
+            doc.insert_note(s, e, 1_000).unwrap();
+        }
+        let voice = doc.score.voice(0, 0, 0).unwrap();
+        assert!(voice[..3].iter().all(|n| n.duration == e));
+        assert_eq!(crate::model::tuplet_groups(voice)[0], (0, 2));
+        // The triplet takes a quarter: three quarters of rest are left.
+        let used: u32 = voice[..3].iter().map(|n| n.ticks()).sum();
+        assert_eq!(used, 960);
+        // A septuplet does not divide 960 ticks: it goes in as plain notes.
+        let septuplet = Duration::new(DurationBase::Sixteenth).in_tuplet(Tuplet {
+            actual: 7,
+            normal: 4,
+            unit: DurationBase::Sixteenth,
+        });
+        doc.insert_note(F, septuplet, 2_000).unwrap();
+        let voice = doc.score.voice(0, 0, 0).unwrap();
+        assert_eq!(voice[3].duration.tuplet, None);
     }
 
     #[test]

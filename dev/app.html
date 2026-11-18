@@ -416,7 +416,7 @@
             view.dirty = undo.length > 0;
             view.can_undo = undo.length > 0;
             // Same rule as Score::validate: a voice longer than its measure.
-            const ticks = (d) => { const b = 7680 >> ['Breve', 'Whole', 'Half', 'Quarter', 'Eighth', 'Sixteenth', 'ThirtySecond', 'SixtyFourth', 'HundredTwentyEighth'].indexOf(d.base); let t = 0; for (let i = 0; i <= d.dots; i++) t += b >> i; return t; };
+            const ticks = (d) => { const b = 7680 >> ['Breve', 'Whole', 'Half', 'Quarter', 'Eighth', 'Sixteenth', 'ThirtySecond', 'SixtyFourth', 'HundredTwentyEighth'].indexOf(d.base); let t = 0; for (let i = 0; i <= d.dots; i++) t += b >> i; return d.tuplet ? t * d.tuplet.normal / d.tuplet.actual : t; };
             view.issues = [];
             view.score.staves.forEach((st, s) => st.measures.forEach((m, mi) => m.voices.forEach((v, vi) => {
               const t = v.reduce((a, e) => a + ticks(e.duration), 0);

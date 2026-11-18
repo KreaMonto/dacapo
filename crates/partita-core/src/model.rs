@@ -161,26 +161,126 @@ impl DurationBase {
     }
 }
 
-/// A rhythmic value: base value plus augmentation dots.
+/// A tuplet: `actual` notes of `unit` in the time of `normal` (a triplet of
+/// eighths is 3 eighths in the time of 2). Every note of the group carries
+/// it; groups are read from the voice: a group is complete once its notes
+/// fill `normal` × `unit`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Tuplet {
+    pub actual: u8,
+    pub normal: u8,
+    pub unit: DurationBase,
+}
+
+impl Tuplet {
+    /// The time a whole group takes, in ticks.
+    pub fn span(self) -> u32 {
+        self.unit.ticks() * self.normal as u32
+    }
+}
+
+/// A rhythmic value: base value plus augmentation dots, and the tuplet it
+/// belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 pub struct Duration {
     pub base: DurationBase,
     pub dots: u8,
+    /// Since file format 8 (recovery format 16).
+    pub tuplet: Option<Tuplet>,
+}
+
+#[derive(Deserialize)]
+struct DurationFields {
+    base: DurationBase,
+    dots: u8,
+    #[serde(default)]
+    tuplet: Option<Tuplet>,
+}
+
+/// [`Duration`] as written to recovery formats 3 to 15 (before tuplets).
+#[derive(Deserialize)]
+struct DurationPreTuplet {
+    base: DurationBase,
+    dots: u8,
+}
+
+impl<'de> Deserialize<'de> for Duration {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        if matches!(legacy_format(), 3..=15) {
+            let d = DurationPreTuplet::deserialize(deserializer)?;
+            return Ok(Duration {
+                base: d.base,
+                dots: d.dots,
+                tuplet: None,
+            });
+        }
+        let d = DurationFields::deserialize(deserializer)?;
+        Ok(Duration {
+            base: d.base,
+            dots: d.dots,
+            tuplet: d.tuplet,
+        })
+    }
 }
 
 impl Duration {
     pub fn new(base: DurationBase) -> Self {
-        Duration { base, dots: 0 }
+        Duration {
+            base,
+            dots: 0,
+            tuplet: None,
+        }
+    }
+
+    /// The same value in a tuplet.
+    pub fn in_tuplet(self, tuplet: Tuplet) -> Self {
+        Duration {
+            tuplet: Some(tuplet),
+            ..self
+        }
+    }
+
+    /// Without its tuplet if that would not come out in whole ticks (a
+    /// septuplet, for one): Partita counts 960 ticks to the quarter, which
+    /// divides by 2, 3, 4, 5 and 6 but not by 7.
+    pub fn exact(self) -> Self {
+        match self.tuplet {
+            Some(t)
+                if t.actual == 0
+                    || t.normal == 0
+                    || !(self.notated_ticks() * t.normal as u32)
+                        .is_multiple_of(t.actual as u32) =>
+            {
+                Duration {
+                    tuplet: None,
+                    ..self
+                }
+            }
+            _ => self,
+        }
+    }
+
+    /// Length in ticks as written, before the tuplet.
+    pub fn notated_ticks(&self) -> u32 {
+        let base = self.base.ticks();
+        (0..=self.dots as u32).map(|d| base >> d).sum()
     }
 
     pub fn dotted(base: DurationBase, dots: u8) -> Self {
-        Duration { base, dots }
+        Duration {
+            base,
+            dots,
+            tuplet: None,
+        }
     }
 
-    /// Length in ticks including dots.
+    /// Length in ticks, dots and tuplet included.
     pub fn ticks(&self) -> u32 {
-        let base = self.base.ticks();
-        (0..=self.dots as u32).map(|d| base >> d).sum()
+        let notated = self.notated_ticks();
+        match self.tuplet {
+            Some(t) if t.actual > 0 => notated * t.normal as u32 / t.actual as u32,
+            _ => notated,
+        }
     }
 }
 
@@ -480,6 +580,46 @@ impl Event {
 /// Whether a voice is a single *measure rest*: one rest that fills the
 /// whole measure. By convention a plain whole rest means "rest for the whole
 /// measure" in any time signature (3/4, 6/8, …), so it counts too.
+/// The tuplet groups of a voice, as (first, last) event indexes: notes in
+/// the same tuplet that follow each other, until they fill its span.
+pub fn tuplet_groups(events: &[Event]) -> Vec<(usize, usize)> {
+    let mut groups = Vec::new();
+    let mut open: Option<(usize, Tuplet, u32)> = None;
+    for (i, e) in events.iter().enumerate() {
+        let Some(t) = e.duration.tuplet else {
+            if let Some((start, _, _)) = open.take() {
+                groups.push((start, i - 1));
+            }
+            continue;
+        };
+        match open {
+            Some((start, ot, filled)) if ot == t && filled < ot.span() => {
+                let filled = filled + e.ticks();
+                if filled >= t.span() {
+                    groups.push((start, i));
+                    open = None;
+                } else {
+                    open = Some((start, ot, filled));
+                }
+            }
+            _ => {
+                if let Some((start, _, _)) = open.take() {
+                    groups.push((start, i - 1));
+                }
+                if e.ticks() >= t.span() {
+                    groups.push((i, i));
+                } else {
+                    open = Some((i, t, e.ticks()));
+                }
+            }
+        }
+    }
+    if let Some((start, _, _)) = open {
+        groups.push((start, events.len() - 1));
+    }
+    groups
+}
+
 pub fn is_measure_rest(events: &[Event], capacity: u32) -> bool {
     match events {
         [e] => {
@@ -1569,6 +1709,16 @@ impl Score {
             .is_some_and(|a| a.capacity() < a.time.measure_ticks())
     }
 
+    /// Whether any note or rest is in a tuplet (which needs file format 8).
+    pub fn has_tuplets(&self) -> bool {
+        self.staves
+            .iter()
+            .flat_map(|s| s.measures.iter())
+            .flat_map(|m| m.voices.iter())
+            .flatten()
+            .any(|e| e.duration.tuplet.is_some())
+    }
+
     /// Whether any measure has a tempo marking.
     pub fn has_tempo_marks(&self) -> bool {
         self.measures.iter().any(|a| a.tempo.is_some())
@@ -1832,6 +1982,45 @@ mod tests {
     #[test]
     fn time_signature_capacity() {
         assert_eq!(TimeSignature::COMMON.measure_ticks(), 3840);
+        // Tuplets: three eighths of a triplet make a quarter.
+        let triplet = Tuplet {
+            actual: 3,
+            normal: 2,
+            unit: DurationBase::Eighth,
+        };
+        assert_eq!(
+            Duration::new(DurationBase::Eighth)
+                .in_tuplet(triplet)
+                .ticks(),
+            320
+        );
+        let quintuplet = Tuplet {
+            actual: 5,
+            normal: 4,
+            unit: DurationBase::Sixteenth,
+        };
+        assert_eq!(
+            Duration::new(DurationBase::Sixteenth)
+                .in_tuplet(quintuplet)
+                .ticks(),
+            192
+        );
+        // A septuplet does not come out in whole ticks: it is dropped.
+        let septuplet = Tuplet {
+            actual: 7,
+            normal: 4,
+            unit: DurationBase::Sixteenth,
+        };
+        assert!(Duration::new(DurationBase::Sixteenth)
+            .in_tuplet(septuplet)
+            .exact()
+            .tuplet
+            .is_none());
+        assert!(Duration::new(DurationBase::Eighth)
+            .in_tuplet(triplet)
+            .exact()
+            .tuplet
+            .is_some());
         assert_eq!(
             TimeSignature {
                 beats: 6,

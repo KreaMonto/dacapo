@@ -93,6 +93,7 @@ const SHORTCUTS = {
   'entry.value': 'Figura: semifusa … redonda',
   'entry.extended': 'Cuadrada / garrapatea (Ver → Cuadrada y garrapatea)',
   'entry.dot': 'Puntillo',
+  'entry.tuplet': 'Tresillo sí / no (Ctrl+5, 6, 2, 4: otros grupos)',
   'entry.accidental': 'Subir / bajar la alteración',
   'entry.move': 'Mover la nota un grado (Ctrl+Alt: una octava)',
   'entry.tie': 'Ligar a la nota siguiente',
@@ -532,6 +533,16 @@ export default {
   'value.Eighth': 'corchea', 'value.Sixteenth': 'semicorchea', 'value.ThirtySecond': 'fusa',
   'value.SixtyFourth': 'semifusa', 'value.HundredTwentyEighth': 'garrapatea',
   'value.dotted': '{value} con puntillo',
+  'value.tuplet': '{value} ({name})',
+
+  // Grupos irregulares: el desplegable de la barra Figuras y Notas → Grupo irregular.
+  'toolbar.tuplet': 'Grupo irregular',
+  'toolbar.tuplet.desc': 'Escribe las notas siguientes como un grupo irregular, por ejemplo tres corcheas en el tiempo de dos. Elige el mismo otra vez para quitarlo.',
+  'tuplet.3': 'Tresillo', 'tuplet.3.name': 'tresillo', 'tuplet.3.desc': 'Tres en el tiempo de dos.',
+  'tuplet.5': 'Quintillo', 'tuplet.5.name': 'quintillo', 'tuplet.5.desc': 'Cinco en el tiempo de cuatro.',
+  'tuplet.6': 'Seisillo', 'tuplet.6.name': 'seisillo', 'tuplet.6.desc': 'Seis en el tiempo de cuatro.',
+  'tuplet.2': 'Dosillo', 'tuplet.2.name': 'dosillo', 'tuplet.2.desc': 'Dos en el tiempo de tres, como en 6/8.',
+  'tuplet.4': 'Cuatrillo', 'tuplet.4.name': 'cuatrillo', 'tuplet.4.desc': 'Cuatro en el tiempo de tres, como en 6/8.',
 
   // ----- área del documento ---------------------------------------------------------
   'tabs.label': 'Documentos abiertos',

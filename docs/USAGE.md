@@ -6,7 +6,7 @@ Partita is designed to feel like a word processor whose "text" is music. A blink
 
 - **New** (Ctrl+N) opens a new tab with an empty 8-measure score.
 - **Open** (Ctrl+O) loads a `.partita` file (or a `.dacapo` file from before the project was renamed). It also opens MusicXML files, like **Import MusicXML**.
-- **Import MusicXML…** (File menu) opens a score from another notation program (`.musicxml`, `.xml` or compressed `.mxl`) as a new, unsaved score. What Partita cannot show yet is simplified, and a message lists it: tuplets keep their written values, grace notes are left out, voices beyond four per staff are dropped, and each staff keeps the clef it starts with.
+- **Import MusicXML…** (File menu) opens a score from another notation program (`.musicxml`, `.xml` or compressed `.mxl`) as a new, unsaved score. What Partita cannot show yet is simplified, and a message lists it: septuplets and other tuplets that do not divide evenly keep their written values, grace notes are left out, voices beyond four per staff are dropped, and each staff keeps the clef it starts with.
 - **Export MusicXML…** (File menu) saves the score as MusicXML for Finale, Sibelius, Dorico, MuseScore and others: one part per staff, with its name and instrument.
 - **Save** (Ctrl+S) saves the document. **Save As** is Ctrl+Shift+S.
 - **Close tab** is Ctrl+W, and **next/previous tab** is Ctrl+Tab and Ctrl+Shift+Tab.
@@ -139,7 +139,7 @@ Left of the score, one column of buttons: the **Figures**, **Accidentals** and *
 |---|---|
 | **↖ Select** (Tools bar) | Back to normal editing: click to place the caret, drag to select. **Esc**, a right-click or `N` leave entry mode. |
 | **Eraser** (Tools bar, next to Select, `X`) | The pointer becomes a crosshair. Aim at a note and click to erase just that note; in a chord, only the tone you aim at goes. Drag a box to erase every note and rest inside it. The note under the crosshair turns red before you click. One Ctrl+Z brings back everything erased in one go. **Esc**, a right-click or `X` leave the eraser. |
-| **Figures** (left) | Two columns: the notes, and beside each one its rest. Click either to place it. The **dot** below them makes the figure dotted. **View → Breve and 128th Notes** adds the breve (double whole note), the 64th and the 128th. |
+| **Figures** (left) | Two columns: the notes, and beside each one its rest. Click either to place it. The **dot** below them makes the figure dotted. The **Tuplet** button below it (it shows the last one chosen) writes the next notes as a triplet, quintuplet, sextuplet, duplet or quadruplet until you choose it again; the figure in use when you turn it on is what the group counts in. **View → Breve and 128th Notes** adds the breve (double whole note), the 64th and the 128th. |
 | **Accidentals** (left) | ♯ ♭ ♮. The key signature's sharps and flats are applied automatically when you place a note. |
 | **Ties & slurs** (right) | **Tie** (`T`) joins a note to the next one of the same pitch. **Slur** (`S`) draws a phrase mark over the selected notes, and needs a selection. Deleting a slurred note removes its slur; undo restores both. |
 | **Articulations** (right) | Staccato, staccatissimo, tenuto, accent, marcato, fermata. They are placed on the notehead side; the fermata goes above and also works on rests. |
@@ -209,6 +209,7 @@ A measure that holds more beats than its time signature allows is outlined in re
 | `1`…`7` | Choose the note value: 64th, 32nd, 16th, eighth, quarter, half, whole. With a selection, change its note values. |
 | `8` / `9` | Breve / 128th, when **View → Breve and 128th Notes** is on. |
 | `.` | Toggle a dot. |
+| `Ctrl+3` | Triplet on / off (`Ctrl+5`, `Ctrl+6`, `Ctrl+2`, `Ctrl+4`: quintuplet, sextuplet, duplet, quadruplet). |
 | `+` / `-` | Raise or lower the accidental of the previous note (or the selection). |
 | `Alt` + `↑` / `↓` | Move the previous note (or the selection) up or down one step. |
 | `Ctrl` + `Alt` + `↑` / `↓` | Move it up or down an octave. |

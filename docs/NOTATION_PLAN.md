@@ -65,7 +65,7 @@ Every mode needs these. The order inside each group is the planned order of work
 
 ### Rhythm
 
-- [ ] Tuplets (triplets and other groups), with MusicXML import and export. Today this is what is lost most often on import.
+- [x] Tuplets (triplets and other groups), with MusicXML import and export. Septuplets and other groups that do not divide 960 ticks evenly still import as written.
 - [ ] Grace notes (acciaccatura and appoggiatura).
 - [ ] Manual beam control: break or join beams on a note.
 

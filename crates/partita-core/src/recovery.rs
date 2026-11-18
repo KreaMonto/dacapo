@@ -48,14 +48,15 @@ pub const DEFAULT_SYNC_INTERVAL: Duration = Duration::from_millis(500);
 // and text boxes to the score, version 10 barline types, version 11
 // repeats, version 12 endings and version 13 jumps (segno, coda, D.C.,
 // D.S., Fine), version 14 lengths (pickups) and version 15 system and page
-// breaks to measures. Older data (version 3: Da Capo 0.2.0 and 0.2.1;
-// version 4: Da Capo 0.2.2; version 5: Partita 0.3.0; versions 6 to 14:
-// development builds before 0.4.0) is still read:
+// breaks to measures, version 16 tuplets to durations. Older data
+// (version 3: Da Capo 0.2.0 and 0.2.1; version 4: Da Capo 0.2.2; version
+// 5: Partita 0.3.0; versions 6 to 14: development builds before 0.3.14;
+// version 15: Partita 0.3.14) is still read:
 // updating the program must not lose the unsaved work it promises to give
 // back after the restart. It is never written.
 // (The "DC" in the magic bytes is from the project's former name.)
-const FORMAT_VERSION: u32 = 15;
-const READABLE_VERSIONS: [u32; 13] = [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3];
+const FORMAT_VERSION: u32 = 16;
+const READABLE_VERSIONS: [u32; 14] = [16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3];
 
 fn journal_magic(version: u32) -> [u8; 4] {
     [b'D', b'C', b'J', version as u8]
@@ -606,6 +607,24 @@ mod tests {
         let (records, damaged) = decode_journal(&flipped);
         assert_eq!(records.len(), 1);
         assert!(damaged);
+    }
+
+    #[test]
+    fn snapshot_keeps_tuplets() {
+        use crate::model::{Duration, DurationBase, Step, Tuplet};
+        let mut doc = Document::new(crate::model::Score::new("x", 1));
+        let triplet = Duration::new(DurationBase::Eighth).in_tuplet(Tuplet {
+            actual: 3,
+            normal: 2,
+            unit: DurationBase::Eighth,
+        });
+        doc.insert_note(Step::C, triplet, 1_000).unwrap();
+        let back = decode_snapshot(&encode_snapshot(1, &doc).unwrap()).unwrap();
+        assert_eq!(back.document.score, doc.score);
+        assert_eq!(
+            back.document.score.voice(0, 0, 0).unwrap()[0].duration,
+            triplet
+        );
     }
 
     #[test]
