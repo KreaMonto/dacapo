@@ -62,7 +62,7 @@ All views edit the same way. Clicking, selecting and the pointer figure work ide
 
 **Print** (Ctrl+P) prints the page view in black on white, one sheet per page. Editing aids such as the caret, the selection and the error marks are left out. From another view, Partita switches to page view for the print and back afterwards.
 
-**Toolbars:** **View → Toolbars** shows or hides each bar; Partita remembers your choice. A row or column whose bars are all hidden disappears, and the score takes its room. **Reset Toolbars** shows every bar again, where Partita puts them.
+**Toolbars:** every bar can go where it suits you. Drag it by the dotted grip at its start to another place in its row or column, or to another one (the rows on top, the columns beside the score); a line shows where it will land, and **Esc** cancels. The Measure and Playback bars, with their lists and fields, go in the rows only; the figures, in a row, run in two lines with the rests under the notes. **View → Toolbars** shows or hides each bar. A row or column with no bar left disappears, and the score takes its room; while you drag a bar it shows again, so a bar can go back into it. Partita remembers all of this; **Reset Toolbars** puts every bar back where Partita puts them.
 
 **Theme:** **System** (default) follows your computer's light or dark setting. **Light** or **Dark** fix it for Partita only.
 

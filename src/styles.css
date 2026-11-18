@@ -126,6 +126,37 @@ body > .workspace { flex: 1 1 auto; }
 .toolbar .ibtn { width: 28px; padding: 0; }
 .toolbar .icon { width: 16px; height: 16px; }
 .tbar-more { flex: none; }
+/* The grip at the start of each bar: drag it to move the bar (toolbars.js). */
+.tbar-grip {
+  flex: none;
+  align-self: stretch;
+  width: 6px;
+  margin-right: 1px;
+  border-radius: 2px;
+  color: var(--muted);
+  background: radial-gradient(currentColor 0.8px, transparent 1.1px) 0 1px / 3px 4px;
+  opacity: 0.45;
+  cursor: grab;
+  touch-action: none;
+}
+.tbar-grip:hover { opacity: 1; }
+.vzone .tbar-grip { align-self: center; width: 20px; height: 6px; margin: 0 0 2px; background-position: 1px 0; background-size: 4px 3px; }
+.tbar.dragging { opacity: 0.4; }
+body.moving-bar, body.moving-bar * { cursor: grabbing !important; }
+body.no-drop, body.no-drop * { cursor: not-allowed !important; }
+.tbar-mark { position: fixed; z-index: 90; background: var(--accent); border-radius: 1px; pointer-events: none; }
+.tbar-mark[hidden] { display: none; }
+/* While a bar moves, empty zones show, so it can go back into them. */
+.toolbar.empty-zone { outline: 1px dashed var(--accent); outline-offset: -3px; }
+.toolbar.empty-zone:not(.vzone) { min-height: 32px; }
+.toolbar.vzone.empty-zone { min-width: 40px; }
+/* Glyph buttons and figures look the same in any zone; columns make them
+   a little larger below. In a row, the figures run in two lines: notes over
+   their rests. */
+.toolbar .glyph { height: 26px; min-width: 28px; padding: 0; font-size: 18px; line-height: 0; overflow: visible; }
+.toolbar .icon-btn { width: 32px; }
+.toolbar .figures { display: grid; grid-auto-flow: column; grid-template-rows: 26px 26px; gap: 2px 3px; }
+.toolbar .figures button { width: 26px; height: 26px; min-width: 0; font-size: 17px; }
 .tbar-more[hidden] { display: none; }
 .tbar-overflow {
   position: absolute;
@@ -167,8 +198,7 @@ body > .workspace { flex: 1 1 auto; }
 .vzone .tbar-overflow > .tbar + .tbar { border-top: none; border-left: 1px solid var(--chrome-border); padding-top: 0; }
 .vzone .glyph { height: 28px; font-size: 20px; line-height: 0; overflow: visible; }
 /* Figures: the only bar with two columns, notes and rests side by side. */
-.vzone .figures { display: grid; grid-template-columns: 26px 26px; gap: 3px; }
-.vzone .figures button { width: 26px; height: 26px; font-size: 17px; }
+.vzone .figures { grid-auto-flow: row; grid-template-rows: none; grid-template-columns: 26px 26px; gap: 3px; }
 .figures .extended { display: none; }
 .extended-values .figures .extended { display: block; }
 .vzone .voices { flex-direction: column; flex-wrap: nowrap; gap: 3px; }

@@ -2885,7 +2885,11 @@ applyExtendedValues();
 
 installTooltips();
 buildFigures();
-installedBars = installBars(document.body, { onChange: fitGlyph });
+installedBars = installBars(document.body, {
+  onChange: fitGlyph,
+  // A bar dragged to a row or a column changes size: centre its glyphs again.
+  onMove: (bar) => { for (const b of bar?.querySelectorAll('.glyph') ?? []) fitGlyph(b); },
+});
 // Glyph buttons of the columns (accidentals, the dot, articulations,
 // dynamics): centre each from its measured ink, like the figures.
 // fonts.ready can settle before Bravura is even asked for: wait for it.

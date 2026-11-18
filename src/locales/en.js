@@ -319,6 +319,8 @@ export default {
   'toolbar.label.score': 'Score toolbar',
   'bar.more': 'More tools',
   'bar.more.desc': 'The tools that do not fit the window.',
+  'bar.grip': 'Move this bar',
+  'bar.grip.desc': 'Drag it to another place, beside the score or on top. View → Toolbars → Reset Toolbars puts every bar back.',
   'toolbar.new': 'New score',
   'toolbar.new.desc': 'Open an empty score in a new tab.',
   'toolbar.open': 'Open',
