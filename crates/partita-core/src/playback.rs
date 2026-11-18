@@ -16,6 +16,12 @@
 //!   overfull, so no written note is cut. Measure rests are silence.
 //! - Tempo markings with a metronome value change the tempo from their
 //!   measure on (no gradual changes yet).
+//! - **Repeats** are played: at an end repeat the music goes back to the
+//!   last start repeat (or to the beginning, or to just after the previous
+//!   end repeat) until the passage has sounded the times it says. Ties and
+//!   dynamics carry on in the order the measures are played. **Endings**
+//!   ("1.", "2.") are played on their time through only: the n-th time,
+//!   measures whose ending does not include n are skipped.
 //! - Fermatas do not change timing yet.
 
 use std::collections::{HashMap, HashSet};
@@ -38,12 +44,17 @@ pub struct Note {
 }
 
 /// Everything needed to play a score and follow it on screen.
+///
+/// Ticks count along the music as it is played, repeats included: a
+/// measure played twice has two stretches of time.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Timeline {
     /// Sorted by start, then key.
     pub notes: Vec<Note>,
-    /// Absolute tick at which each measure starts.
+    /// Absolute tick at which each measure is first played.
     pub measure_starts: Vec<u64>,
+    /// Every measure played, in order: (absolute start tick, measure).
+    pub plays: Vec<(u64, usize)>,
     /// Absolute tick of the end of the last measure.
     pub end: u64,
     /// Quarter notes per minute at the start.
@@ -64,14 +75,15 @@ impl Timeline {
             .unwrap_or(self.end)
     }
 
-    /// Inverse of [`Timeline::tick_at`]: (measure, tick in measure).
+    /// Where the music is at an absolute tick: (measure, tick in measure).
+    /// Inside a repeat this goes back with the music.
     pub fn position(&self, abs: u64) -> (usize, u32) {
-        let m = match self.measure_starts.binary_search(&abs) {
+        let i = match self.plays.binary_search_by_key(&abs, |&(start, _)| start) {
             Ok(i) => i,
             Err(0) => 0,
             Err(i) => i - 1,
         };
-        let start = self.measure_starts.get(m).copied().unwrap_or(0);
+        let (start, m) = self.plays.get(i).copied().unwrap_or((0, 0));
         (m, abs.saturating_sub(start) as u32)
     }
 
@@ -176,12 +188,70 @@ fn slurred_events(score: &Score) -> HashSet<EventId> {
     out
 }
 
+/// The measures in the order they are played, repeats unfolded.
+///
+/// An end repeat sends the music back to the most recent start repeat, or
+/// else to just after the previous end repeat (the beginning, for the
+/// first one), until the passage has been played the times it says. A
+/// passage is never repeated more than [`crate::model::REPEAT_TIMES`]
+/// allows, so the order always ends.
+pub fn play_order(score: &Score) -> Vec<usize> {
+    let n = score.measures.len();
+    let mut order = Vec::with_capacity(n);
+    let mut start = 0;
+    // How many times each end repeat has sent the music back.
+    let mut sent_back: HashMap<usize, u8> = HashMap::new();
+    // Which time through the current repeated passage this is (1, 2…), for
+    // the endings; back to 1 once the music is past them.
+    let mut pass: u8 = 1;
+    let mut in_endings = false;
+    let mut m = 0;
+    while m < n {
+        let attrs = &score.measures[m];
+        if attrs.ending.is_empty() {
+            if in_endings {
+                // Past the endings: what follows starts afresh.
+                in_endings = false;
+                pass = 1;
+                start = m;
+            }
+        } else {
+            in_endings = true;
+            if !attrs.ending.contains(&pass) {
+                // Not this time through: skipped, end repeat and all.
+                m += 1;
+                continue;
+            }
+        }
+        if attrs.repeat_start && !sent_back.contains_key(&m) {
+            start = m;
+        }
+        order.push(m);
+        if let Some(times) = attrs.repeat_end {
+            let done = sent_back.entry(m).or_insert(0);
+            if *done + 1 < times.max(1) {
+                *done += 1;
+                pass = pass.saturating_add(1);
+                // Back to the start of the passage, out of the endings.
+                in_endings = false;
+                m = start;
+                continue;
+            }
+            // Played enough: what follows can be repeated on its own.
+            start = m + 1;
+            if !in_endings {
+                pass = 1;
+            }
+        }
+        m += 1;
+    }
+    order
+}
+
 /// Builds the playback timeline of a score.
 pub fn build(score: &Score) -> Timeline {
     // Measure lengths: the time signature, stretched if a voice overflows.
-    let mut measure_starts = Vec::with_capacity(score.measures.len());
     let mut lengths = Vec::with_capacity(score.measures.len());
-    let mut t = 0u64;
     for (m, attrs) in score.measures.iter().enumerate() {
         let capacity = attrs.time.measure_ticks();
         let longest = score
@@ -192,11 +262,19 @@ pub fn build(score: &Score) -> Timeline {
             .map(|v| v.iter().map(Event::ticks).sum::<u32>())
             .max()
             .unwrap_or(0);
-        let len = capacity.max(longest) as u64;
-        measure_starts.push(t);
-        lengths.push(len);
-        t += len;
+        lengths.push(capacity.max(longest) as u64);
     }
+    // The measures as played, each with its start.
+    let order = play_order(score);
+    let mut plays = Vec::with_capacity(order.len());
+    let mut measure_starts: Vec<Option<u64>> = vec![None; score.measures.len()];
+    let mut t = 0u64;
+    for &m in &order {
+        plays.push((t, m));
+        measure_starts[m].get_or_insert(t);
+        t += lengths[m];
+    }
+    let measure_starts: Vec<u64> = measure_starts.into_iter().map(|s| s.unwrap_or(t)).collect();
 
     let slurred = slurred_events(score);
     let mut notes: Vec<Note> = Vec::new();
@@ -206,14 +284,14 @@ pub fn build(score: &Score) -> Timeline {
             let mut velocity = DEFAULT_VELOCITY;
             // Notes still tied into the next event: key -> index in `notes`.
             let mut open_ties: HashMap<u8, usize> = HashMap::new();
-            for (m, cell) in staff.measures.iter().enumerate() {
-                let events = &cell.voices[v];
+            for &(play_start, m) in &plays {
+                let events = &staff.measures[m].voices[v];
                 let capacity = score.measures[m].time.measure_ticks();
                 if crate::model::is_measure_rest(events, capacity) {
                     open_ties.clear();
                     continue;
                 }
-                let mut at = measure_starts[m];
+                let mut at = play_start;
                 for e in events {
                     let written = e.ticks() as u64;
                     let start = at;
@@ -274,9 +352,10 @@ pub fn build(score: &Score) -> Timeline {
     }
 
     notes.sort_by_key(|n| (n.start, n.key, n.staff));
-    // Tempo changes at the measures whose tempo differs from the one before.
+    // Tempo changes where the tempo of the measure played differs from the
+    // one before (going back to a repeat brings back its tempo).
     let mut tempos: Vec<(u64, u16)> = Vec::new();
-    for (m, &start) in measure_starts.iter().enumerate() {
+    for &(start, m) in &plays {
         let bpm = score.tempo_at(m);
         if tempos.last().is_none_or(|&(_, last)| last != bpm) {
             tempos.push((start, bpm));
@@ -285,6 +364,7 @@ pub fn build(score: &Score) -> Timeline {
     Timeline {
         notes,
         measure_starts,
+        plays,
         end: t,
         tempo: score.tempo,
         tempos,
@@ -312,6 +392,77 @@ mod tests {
         s.staves[0].measures[0].voices[0] = m0;
         s.staves[0].measures[1].voices[0] = m1;
         s
+    }
+
+    #[test]
+    fn repeats_are_played_and_the_playhead_goes_back() {
+        // | 0 | 1 :| 2 |: 3 :|x3 4 |
+        let mut s = Score::new("t", 5);
+        for m in 0..5 {
+            s.staves[0].measures[m].voices[0] =
+                vec![note(m as u64 + 1, Step::C, DurationBase::Whole)];
+        }
+        s.measures[1].repeat_end = Some(2);
+        s.measures[3].repeat_start = true;
+        s.measures[3].repeat_end = Some(3);
+        assert_eq!(play_order(&s), vec![0, 1, 0, 1, 2, 3, 3, 3, 4]);
+        let tl = build(&s);
+        let bar = TimeSignature::COMMON.measure_ticks() as u64;
+        assert_eq!(tl.notes.len(), 9, "one note per measure played");
+        assert_eq!(tl.end, 9 * bar);
+        // The third measure played is measure 0 again; playback from the
+        // caret starts where a measure is first played.
+        assert_eq!(tl.position(2 * bar + 10), (0, 10));
+        assert_eq!(tl.position(6 * bar), (3, 0));
+        assert_eq!(tl.tick_at(4, 0), 8 * bar);
+    }
+
+    #[test]
+    fn first_and_second_endings_are_played_on_their_time() {
+        // |: 0 | 1 |1.[ 2 :|] 2.[ 3 ] | 4
+        let mut s = Score::new("t", 5);
+        s.measures[0].repeat_start = true;
+        s.measures[2].ending = vec![1];
+        s.measures[2].repeat_end = Some(2);
+        s.measures[3].ending = vec![2];
+        assert_eq!(play_order(&s), vec![0, 1, 2, 0, 1, 3, 4]);
+        // 1.–2. then 3.: the first ending is played twice.
+        let mut s = Score::new("t", 4);
+        s.measures[1].ending = vec![1, 2];
+        s.measures[1].repeat_end = Some(3);
+        s.measures[2].ending = vec![3];
+        assert_eq!(play_order(&s), vec![0, 1, 0, 1, 0, 2, 3]);
+        // A later repeat after the endings starts afresh.
+        let mut s = Score::new("t", 5);
+        s.measures[1].ending = vec![1];
+        s.measures[1].repeat_end = Some(2);
+        s.measures[2].ending = vec![2];
+        s.measures[4].repeat_end = Some(2);
+        assert_eq!(play_order(&s), vec![0, 1, 0, 2, 3, 4, 3, 4]);
+    }
+
+    #[test]
+    fn an_end_repeat_without_a_start_goes_back_to_the_beginning() {
+        let mut s = Score::new("t", 3);
+        s.measures[2].repeat_end = Some(2);
+        assert_eq!(play_order(&s), vec![0, 1, 2, 0, 1, 2]);
+        // Without repeats, the order is the score's.
+        s.measures[2].repeat_end = None;
+        assert_eq!(play_order(&s), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn a_tie_carries_on_into_the_repeat() {
+        let mut s = Score::new("t", 2);
+        let mut tied = note(1, Step::C, DurationBase::Whole);
+        tied.tie = true;
+        s.staves[0].measures[0].voices[0] = vec![note(2, Step::E, DurationBase::Whole)];
+        s.staves[0].measures[1].voices[0] = vec![tied];
+        s.measures[1].repeat_end = Some(2);
+        // Measures played: 0 1 0 1. The tie of measure 1 goes on to what is
+        // played next (measure 0's E), which is another pitch: no merge.
+        let tl = build(&s);
+        assert_eq!(tl.notes.len(), 4);
     }
 
     #[test]

@@ -16,8 +16,8 @@ use partita_core::document::StaffProps;
 use partita_core::document::{Clipboard, Document};
 use partita_core::file;
 use partita_core::model::{
-    Articulation, Clef, Duration, Dynamic, GroupKind, Issue, KeySignature, LyricJoin, Metadata,
-    NoteTextKind, Score, Step, TempoMark, TextBox, TextKind, TextStyle, TimeSignature,
+    Articulation, Barline, Clef, Duration, Dynamic, GroupKind, Issue, KeySignature, LyricJoin,
+    Metadata, NoteTextKind, Score, Step, TempoMark, TextBox, TextKind, TextStyle, TimeSignature,
     Transposition,
 };
 use partita_core::musicxml;
@@ -306,6 +306,29 @@ enum Action {
         measure: usize,
         text: Option<String>,
     },
+    /// A repeat from the start of `first` to the end of `last`: whether
+    /// one starts at `first`, and how many times the passage ending at
+    /// `last` plays (`None`: no end repeat there).
+    SetRepeat {
+        first: usize,
+        last: usize,
+        start: bool,
+        end: Option<u8>,
+    },
+    /// Measures `first` to `last` as the ending `numbers` (empty removes
+    /// it); with `close`, the last one goes back to the repeat.
+    SetEnding {
+        first: usize,
+        last: usize,
+        numbers: Vec<u8>,
+        close: bool,
+    },
+    /// The barline at the end of measures `first` to `last`.
+    SetBarline {
+        first: usize,
+        last: usize,
+        barline: Barline,
+    },
     /// A tempo marking at the start of a measure (`None` removes it).
     SetTempoMark {
         measure: usize,
@@ -550,6 +573,23 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::SetTextBox { text_box } => d.set_text_box(text_box, now),
             Action::RemoveTextBox { id } => d.remove_text_box(id, now),
             Action::SetRehearsal { measure, text } => d.set_rehearsal(measure, text, now),
+            Action::SetRepeat {
+                first,
+                last,
+                start,
+                end,
+            } => d.set_repeat(first, last, start, end, now),
+            Action::SetEnding {
+                first,
+                last,
+                numbers,
+                close,
+            } => d.set_ending(first, last, &numbers, close, now),
+            Action::SetBarline {
+                first,
+                last,
+                barline,
+            } => d.set_barline(first, last, barline, now),
             Action::SetStaff {
                 staff,
                 props,

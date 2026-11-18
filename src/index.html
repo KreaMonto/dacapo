@@ -33,6 +33,12 @@
       <symbol id="i-bracket" viewBox="0 0 24 24"><path d="M10 4H6v16h4"/><path d="M13 8h8M13 16h8"/></symbol>
       <symbol id="i-brace" viewBox="0 0 24 24"><path d="M10 4C8 4 8 5 8 7v2.5C8 11 7 12 5.5 12 7 12 8 13 8 14.5V17c0 2 0 3 2 3"/><path d="M13 8h8M13 16h8"/></symbol>
       <symbol id="i-none" viewBox="0 0 24 24"><path d="M10 4H6v5M6 15v5h4"/><path d="M13 8h8M13 16h8"/><path d="M4 12h4" stroke-dasharray="1 2"/></symbol>
+      <symbol id="i-bar-single" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16" opacity="0.35"/><path d="M12 4v16"/></symbol>
+      <symbol id="i-bar-double" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16" opacity="0.35"/><path d="M10 4v16M14 4v16"/></symbol>
+      <symbol id="i-bar-final" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16" opacity="0.35"/><path d="M9 4v16"/><rect x="12.5" y="4" width="3.5" height="16" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="i-bar-dashed" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16" opacity="0.35"/><path d="M12 4v16" stroke-dasharray="2.5 2"/></symbol>
+      <symbol id="i-rep-start" viewBox="0 0 24 24"><rect x="5" y="4" width="3" height="16" fill="currentColor" stroke="none"/><path d="M11 4v16"/><circle cx="15" cy="9.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="14.5" r="1.4" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="i-rep-end" viewBox="0 0 24 24"><circle cx="9" cy="9.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="14.5" r="1.4" fill="currentColor" stroke="none"/><path d="M13 4v16"/><rect x="16" y="4" width="3" height="16" fill="currentColor" stroke="none"/></symbol>
       <symbol id="i-more" viewBox="0 0 24 24"><path d="M6 7l5 5-5 5M13 7l5 5-5 5"/></symbol>
       <symbol id="i-start" viewBox="0 0 24 24"><path d="M6 5v14"/><path d="M9 12l10-7v14z" fill="currentColor"/></symbol>
     </defs>
@@ -98,6 +104,31 @@
           </label>
           <button data-cmd="add-measure" class="ibtn" data-i18n-aria="toolbar.addmeasure" data-i18n-tip="toolbar.addmeasure" data-i18n-desc="toolbar.addmeasure.desc" data-key="Ctrl+Enter"><svg class="icon"><use href="#i-measure-add"/></svg></button>
           <button data-cmd="remove-measure" class="ibtn" data-i18n-aria="toolbar.removemeasure" data-i18n-tip="toolbar.removemeasure" data-i18n-desc="toolbar.removemeasure.desc"><svg class="icon"><use href="#i-measure-remove"/></svg></button>
+          <button data-cmd="repeat-start" class="ibtn" aria-pressed="false" data-i18n-tip="repeat.start" data-i18n-desc="repeat.start.desc" data-i18n-aria="repeat.start"><svg class="icon"><use href="#i-rep-start"/></svg></button>
+          <button data-cmd="repeat-end" class="ibtn" aria-pressed="false" data-i18n-tip="repeat.end" data-i18n-desc="repeat.end.desc" data-i18n-aria="repeat.end"><svg class="icon"><use href="#i-rep-end"/></svg></button>
+          <!-- First and second endings for the caret's measure (or the
+               selection): the button shows the last one chosen. -->
+          <div class="drop" data-drop="ending">
+            <button class="text-btn drop-btn" aria-haspopup="true" aria-expanded="false" data-i18n-tip="toolbar.ending" data-i18n-desc="toolbar.ending.desc" data-i18n-aria="toolbar.ending">1.</button>
+            <div class="drop-pop" role="group" data-i18n-aria="toolbar.ending" hidden>
+              <button data-ending="" class="text-btn" data-i18n-tip="ending.none" data-i18n-desc="ending.none.desc" data-i18n-aria="ending.none">—</button>
+              <button data-ending="1" class="text-btn" data-i18n-tip="ending.1" data-i18n-desc="ending.1.desc" data-i18n-aria="ending.1">1.</button>
+              <button data-ending="2" class="text-btn" data-i18n-tip="ending.2" data-i18n-desc="ending.2.desc" data-i18n-aria="ending.2">2.</button>
+              <button data-ending="3" class="text-btn" data-i18n-tip="ending.3" data-i18n-desc="ending.3.desc" data-i18n-aria="ending.3">3.</button>
+              <button data-ending="1,2" class="text-btn" data-i18n-tip="ending.12" data-i18n-desc="ending.12.desc" data-i18n-aria="ending.12">1.2.</button>
+            </div>
+          </div>
+          <!-- The barline closing the caret's measure (or each measure of the
+               selection): the button shows the last kind chosen. -->
+          <div class="drop" data-drop="barline">
+            <button class="ibtn drop-btn" aria-haspopup="true" aria-expanded="false" data-i18n-tip="toolbar.barline" data-i18n-desc="toolbar.barline.desc" data-i18n-aria="toolbar.barline"><svg class="icon"><use href="#i-bar-double"/></svg></button>
+            <div class="drop-pop" role="group" data-i18n-aria="toolbar.barline" hidden>
+              <button data-barline="single" class="ibtn" data-i18n-tip="barline.single" data-i18n-desc="barline.single.desc" data-i18n-aria="barline.single"><svg class="icon"><use href="#i-bar-single"/></svg></button>
+              <button data-barline="double" class="ibtn" data-i18n-tip="barline.double" data-i18n-desc="barline.double.desc" data-i18n-aria="barline.double"><svg class="icon"><use href="#i-bar-double"/></svg></button>
+              <button data-barline="final" class="ibtn" data-i18n-tip="barline.final" data-i18n-desc="barline.final.desc" data-i18n-aria="barline.final"><svg class="icon"><use href="#i-bar-final"/></svg></button>
+              <button data-barline="dashed" class="ibtn" data-i18n-tip="barline.dashed" data-i18n-desc="barline.dashed.desc" data-i18n-aria="barline.dashed"><svg class="icon"><use href="#i-bar-dashed"/></svg></button>
+            </div>
+          </div>
         </div>
         <div class="tbar" role="group" data-bar-id="staves" data-i18n-bar="bar.staves" data-i18n-aria="bar.staves">
           <button data-cmd="add-staff" class="ibtn" data-i18n-aria="toolbar.addstaff" data-i18n-tip="toolbar.addstaff" data-i18n-desc="toolbar.addstaff.desc"><svg class="icon"><use href="#i-staff-add"/></svg></button>

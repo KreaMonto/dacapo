@@ -366,7 +366,8 @@ thread_local! {
 /// instruments, no page texts), 4 (Da Capo 0.2.2: no staff instruments, no
 /// page texts), 5 (Partita 0.3.0: no page texts), or 6 to 8 (development
 /// builds before 0.4.0: no tempo markings in 6; no note texts or rehearsal
-/// marks in 6 and 7; no text styles or text boxes in any of them).
+/// marks in 6 and 7; no text styles or text boxes in 6 to 8; no barline
+/// types in 6 to 9; no repeats in 6 to 10; no endings in any of them).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
@@ -540,11 +541,27 @@ pub struct KeySignature {
     pub fifths: i8,
 }
 
+/// The barline at the end of a measure.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Barline {
+    /// One thin line. The last measure of a score is drawn with a final
+    /// barline anyway.
+    #[default]
+    Single,
+    /// Two thin lines: the end of a section.
+    Double,
+    /// A thin and a thick line: the end of the piece (or of a movement).
+    Final,
+    /// A dashed line: a subdivision inside a long measure, or a phrase.
+    Dashed,
+}
+
 /// Attributes shared by every staff in one measure column.
 ///
 /// `time` and `key` are in force in the measure (repeated in every measure
 /// until they change); `tempo` is a marking printed at the start of this
-/// measure only.
+/// measure only, `barline` the line that closes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct MeasureAttrs {
     pub time: TimeSignature,
@@ -554,7 +571,29 @@ pub struct MeasureAttrs {
     /// A rehearsal mark at the start of this measure ("A", "12"), printed
     /// in a box. Since file format 7 (recovery format 8).
     pub rehearsal: Option<String>,
+    /// The barline at the end of this measure. Since file format 7
+    /// (recovery format 10).
+    pub barline: Barline,
+    /// A repeated passage starts at the beginning of this measure. Since
+    /// file format 7 (recovery format 11).
+    pub repeat_start: bool,
+    /// A repeated passage ends with this measure, played this many times in
+    /// all (2 for an ordinary repeat). Drawn instead of the barline. Since
+    /// file format 7 (recovery format 11).
+    pub repeat_end: Option<u8>,
+    /// The endings ("1.", "2.", "1., 2.") this measure belongs to, in order,
+    /// or empty. Consecutive measures with the same numbers form one ending
+    /// bracket; on the n-th time through a repeat, measures whose ending
+    /// does not include n are skipped. Since file format 7 (recovery
+    /// format 12).
+    pub ending: Vec<u8>,
 }
+
+/// The highest ending number.
+pub const MAX_ENDING: u8 = 8;
+
+/// How many times a repeated passage can be played in all.
+pub const REPEAT_TIMES: std::ops::RangeInclusive<u8> = 2..=10;
 
 impl Default for MeasureAttrs {
     fn default() -> Self {
@@ -563,6 +602,10 @@ impl Default for MeasureAttrs {
             key: KeySignature::default(),
             tempo: None,
             rehearsal: None,
+            barline: Barline::Single,
+            repeat_start: false,
+            repeat_end: None,
+            ending: Vec::new(),
         }
     }
 }
@@ -574,6 +617,45 @@ struct MeasureAttrsFields {
     #[serde(default)]
     tempo: Option<TempoMark>,
     #[serde(default)]
+    rehearsal: Option<String>,
+    #[serde(default)]
+    barline: Barline,
+    #[serde(default)]
+    repeat_start: bool,
+    #[serde(default)]
+    repeat_end: Option<u8>,
+    #[serde(default)]
+    ending: Vec<u8>,
+}
+
+/// [`MeasureAttrs`] as written to recovery format 11 (before endings).
+#[derive(Deserialize)]
+struct MeasureAttrsPreEnding {
+    time: TimeSignature,
+    key: KeySignature,
+    tempo: Option<TempoMark>,
+    rehearsal: Option<String>,
+    barline: Barline,
+    repeat_start: bool,
+    repeat_end: Option<u8>,
+}
+
+/// [`MeasureAttrs`] as written to recovery format 10 (before repeats).
+#[derive(Deserialize)]
+struct MeasureAttrsPreRepeat {
+    time: TimeSignature,
+    key: KeySignature,
+    tempo: Option<TempoMark>,
+    rehearsal: Option<String>,
+    barline: Barline,
+}
+
+/// [`MeasureAttrs`] as written to recovery formats 8 and 9 (before barlines).
+#[derive(Deserialize)]
+struct MeasureAttrsPreBarline {
+    time: TimeSignature,
+    key: KeySignature,
+    tempo: Option<TempoMark>,
     rehearsal: Option<String>,
 }
 
@@ -600,8 +682,7 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
             return Ok(MeasureAttrs {
                 time: a.time,
                 key: a.key,
-                tempo: None,
-                rehearsal: None,
+                ..MeasureAttrs::default()
             });
         }
         if legacy_format() == 7 {
@@ -610,7 +691,41 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
                 time: a.time,
                 key: a.key,
                 tempo: a.tempo,
-                rehearsal: None,
+                ..MeasureAttrs::default()
+            });
+        }
+        if matches!(legacy_format(), 8 | 9) {
+            let a = MeasureAttrsPreBarline::deserialize(deserializer)?;
+            return Ok(MeasureAttrs {
+                time: a.time,
+                key: a.key,
+                tempo: a.tempo,
+                rehearsal: a.rehearsal,
+                ..MeasureAttrs::default()
+            });
+        }
+        if legacy_format() == 10 {
+            let a = MeasureAttrsPreRepeat::deserialize(deserializer)?;
+            return Ok(MeasureAttrs {
+                time: a.time,
+                key: a.key,
+                tempo: a.tempo,
+                rehearsal: a.rehearsal,
+                barline: a.barline,
+                ..MeasureAttrs::default()
+            });
+        }
+        if legacy_format() == 11 {
+            let a = MeasureAttrsPreEnding::deserialize(deserializer)?;
+            return Ok(MeasureAttrs {
+                time: a.time,
+                key: a.key,
+                tempo: a.tempo,
+                rehearsal: a.rehearsal,
+                barline: a.barline,
+                repeat_start: a.repeat_start,
+                repeat_end: a.repeat_end,
+                ending: Vec::new(),
             });
         }
         let a = MeasureAttrsFields::deserialize(deserializer)?;
@@ -619,6 +734,10 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
             key: a.key,
             tempo: a.tempo,
             rehearsal: a.rehearsal,
+            barline: a.barline,
+            repeat_start: a.repeat_start,
+            repeat_end: a.repeat_end,
+            ending: a.ending,
         })
     }
 }
@@ -1254,12 +1373,19 @@ impl Score {
     }
 
     /// Whether the score has tempo markings, rehearsal marks, texts on
-    /// notes, text styles or text boxes (which need file format 7).
+    /// notes, text styles, text boxes, barlines other than single or
+    /// repeats (which need file format 7).
     pub fn has_markings(&self) -> bool {
         self.has_tempo_marks()
             || !self.text_styles.is_empty()
             || !self.text_boxes.is_empty()
-            || self.measures.iter().any(|a| a.rehearsal.is_some())
+            || self.measures.iter().any(|a| {
+                a.rehearsal.is_some()
+                    || a.barline != Barline::Single
+                    || a.repeat_start
+                    || a.repeat_end.is_some()
+                    || !a.ending.is_empty()
+            })
             || self
                 .staves
                 .iter()

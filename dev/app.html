@@ -223,6 +223,28 @@
           e.texts.sort((a, b) => a.kind.localeCompare(b.kind));
         }
       },
+      // As Document::set_barline: one undo step for the measures first..last.
+      // As Document::set_repeat: the start on `first`, the end on `last`.
+      set_repeat({ first, last, start, end }) {
+        snapshot();
+        view.score.measures[first] = { ...view.score.measures[first], repeat_start: start };
+        view.score.measures[last] = { ...view.score.measures[last], repeat_end: end ?? null };
+      },
+      // As Document::set_ending: `close` adds an end repeat to the last one.
+      set_ending({ first, last, numbers, close }) {
+        snapshot();
+        for (let m = Math.min(first, last); m <= Math.max(first, last); m++) {
+          const a = { ...view.score.measures[m], ending: numbers };
+          if (close && m === Math.max(first, last) && numbers.length && !a.repeat_end) a.repeat_end = 2;
+          view.score.measures[m] = a;
+        }
+      },
+      set_barline({ first, last, barline }) {
+        snapshot();
+        for (let m = Math.min(first, last); m <= Math.max(first, last); m++) {
+          view.score.measures[m] = { ...view.score.measures[m], barline };
+        }
+      },
       set_rehearsal({ measure, text }) {
         snapshot();
         view.score.measures[measure] = { ...view.score.measures[measure], rehearsal: text?.trim() || null };

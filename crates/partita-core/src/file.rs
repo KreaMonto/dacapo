@@ -379,6 +379,40 @@ mod tests {
     }
 
     #[test]
+    fn barlines_need_format_7() {
+        let mut score = Score::new("Etude", 2);
+        let plain =
+            serde_json::from_slice::<serde_json::Value>(&to_bytes(&score).unwrap()).unwrap();
+        assert!(
+            plain["format_version"].as_u64().unwrap() < 7,
+            "single barlines need nothing new"
+        );
+        score.measures[0].barline = crate::model::Barline::Double;
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format_version"], 7);
+        assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
+    }
+
+    #[test]
+    fn endings_need_format_7() {
+        let mut score = Score::new("Etude", 2);
+        score.measures[1].ending = vec![2];
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format_version"], 7);
+        assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
+    }
+
+    #[test]
+    fn repeats_need_format_7() {
+        let mut score = Score::new("Etude", 2);
+        score.measures[0].repeat_start = true;
+        score.measures[1].repeat_end = Some(2);
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format_version"], 7);
+        assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
+    }
+
+    #[test]
     fn text_styles_and_boxes_need_format_7() {
         let mut score = Score::new("Etude", 1);
         score.text_styles.insert(
