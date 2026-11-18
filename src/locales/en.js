@@ -663,6 +663,16 @@ export default {
 
   // ----- status bar ------------------------------------------------------------
   'status.position': 'Staff {staff} · Measure {measure}',
+  'status.position.pickup': 'Staff {staff} · Pickup',
+  'status.pickup': 'Pickup',
+  'menu.score.measure.length': 'Length…',
+  'menu.score.measure.length.desc': 'How long the caret’s measure really is: a pickup (anacrusis) at the start, or the measure that completes it at the end.',
+  'length.title': 'Length of Measure {n}',
+  'length.label': 'The measure lasts',
+  'length.option': '{n} × {unit}',
+  'length.full': 'The whole measure ({time})',
+  'length.hint.first': 'A shorter first measure is a pickup: it is not numbered, and the next one is measure 1.',
+  'length.hint': 'A shorter measure at the end usually completes the pickup.',
   'status.voice': ' · Voice {n}',
   'status.lyrics': 'Lyrics',
   'status.lyrics.verse': ' · verse {n}',

@@ -289,8 +289,15 @@ pub fn export(score: &Score) -> String {
         let mut hyphen_open = [[false; MAX_VERSES]; MAX_VOICES];
         for (m, cell) in staff.measures.iter().enumerate() {
             let attrs = &score.measures[m];
-            let capacity = attrs.time.measure_ticks();
-            let _ = writeln!(x, "    <measure number=\"{}\">", m + 1);
+            let capacity = attrs.capacity();
+            // A pickup is measure 0, "implicit": not counted.
+            if m == 0 && score.has_pickup() {
+                x.push_str("    <measure number=\"0\" implicit=\"yes\">\n");
+            } else if attrs.length.is_some() {
+                let _ = writeln!(x, "    <measure number=\"{}\" implicit=\"yes\">", m + 1);
+            } else {
+                let _ = writeln!(x, "    <measure number=\"{}\">", m + 1);
+            }
             // Left side: a start repeat and/or the start of an ending.
             let ending_starts = !attrs.ending.is_empty()
                 && m.checked_sub(1).map(|p| &score.measures[p].ending) != Some(&attrs.ending);
@@ -629,7 +636,7 @@ fn divisions_for(score: &Score) -> u32 {
     let mut add = |t: u32| g = gcd(g, t);
     for staff in &score.staves {
         for (m, cell) in staff.measures.iter().enumerate() {
-            add(score.measures[m].time.measure_ticks());
+            add(score.measures[m].capacity());
             for e in cell.voices.iter().flatten() {
                 add(e.ticks());
             }
@@ -1032,6 +1039,8 @@ struct Importer {
     /// Endings by measure, and the one still open while it runs.
     endings: HashMap<usize, Vec<u8>>,
     open_ending: Option<Vec<u8>>,
+    /// The real length of short measures (pickups), from the first part.
+    lengths: HashMap<usize, u32>,
     /// Segnos, codas and jumps by measure, from the first part.
     segnos: std::collections::HashSet<usize>,
     codas: std::collections::HashSet<usize>,
@@ -1205,6 +1214,7 @@ impl Importer {
                 segno: self.segnos.remove(&m),
                 coda: self.codas.remove(&m),
                 jump: self.jumps.remove(&m),
+                length: self.lengths.remove(&m),
                 ..last.clone()
             });
         }
@@ -1823,6 +1833,13 @@ impl Importer {
                     self.measures.resize(m + 1, None);
                 }
                 self.measures[m] = Some(current_attrs.clone());
+                // An "implicit" measure shorter than its time signature (a
+                // pickup, or the measure completing it) keeps its length.
+                let reach = filled.values().copied().max().unwrap_or(0).max(0) as u32;
+                let full = current_attrs.time.measure_ticks();
+                if measure.attribute("implicit") == Some("yes") && reach > 0 && reach < full {
+                    self.lengths.insert(m, reach);
+                }
             }
         }
     }
@@ -2091,6 +2108,29 @@ mod tests {
         assert_eq!(back.measures[1].repeat_end, Some(3));
         assert_eq!(back.measures[2].ending, vec![3]);
         assert!(back.measures[0].ending.is_empty());
+    }
+
+    #[test]
+    fn a_pickup_round_trips_as_an_implicit_measure() {
+        let mut score = sample();
+        let quarter = score.measures[0].time.measure_ticks() / 4;
+        score.measures[0].length = Some(quarter);
+        score.staves[0].measures[0].voices[0] = vec![Event::new(
+            500,
+            Duration::new(DurationBase::Quarter),
+            EventKind::Chord {
+                pitches: vec![Pitch::new(Step::G, 4)],
+            },
+        )];
+        for st in score.staves.iter_mut().skip(1) {
+            st.measures[0].voices[0].clear();
+        }
+        let xml = export(&score);
+        assert!(xml.contains("<measure number=\"0\" implicit=\"yes\">"));
+        let back = import(&xml, "x").unwrap().score;
+        assert_eq!(back.measures[0].length, Some(quarter));
+        assert!(back.has_pickup());
+        assert!(back.measures[1].length.is_none());
     }
 
     #[test]

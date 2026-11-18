@@ -328,7 +328,21 @@ export function durationTicks(d) {
 }
 
 const diatonic = (p) => p.octave * 7 + STEP_INDEX[p.step];
-const capacity = (attrs) => attrs.time.beats * (TICKS_WHOLE / attrs.time.beat_type);
+// The ticks a measure holds: its own length when it is shorter than its
+// time signature (a pickup), otherwise the time signature's.
+const capacity = (attrs) => {
+  const full = attrs.time.beats * (TICKS_WHOLE / attrs.time.beat_type);
+  return attrs.length > 0 && attrs.length < full ? attrs.length : full;
+};
+
+/** Whether the first measure is a pickup: then it is not numbered. */
+export const hasPickup = (score) => {
+  const a = score.measures[0];
+  return !!a && capacity(a) < a.time.beats * (TICKS_WHOLE / a.time.beat_type);
+};
+
+/** The number printed for measure `m` (0-based), or null for a pickup. */
+export const measureNumber = (score, m) => (hasPickup(score) ? (m === 0 ? null : m) : m + 1);
 const pitchesOf = (e) => (e.kind === 'rest' ? [] : e.kind.chord.pitches);
 
 export function keyAlter(fifths, step) {
@@ -938,7 +952,9 @@ export function renderScore(view, width, opts = {}) {
     const first = s.measures[0];
     const xEnd = s.x0 + s.width;
     // Measure number.
-    push(`<text class="mnum" x="${s.x0}" y="${s.y - 1.6 * SP}">${first.m + 1}</text>`);
+    // A pickup has no number.
+    const n = measureNumber(score, first.m);
+    if (n !== null) push(`<text class="mnum" x="${s.x0}" y="${s.y - 1.6 * SP}">${n}</text>`);
     // Staff names: full on the first system, short on the others. Click
     // one to edit the staff. A name shared by a braced group is centred.
     (s.index === 0 ? lay.names : lay.shortNames).forEach((name, st) => {
@@ -999,7 +1015,7 @@ export function renderScore(view, width, opts = {}) {
       if (ms.overfull.has(st)) {
         const beatTicks = TICKS_WHOLE / ms.attrs.time.beat_type;
         const beats = +(ms.overfull.get(st) / beatTicks).toFixed(2);
-        const label = esc(t('score.overfull', { beats, total: ms.attrs.time.beats }));
+        const label = esc(t('score.overfull', { beats, total: +(capacity(ms.attrs) / beatTicks).toFixed(2) }));
         push(`<rect class="overfull" x="${ms.x + 2}" y="${top - 0.5 * SP}" width="${ms.w - 4}" height="${5 * SP}"><title>${label}</title></rect>`);
         push(`<text class="errlabel" x="${ms.x + (ms.systemStart ? ms.prefix : 0) + 5}" y="${top - 1.1 * SP}">⚠ ${label}</text>`);
       }
@@ -1067,7 +1083,7 @@ export function renderScore(view, width, opts = {}) {
       if (ms.multi) {
         const x0 = ms.contentX + 0.4 * SP;
         const x1 = ms.contentX + ms.contentW - 0.4 * SP;
-        push(`<g class="ev v0 mrest" data-measures="${ms.m + 1}-${ms.mEnd + 1}"><title>${esc(t('score.multirest', { from: ms.m + 1, to: ms.mEnd + 1, n: ms.multi }))}</title>`);
+        push(`<g class="ev v0 mrest" data-measures="${ms.m + 1}-${ms.mEnd + 1}"><title>${esc(t('score.multirest', { from: measureNumber(score, ms.m) ?? 0, to: measureNumber(score, ms.mEnd) ?? 0, n: ms.multi }))}</title>`);
         push(`<rect x="${x0}" y="${top + 1.6 * SP}" width="${x1 - x0}" height="${0.8 * SP}"/>`);
         push(`<rect x="${x0}" y="${top + SP}" width="${0.16 * SP}" height="${2 * SP}"/><rect x="${x1 - 0.16 * SP}" y="${top + SP}" width="${0.16 * SP}" height="${2 * SP}"/>`);
         push(`<text class="m tsig" x="${(x0 + x1) / 2}" y="${top - 1.2 * SP}">${timeDigits(ms.multi)}</text></g>`);

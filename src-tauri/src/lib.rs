@@ -323,6 +323,12 @@ enum Action {
         numbers: Vec<u8>,
         close: bool,
     },
+    /// How long a measure really is, in ticks (`None`: its time
+    /// signature's length): a pickup, or the measure completing it.
+    SetMeasureLength {
+        measure: usize,
+        length: Option<u32>,
+    },
     /// The jump marks of a measure: a segno and the start of the coda at
     /// its beginning, Fine / To Coda / D.C. / D.S. at its end.
     SetJumps {
@@ -593,6 +599,9 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
                 numbers,
                 close,
             } => d.set_ending(first, last, &numbers, close, now),
+            Action::SetMeasureLength { measure, length } => {
+                d.set_measure_length(measure, length, now)
+            }
             Action::SetJumps {
                 measure,
                 segno,

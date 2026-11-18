@@ -5,6 +5,7 @@ import {
   SP, renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, playheadMarkup, esc, eraserTarget, eventsInBox,
   lyricTarget, MAX_VERSES, fullMetadata, BEATS, perMinute, toQuarterBpm,
   currentStyle, cssFont, resolveStyle, TEXT_KINDS, TEXT_DEFAULTS, UNITS_PER_PT, UNITS_PER_TENTH_MM,
+  measureNumber,
 } from './render.js';
 import { installTooltips } from './tooltip.js';
 import {
@@ -688,7 +689,8 @@ function renderStatus() {
   if (doc) {
     const c = doc.caret;
     const voice = voiceCount(doc) > 1 ? t('status.voice', { n: c.voice + 1 }) : '';
-    parts.push(esc(t('status.position', { staff: c.staff + 1, measure: c.measure + 1 }) + voice));
+    const number = measureNumber(doc.score, c.measure);
+    parts.push(esc((number === null ? t('status.position.pickup', { staff: c.staff + 1 }) : t('status.position', { staff: c.staff + 1, measure: number })) + voice));
     const d = state.duration;
     const base = t(`value.${d.base}`);
     const value = d.dots ? t('value.dotted', { value: base }) : base;
@@ -870,6 +872,60 @@ const barlineAt = () => {
   const doc = active();
   return doc?.score.measures[doc.caret.measure]?.barline ?? 'single';
 };
+
+/**
+ * How long the caret's measure really is: a pickup (anacrusis), or the
+ * measure that completes it at the end. The choices go in eighths (in
+ * sixteenths for x/8 time) up to the whole measure, which means none.
+ */
+async function measureLengthDialog() {
+  const doc = active();
+  if (!doc) return;
+  const m = doc.caret.measure;
+  const attrs = doc.score.measures[m];
+  const whole = 3840;
+  const full = attrs.time.beats * (whole / attrs.time.beat_type);
+  const beat = whole / attrs.time.beat_type;
+  const step = attrs.time.beat_type >= 8 ? whole / 16 : whole / 8;
+  // What the measure holds now: a good guess for a pickup.
+  const filled = Math.max(0, ...doc.score.staves.flatMap((st) => st.measures[m].voices.map((v) =>
+    v.reduce((ticks, e) => ticks + eventTicks(e), 0))));
+  const current = attrs.length && attrs.length < full ? attrs.length : (filled > 0 && filled < full ? filled : full);
+  const beats = (ticks) => {
+    const n = ticks / beat;
+    const whole = Math.floor(n);
+    const frac = n - whole;
+    const part = Math.abs(frac - 0.5) < 1e-6 ? '½' : Math.abs(frac - 0.25) < 1e-6 ? '¼' : Math.abs(frac - 0.75) < 1e-6 ? '¾' : '';
+    return part && !whole ? part : `${whole || ''}${part}` || String(+n.toFixed(2));
+  };
+  const options = [];
+  for (let ticks = step; ticks < full; ticks += step) {
+    options.push(`<option value="${ticks}"${ticks === current ? ' selected' : ''}>${esc(t('length.option', { n: beats(ticks), unit: t(`value.${beatValue(attrs.time.beat_type)}`) }))}</option>`);
+  }
+  options.push(`<option value="0"${current === full ? ' selected' : ''}>${esc(t('length.full', { time: `${attrs.time.beats}/${attrs.time.beat_type}` }))}</option>`);
+  const body = `<div class="staff-form"><label>${esc(t('length.label'))}
+    <select id="measure-length">${options.join('')}</select></label>
+    <p class="muted hint">${esc(t(m === 0 ? 'length.hint.first' : 'length.hint'))}</p></div>`;
+  const number = measureNumber(doc.score, m);
+  const answer = await choiceDialog(t('length.title', { n: number ?? t('status.pickup') }), body, [
+    { spacer: true },
+    { label: t('button.cancel'), value: 'cancel' },
+    { label: t('button.ok'), value: 'ok', primary: true },
+  ]);
+  if (answer === 'ok') {
+    const ticks = Number($('measure-length').value);
+    act({ type: 'set_measure_length', measure: m, length: ticks > 0 ? ticks : null });
+  }
+  page.focus();
+}
+const beatValue = (beatType) => ({ 1: 'Whole', 2: 'Half', 4: 'Quarter', 8: 'Eighth', 16: 'Sixteenth' })[beatType] ?? 'Quarter';
+const BASE_TICKS = { Breve: 7680, Whole: 3840, Half: 1920, Quarter: 960, Eighth: 480, Sixteenth: 240, ThirtySecond: 120, SixtyFourth: 60, HundredTwentyEighth: 30 };
+function eventTicks(e) {
+  let ticks = BASE_TICKS[e.duration.base] ?? 0;
+  let add = ticks;
+  for (let d = 0; d < (e.duration.dots || 0); d++) { add /= 2; ticks += add; }
+  return ticks;
+}
 
 function setVoice(voice) {
   const doc = active();
@@ -2439,7 +2495,7 @@ async function tempoDialog(measure) {
         `<option value="${v}"${v === showOf(mark) ? ' selected' : ''}>${esc(t(`tempo.show.${v}`))}</option>`).join('')}</select></label>
     <p class="muted hint">${esc(t(first ? 'tempo.hint.first' : 'tempo.hint'))}</p>
   </form>`;
-  const pending = choiceDialog(t('tempo.title', { n: measure + 1 }), body, [
+  const pending = choiceDialog(t('tempo.title', { n: measureNumber(doc.score, measure) ?? t('status.pickup') }), body, [
     ...(current ? [{ label: t('tempo.remove'), value: 'remove' }] : []),
     { spacer: true },
     { label: t('button.cancel'), value: 'cancel' },
@@ -2862,6 +2918,7 @@ commands['page-texts'] = () => pageTextsDialog();
 commands['tempo-mark'] = () => { const doc = active(); if (doc) tempoDialog(doc.caret.measure); };
 const BARLINES = ['single', 'double', 'final', 'dashed'];
 for (const k of BARLINES) commands[`barline:${k}`] = () => setBarline(k);
+commands['measure-length'] = () => serial(measureLengthDialog);
 commands['repeat-start'] = toggleRepeatStart;
 commands['repeat-end'] = toggleRepeatEnd;
 commands['repeat-selection'] = repeatSelection;
@@ -3019,6 +3076,7 @@ const MENUS = [
     { label: t('menu.score.measure'), enabled: hasDoc, items: [
       { label: t('menu.score.measure.add'), cmd: 'add-measure', key: 'Ctrl+Enter', desc: t('toolbar.addmeasure.desc') },
       { label: t('menu.score.measure.remove'), cmd: 'remove-measure', desc: t('toolbar.removemeasure.desc') },
+      { label: t('menu.score.measure.length'), cmd: 'measure-length', desc: t('menu.score.measure.length.desc') },
       { sep: true },
       { label: t('menu.score.measure.barline'), value: () => t(`barline.${barlineAt()}.short`), items: BARLINES.map((k) =>
         ({ ...choice(`barline.${k}`, `barline:${k}`, () => barlineAt() === k), desc: t(`barline.${k}.desc`) })) },
