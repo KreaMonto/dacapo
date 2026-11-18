@@ -111,6 +111,13 @@ pub enum Op {
         id: u64,
         text_box: Option<TextBox>,
     },
+    /// A clef change at the start of a measure of a staff (`None`: no
+    /// change there). Added last so recovery data keeps its variant numbers.
+    SetMeasureClef {
+        staff: usize,
+        measure: usize,
+        clef: Option<Clef>,
+    },
 }
 
 /// Why an op could not be applied. The score is left untouched.
@@ -433,6 +440,26 @@ impl Op {
                 }
                 let old = std::mem::replace(&mut score.tempo, *bpm);
                 Ok(Op::SetTempo { bpm: old })
+            }
+            Op::SetMeasureClef {
+                staff,
+                measure,
+                clef,
+            } => {
+                let s = score
+                    .staves
+                    .get_mut(*staff)
+                    .ok_or(OpError::StaffIndex(*staff))?;
+                let cell = s
+                    .measures
+                    .get_mut(*measure)
+                    .ok_or(OpError::MeasureIndex(*measure))?;
+                let old = std::mem::replace(&mut cell.clef, *clef);
+                Ok(Op::SetMeasureClef {
+                    staff: *staff,
+                    measure: *measure,
+                    clef: old,
+                })
             }
         }
     }

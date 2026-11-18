@@ -330,7 +330,12 @@ pub fn export(score: &Score) -> String {
             // Transposing staves show their written key.
             let key = score.written_key(s, m);
             let prev_key = m.checked_sub(1).map(|p| score.written_key(s, p));
-            if m == 0 || prev_key != Some(key) || prev_attrs.map(|p| p.time) != Some(attrs.time) {
+            let clef_change = staff.measures[m].clef.filter(|_| m > 0);
+            if m == 0
+                || prev_key != Some(key)
+                || prev_attrs.map(|p| p.time) != Some(attrs.time)
+                || clef_change.is_some()
+            {
                 x.push_str("      <attributes>\n");
                 if m == 0 {
                     let _ = writeln!(x, "        <divisions>{divisions}</divisions>");
@@ -343,6 +348,13 @@ pub fn export(score: &Score) -> String {
                         x,
                         "        <time><beats>{}</beats><beat-type>{}</beat-type></time>",
                         attrs.time.beats, attrs.time.beat_type
+                    );
+                }
+                if let Some(clef) = clef_change {
+                    let (sign, line) = clef_sign(clef);
+                    let _ = writeln!(
+                        x,
+                        "        <clef><sign>{sign}</sign><line>{line}</line></clef>"
                     );
                 }
                 if m == 0 {
@@ -812,7 +824,7 @@ pub enum ImportNoteKind {
     Tuplets,
     /// Notes beyond the fourth voice of a staff were left out.
     ExtraVoices,
-    /// Clef changes after the first clef were left out.
+    /// Clef changes inside a measure were left out.
     ClefChanges,
     /// Notes overlapping the previous one were moved after it.
     Overlaps,
@@ -841,8 +853,8 @@ impl fmt::Display for ImportNote {
             ),
             ImportNoteKind::ClefChanges => write!(
                 f,
-                "Staves kept the clef they start with; {} left out.",
-                plural("one clef change was", "clef changes were")
+                "{} in the middle of a measure left out: Partita changes clef at the start of a measure.",
+                plural("One clef change was", "clef changes were")
             ),
             ImportNoteKind::Overlaps => write!(
                 f,
@@ -1069,6 +1081,8 @@ struct Importer {
     tuplets: usize,
     dropped_voices: usize,
     extra_clefs: usize,
+    /// Clef changes found: (staff, measure, clef), applied at the end.
+    clef_changes: Vec<(usize, usize, Clef)>,
     overlaps: usize,
     /// Staves named "Staff N" because the file gave them no name.
     unnamed: Vec<usize>,
@@ -1280,6 +1294,20 @@ impl Importer {
         for staff in &mut self.score_staves {
             staff.measures.resize_with(count, StaffMeasure::default);
         }
+        // Clef changes, in order; one to the clef already in force is none.
+        self.clef_changes.sort_by_key(|&(s, m, _)| (s, m));
+        for &(s, m, clef) in &self.clef_changes {
+            let staff = &mut self.score_staves[s];
+            if m == 0 || m >= staff.measures.len() {
+                continue;
+            }
+            let before = staff.measures[1..m]
+                .iter()
+                .rev()
+                .find_map(|c| c.clef)
+                .unwrap_or(staff.clef);
+            staff.measures[m].clef = (before != clef).then_some(clef);
+        }
 
         let notes: Vec<ImportNote> = [
             (ImportNoteKind::Tuplets, self.tuplets),
@@ -1464,19 +1492,26 @@ impl Importer {
                                 .and_then(|n| n.parse().ok())
                                 .unwrap_or(1);
                             if let Some(slot) = slots.get_mut(&number) {
-                                if slot.clef_set {
-                                    self.extra_clefs += 1;
-                                    continue;
-                                }
-                                slot.clef_set = true;
                                 let sign = text_of(c, "sign").unwrap_or_default();
                                 let line = number_of(c, "line").map(|l| l as u8);
-                                self.score_staves[slot.index].clef = match (sign.as_str(), line) {
+                                let clef = match (sign.as_str(), line) {
                                     ("F", _) => Clef::Bass,
                                     ("C", Some(4)) => Clef::Tenor,
                                     ("C", _) => Clef::Alto,
                                     _ => Clef::Treble,
                                 };
+                                if !slot.clef_set {
+                                    slot.clef_set = true;
+                                    self.score_staves[slot.index].clef = clef;
+                                } else if pos <= 0 {
+                                    // At the start of the measure.
+                                    self.clef_changes.push((slot.index, m, clef));
+                                } else if pos >= capacity as i64 {
+                                    // After the last note: for the next measure.
+                                    self.clef_changes.push((slot.index, m + 1, clef));
+                                } else {
+                                    self.extra_clefs += 1;
+                                }
                             }
                         }
                         capacity = current_attrs.time.measure_ticks();
@@ -2280,6 +2315,23 @@ mod tests {
         assert_eq!(voice[0].duration, eighth);
         assert_eq!(voice[3].duration, quarter);
         assert_eq!(tuplet_groups(voice), vec![(0, 2), (3, 4)]);
+    }
+
+    #[test]
+    fn clef_changes_round_trip() {
+        let mut score = sample();
+        let n = score.measures.len();
+        assert!(n >= 2);
+        score.staves[0].measures[1].clef = Some(Clef::Bass);
+        let xml = export(&score);
+        assert_eq!(
+            xml.matches("<sign>F</sign>").count(),
+            1 + score.staves.iter().filter(|s| s.clef == Clef::Bass).count()
+        );
+        let back = import(&xml, "x").unwrap();
+        assert!(back.notes.is_empty(), "{:?}", back.notes);
+        assert_eq!(back.score.staves[0].measures[1].clef, Some(Clef::Bass));
+        assert_eq!(back.score.clef_at(0, n - 1), Clef::Bass);
     }
 
     #[test]

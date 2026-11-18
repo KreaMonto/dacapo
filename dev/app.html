@@ -169,6 +169,16 @@
       set_caret({ caret }) { view.caret = caret; },
       set_tempo({ bpm }) { snapshot(); view.score.tempo = bpm; },
       // Marks act on the event before the caret (the fake has no selections).
+      // Clef from the caret's measure on (like the core, without tidying later changes).
+      set_clef({ clef }) {
+        snapshot();
+        const st = view.score.staves[view.caret.staff];
+        const m = view.caret.measure;
+        if (m === 0) { st.clef = clef; return; }
+        let before = st.clef;
+        for (let k = m - 1; k >= 1; k--) if (st.measures[k].clef) { before = st.measures[k].clef; break; }
+        st.measures[m].clef = before === clef ? null : clef;
+      },
       set_beam({ beam }) {
         const e = voiceOf(view.caret)[view.caret.index - 1];
         if (!e || e.kind === 'rest') return;

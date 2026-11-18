@@ -50,7 +50,7 @@ This document tracks the development goals and major stages toward a complete op
 
 ## Phase 3: Export and formats
 
-- [x] MusicXML import (`.musicxml`, `.xml`, `.mxl`). Tuplets and grace notes are imported too. Next: clef changes, once the model has them.
+- [x] MusicXML import (`.musicxml`, `.xml`, `.mxl`). Tuplets, grace notes and clef changes at the start of a measure are imported too.
 - [ ] PDF export with page layout.
 - [ ] Print.
 - [ ] Recent files list and file association for `.partita`.

@@ -497,7 +497,7 @@ impl Document {
             measure -= 1;
             limit = usize::MAX;
         }
-        self.score.staves[c.staff].clef.middle_line()
+        self.score.clef_at(c.staff, c.measure).middle_line()
     }
 
     fn insert_event(
@@ -1828,15 +1828,52 @@ impl Document {
         )
     }
 
-    pub fn set_clef(&mut self, staff: usize, clef: Clef, now_ms: u64) -> Result<(), EditError> {
+    /// Sets the clef of a staff from `measure` on: in the first measure it
+    /// is the staff's own clef, later a clef change (none when it is the
+    /// clef already in force). A later change to the same clef is no longer
+    /// a change, and goes.
+    pub fn set_clef(
+        &mut self,
+        staff: usize,
+        measure: usize,
+        clef: Clef,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let Some(s) = self.score.staves.get(staff) else {
+            return Err(OpError::StaffIndex(staff).into());
+        };
+        let measure = measure.min(s.measures.len().saturating_sub(1));
+        let mut ops = Vec::new();
+        if measure == 0 {
+            if s.clef != clef {
+                ops.push(Op::SetStaffClef { staff, clef });
+            }
+        } else {
+            let before = self.score.clef_at(staff, measure - 1);
+            let change = (before != clef).then_some(clef);
+            if s.measures[measure].clef != change {
+                ops.push(Op::SetMeasureClef {
+                    staff,
+                    measure,
+                    clef: change,
+                });
+            }
+        }
+        if let Some(next) = (measure + 1..s.measures.len()).find(|&k| s.measures[k].clef.is_some())
+        {
+            if s.measures[next].clef == Some(clef) {
+                ops.push(Op::SetMeasureClef {
+                    staff,
+                    measure: next,
+                    clef: None,
+                });
+            }
+        }
+        if ops.is_empty() {
+            return Ok(());
+        }
         let caret = self.caret;
-        self.commit(
-            TxKind::Edit,
-            vec![Op::SetStaffClef { staff, clef }],
-            caret,
-            now_ms,
-            false,
-        )
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
     }
 
     /// Sets a staff's name, playback instrument and clef in one undo step.
@@ -2087,6 +2124,29 @@ mod tests {
             .iter()
             .map(|e| e.pitches().first().map(|p| p.step))
             .collect()
+    }
+
+    #[test]
+    fn clef_changes_from_the_caret() {
+        let mut doc = Document::new(Score::new("t", 4));
+        doc.set_clef(0, 2, Clef::Bass, 1_000).unwrap();
+        assert_eq!(doc.score.staves[0].measures[2].clef, Some(Clef::Bass));
+        assert_eq!(doc.score.clef_at(0, 1), Clef::Treble);
+        assert_eq!(doc.score.clef_at(0, 3), Clef::Bass);
+        // Back to treble at measure 3: a change there.
+        doc.set_clef(0, 3, Clef::Treble, 2_000).unwrap();
+        assert_eq!(doc.score.staves[0].measures[3].clef, Some(Clef::Treble));
+        // The clef of measure 3 again at measure 2: no change at 2, and the
+        // one at 3 is no longer one.
+        doc.set_clef(0, 2, Clef::Treble, 3_000).unwrap();
+        assert!(!doc.score.has_clef_changes());
+        // The first measure sets the staff's own clef.
+        doc.set_clef(0, 0, Clef::Alto, 4_000).unwrap();
+        assert_eq!(doc.score.staves[0].clef, Clef::Alto);
+        doc.undo().unwrap();
+        assert_eq!(doc.score.staves[0].clef, Clef::Treble);
+        doc.undo().unwrap();
+        assert_eq!(doc.score.staves[0].measures[3].clef, Some(Clef::Treble));
     }
 
     #[test]

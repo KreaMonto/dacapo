@@ -84,7 +84,7 @@ fn required_version(score: &Score) -> u32 {
                 .any(|m| m.voices.iter().any(|v| v.iter().any(test)))
         })
     };
-    if score.has_rhythm_marks() {
+    if score.has_rhythm_marks() || score.has_clef_changes() {
         8
     } else if score.metadata.uses_page_texts() || score.has_markings() {
         7
@@ -425,6 +425,15 @@ mod tests {
                 pitches: vec![crate::model::Pitch::new(crate::model::Step::D, 5)],
             },
         )];
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format_version"], 8);
+        assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
+    }
+
+    #[test]
+    fn clef_changes_need_format_8() {
+        let mut score = Score::new("Etude", 3);
+        score.staves[0].measures[2].clef = Some(crate::model::Clef::Bass);
         let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
         assert_eq!(v["format_version"], 8);
         assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);

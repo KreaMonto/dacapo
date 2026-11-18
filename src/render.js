@@ -310,6 +310,20 @@ const STEM_LEN = 3.5 * SP;
 const BEAM_T = 0.5 * SP; // beam thickness
 const BEAM_STEP = 0.75 * SP; // from one beam to the next (thickness + gap)
 const CLEF_COL = 3.6 * SP; // room for the widest clef (C clef, 2.8 spaces) plus gap
+const CHANGE_COL = 2.8 * SP; // room for a clef change: the clef drawn smaller
+
+/**
+ * The clef in force on a staff at a measure: the last change at or before
+ * it (never in the first measure), else the staff's own clef.
+ */
+export function clefAt(score, staff, measure) {
+  const s = score.staves[staff];
+  if (!s) return 'treble';
+  for (let m = Math.min(measure, s.measures.length - 1); m >= 1; m--) {
+    if (s.measures[m].clef) return s.measures[m].clef;
+  }
+  return s.clef;
+}
 
 /** A music glyph: baseline at (x, y). */
 const glyph = (g, x, y, cls = '') => `<text class="m${cls ? ` ${cls}` : ''}" x="${x}" y="${y}">${g}</text>`;
@@ -518,6 +532,8 @@ export function layout(view, width, opts = {}) {
       content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP, Math.min(lyricW, 80 * SP) + 2.6 * SP) + maxLead * GRACE_STEP + (attrs.repeat_end ? REPEAT_W : 0),
       timeChange: !prev || prev.time.beats !== attrs.time.beats || prev.time.beat_type !== attrs.time.beat_type,
       keyChange: !!prev && prev.key.fifths !== attrs.key.fifths,
+      // Some staff changes clef here (drawn smaller, inside the measure).
+      clefChange: m > 0 && score.staves.some((st) => !!st.measures[m]?.clef),
     };
   });
 
@@ -529,7 +545,7 @@ export function layout(view, width, opts = {}) {
     let j = i;
     if (opts.multiRest && single[i].restOnly) {
       // A tempo marking (even a hidden one) starts a new run: it may change the tempo.
-      while (j + 1 < single.length && single[j].barline === 'single' && !single[j].repeatEnd && !single[j + 1].repeatStart && !single[j].ending.length && !single[j + 1].ending.length && !single[j].jump && !single[j].breakAfter && !single[j + 1].segno && !single[j + 1].coda && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo && !single[j + 1].rehearsal) j++;
+      while (j + 1 < single.length && single[j].barline === 'single' && !single[j].repeatEnd && !single[j + 1].repeatStart && !single[j].ending.length && !single[j + 1].ending.length && !single[j].jump && !single[j].breakAfter && !single[j + 1].segno && !single[j + 1].coda && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].clefChange && !single[j + 1].tempo && !single[j + 1].rehearsal) j++;
     }
     if (j > i) {
       measures.push({ ...single[i], mEnd: single[j].m, multi: j - i + 1, barline: single[j].barline, repeatEnd: single[j].repeatEnd, jump: single[j].jump, breakAfter: single[j].breakAfter, content: 13 * SP + (single[j].repeatEnd ? REPEAT_W : 0) });
@@ -576,7 +592,7 @@ export function layout(view, width, opts = {}) {
     // A start repeat sits after the clef, key and time, before the music.
     const repeatRoom = ms.repeatStart ? REPEAT_W : 0;
     const startPrefix = 0.6 * SP + CLEF_COL + keyRoom(ms.attrs.key.fifths) + (ms.timeChange ? 2.8 * SP : 0) + SP + repeatRoom;
-    const midPrefix = (ms.keyChange ? keyRoom(ms.attrs.key.fifths) + SP : 0) + (ms.timeChange ? 2.8 * SP : 0) + repeatRoom;
+    const midPrefix = (ms.clefChange ? CHANGE_COL : 0) + (ms.keyChange ? keyRoom(ms.attrs.key.fifths) + SP : 0) + (ms.timeChange ? 2.8 * SP : 0) + repeatRoom;
     const room = avail - (systems.length === 1 ? nameIndent : shortIndent);
     const fitsMid = sys && sys.width + midPrefix + ms.content <= room && !forced;
     if (!fitsMid) {
@@ -599,10 +615,10 @@ export function layout(view, width, opts = {}) {
   for (const s of systems) {
     s.lyricY = score.staves.map((staff, st) => {
       if (!verses[st]) return LYRIC_Y0;
-      const mid = CLEF_MIDDLE[staff.clef];
       let low = 0; // lowest ink, from the staff top
       for (const ms of s.measures) {
         if (ms.multi) continue;
+        const mid = CLEF_MIDDLE[clefAt(score, st, ms.m)];
         const voices = staff.measures[ms.m].voices;
         const multi = voices.filter((v) => v.length).length > 1;
         voices.forEach((voice, v) => {
@@ -1077,7 +1093,8 @@ export function renderScore(view, width, opts = {}) {
     for (let st = 0; st < lay.nStaves; st++) {
       const staff = score.staves[st];
       const top = lay.staffTop(ms, st);
-      const mid = CLEF_MIDDLE[staff.clef];
+      const clefHere = clefAt(score, st, ms.m);
+      const mid = CLEF_MIDDLE[clefHere];
       const yOf = (d) => top + 2 * SP - (d - mid) * (SP / 2);
 
       if (ms.overfull.has(st)) {
@@ -1091,15 +1108,23 @@ export function renderScore(view, width, opts = {}) {
       // Prefix: clef, key, time.
       let px = ms.x + 0.6 * SP;
       if (ms.systemStart) {
-        const clef = CLEF[staff.clef];
+        const clef = CLEF[clefHere];
         push(glyph(clef.g, px, top + clef.line * SP, 'clef'));
         px += CLEF_COL;
+      } else if (ms.clefChange) {
+        // A clef change, smaller; staves without one keep the room too, so
+        // what follows lines up.
+        if (staff.measures[ms.m].clef) {
+          const clef = CLEF[clefHere];
+          push(glyph(clef.g, px, top + clef.line * SP, 'clef clef-change'));
+        }
+        px += CHANGE_COL;
       }
       if (ms.systemStart || ms.keyChange) {
         const f = writtenFifths(staff, ms.attrs.key.fifths);
         const positions = (f >= 0 ? KEY_SHARPS : KEY_FLATS).slice(0, Math.abs(f));
         for (const p of positions) {
-          const y = top + 2 * SP - (p + CLEF_KEY_SHIFT[staff.clef]) * (SP / 2);
+          const y = top + 2 * SP - (p + CLEF_KEY_SHIFT[clefHere]) * (SP / 2);
           push(glyph(f > 0 ? ACC['1'] : ACC['-1'], px, y));
           px += 1.05 * SP;
         }
@@ -1948,8 +1973,7 @@ export function pointerTarget(lay, view, x, y, voice) {
   if (!ms) return null;
 
   const top = s.y + s.staffY[staff];
-  const clef = view.score.staves[staff].clef;
-  const mid = CLEF_MIDDLE[clef];
+  const mid = CLEF_MIDDLE[clefAt(view.score, staff, ms.m)];
   const d = mid + Math.round((top + 2 * SP - y) / (SP / 2));
   const events = view.score.staves[staff].measures[ms.m].voices[voice];
 
