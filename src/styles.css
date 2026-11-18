@@ -500,6 +500,8 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .score .m { font-family: Bravura; font-size: 40px; }
 .score .tsig, .score .mark { text-anchor: middle; }
 .score .tuplet-num { text-anchor: middle; }
+/* A clef change inside a system: smaller than the clef at the start. */
+.score .clef-change { font-size: 30px; }
 /* Grace notes: 65 % of the size (GRACE_K in render.js). */
 .score .m.small { font-size: 26px; }
 .score .grace .stem, .score .grace-stem { stroke-width: 1; }

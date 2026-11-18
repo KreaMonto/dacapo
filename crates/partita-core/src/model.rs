@@ -534,8 +534,8 @@ thread_local! {
 /// marks in 6 and 7; no text styles or text boxes in 6 to 8; no barline
 /// types in 6 to 9; no repeats in 6 to 10; no endings in 6 to 11; no
 /// jumps in 6 to 12; no measure lengths in 6 to 13; no layout breaks in
-/// any of them), or 15 (Partita 0.3.14: no tuplets, grace notes or manual
-/// beams; so too all the older ones).
+/// any of them), or 15 (Partita 0.3.14: no tuplets, grace notes, manual
+/// beams or clef changes; so too all the older ones).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
@@ -1231,17 +1231,53 @@ impl Default for TempoMark {
 }
 
 /// The content of one staff in one measure.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct StaffMeasure {
     /// Always exactly [`MAX_VOICES`] entries.
     pub voices: Vec<Vec<Event>>,
+    /// A clef change at the start of this measure (never in the first
+    /// measure: that is the staff's own clef). Since file format 8
+    /// (recovery format 16).
+    pub clef: Option<Clef>,
 }
 
 impl Default for StaffMeasure {
     fn default() -> Self {
         StaffMeasure {
             voices: vec![Vec::new(); MAX_VOICES],
+            clef: None,
         }
+    }
+}
+
+#[derive(Deserialize)]
+struct StaffMeasureFields {
+    voices: Vec<Vec<Event>>,
+    #[serde(default)]
+    clef: Option<Clef>,
+}
+
+/// [`StaffMeasure`] as written to recovery formats 3 to 15 (before clef
+/// changes).
+#[derive(Deserialize)]
+struct StaffMeasurePreClef {
+    voices: Vec<Vec<Event>>,
+}
+
+impl<'de> Deserialize<'de> for StaffMeasure {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        if matches!(legacy_format(), 3..=15) {
+            let m = StaffMeasurePreClef::deserialize(deserializer)?;
+            return Ok(StaffMeasure {
+                voices: m.voices,
+                clef: None,
+            });
+        }
+        let m = StaffMeasureFields::deserialize(deserializer)?;
+        Ok(StaffMeasure {
+            voices: m.voices,
+            clef: m.clef,
+        })
     }
 }
 
@@ -1892,6 +1928,28 @@ impl Score {
 
     /// The key signature a staff shows in a measure: the score's key,
     /// moved for transposing instruments.
+    /// The clef in force on a staff at a measure: the last change at or
+    /// before it, else the staff's own clef.
+    pub fn clef_at(&self, staff: usize, measure: usize) -> Clef {
+        let Some(s) = self.staves.get(staff) else {
+            return Clef::Treble;
+        };
+        s.measures
+            .iter()
+            .take(measure + 1)
+            .skip(1)
+            .rev()
+            .find_map(|m| m.clef)
+            .unwrap_or(s.clef)
+    }
+
+    /// Whether any staff changes clef after its start (file format 8).
+    pub fn has_clef_changes(&self) -> bool {
+        self.staves
+            .iter()
+            .any(|s| s.measures.iter().any(|m| m.clef.is_some()))
+    }
+
     pub fn written_key(&self, staff: usize, measure: usize) -> KeySignature {
         let concert = self
             .measures

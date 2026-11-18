@@ -578,7 +578,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
                 d.add_instrument(props, staves, now)
             }
             Action::RemoveStaff => d.remove_staff(d.caret().staff, now),
-            Action::SetClef { clef } => d.set_clef(d.caret().staff, clef, now),
+            Action::SetClef { clef } => d.set_clef(d.caret().staff, d.caret().measure, clef, now),
             Action::SetTime { beats, beat_type } => {
                 d.set_time_signature(TimeSignature { beats, beat_type }, now)
             }

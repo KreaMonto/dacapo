@@ -6,7 +6,7 @@ Partita is designed to feel like a word processor whose "text" is music. A blink
 
 - **New** (Ctrl+N) opens a new tab with an empty 8-measure score.
 - **Open** (Ctrl+O) loads a `.partita` file (or a `.dacapo` file from before the project was renamed). It also opens MusicXML files, like **Import MusicXML**.
-- **Import MusicXML…** (File menu) opens a score from another notation program (`.musicxml`, `.xml` or compressed `.mxl`) as a new, unsaved score. What Partita cannot show yet is simplified, and a message lists it: septuplets and other tuplets that do not divide evenly keep their written values, voices beyond four per staff are dropped, and each staff keeps the clef it starts with.
+- **Import MusicXML…** (File menu) opens a score from another notation program (`.musicxml`, `.xml` or compressed `.mxl`) as a new, unsaved score. What Partita cannot show yet is simplified, and a message lists it: septuplets and other tuplets that do not divide evenly keep their written values, voices beyond four per staff are dropped, and clef changes in the middle of a measure are left out (those at the start of a measure, or at the end of the one before, are kept).
 - **Export MusicXML…** (File menu) saves the score as MusicXML for Finale, Sibelius, Dorico, MuseScore and others: one part per staff, with its name and instrument.
 - **Save** (Ctrl+S) saves the document. **Save As** is Ctrl+Shift+S.
 - **Close tab** is Ctrl+W, and **next/previous tab** is Ctrl+Tab and Ctrl+Shift+Tab.
@@ -280,7 +280,7 @@ The toolbar is two rows of thin bars. Rest the pointer on a button to see what i
 | **2** | **Tools** (select, eraser, text box), **Measure** (clef, key, time, insert or delete a measure), **Staves** (add or delete a staff, bracket, brace, ungroup), **Indications** (tempo marking, rehearsal mark) |
 
 
-- **Clef**: clef of the staff containing the caret.
+- **Clef**: the clef of the caret's staff from the caret's measure on. In the first measure it is the staff's own clef; later it is a **clef change**, drawn smaller at the start of that measure, until the next change. Choosing the clef already in force there takes the change away.
 - **Key** and **Time**: apply from the caret's measure until the next change. For Time, type something like `3/4` and press Enter.
 - **+ Measure / − Measure**: insert after, or delete, the current measure.
 - **System and page breaks**: the **System Break** button of the **Measure** bar (or **Score → Measure → System Break**) ends the line of music after the caret's measure; **Page Break** ends the page there (in page view; in wrap view it ends the line). Again takes it away. A ↵ or ⇟ beside the line shows where a break is; it is never printed. The continuous view has no lines and ignores them. MusicXML keeps them in Partita's own files; the line breaks of files from other programs are not kept, so the music flows freely.

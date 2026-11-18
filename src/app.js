@@ -2,6 +2,7 @@
 // which answers with the full document view to redraw.
 
 import {
+  clefAt,
   SP, renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, playheadMarkup, esc, eraserTarget, eventsInBox,
   lyricTarget, MAX_VERSES, fullMetadata, BEATS, perMinute, toQuarterBpm,
   currentStyle, cssFont, resolveStyle, TEXT_KINDS, TEXT_DEFAULTS, UNITS_PER_PT, UNITS_PER_TENTH_MM,
@@ -661,7 +662,7 @@ function syncControls(doc) {
     b?.setAttribute('aria-pressed', String(on));
   }
   renderVoices(doc);
-  if (document.activeElement !== $('clef')) $('clef').value = staff.clef;
+  if (document.activeElement !== $('clef')) $('clef').value = clefAt(doc.score, doc.caret.staff, doc.caret.measure);
   if (document.activeElement !== $('key')) $('key').value = String(attrs.key.fifths);
   if (document.activeElement !== $('time')) $('time').value = `${attrs.time.beats}/${attrs.time.beat_type}`;
   if (document.activeElement !== $('tempo')) $('tempo').value = String(doc.score.tempo ?? 100);

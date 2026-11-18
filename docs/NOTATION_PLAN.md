@@ -73,7 +73,7 @@ Every mode needs these. The order inside each group is the planned order of work
 
 ### Clefs and pitch
 
-- [ ] Clef changes mid-staff.
+- [x] Clef changes mid-staff, at the start of a measure (from the Clef selector), with MusicXML import and export. Changes inside a measure are not supported yet.
 - [ ] 8va / 8vb and 15ma lines *(new)*.
 - [ ] Enharmonic respelling (F♯ ↔ G♭) *(new)*.
 
