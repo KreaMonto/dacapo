@@ -637,6 +637,13 @@ function syncControls(doc) {
   const mr = document.querySelector('[data-cmd=multirest]');
   mr.classList.toggle('on', state.multiRest);
   mr.setAttribute('aria-pressed', String(state.multiRest));
+  // The break buttons show the caret's measure.
+  for (const kind of ['system', 'page']) {
+    const b = document.querySelector(`[data-cmd="break:${kind}"]`);
+    const on = doc.score.measures[doc.caret.measure]?.break_after === kind;
+    b?.classList.toggle('on', on);
+    b?.setAttribute('aria-pressed', String(on));
+  }
   // The repeat buttons show the caret's measure (or the selection's ends).
   const [r0, r1] = selectedMeasures(doc);
   for (const [cmd, on] of [['repeat-start', !!doc.score.measures[r0]?.repeat_start], ['repeat-end', !!doc.score.measures[r1]?.repeat_end]]) {
@@ -2919,6 +2926,20 @@ commands['tempo-mark'] = () => { const doc = active(); if (doc) tempoDialog(doc.
 const BARLINES = ['single', 'double', 'final', 'dashed'];
 for (const k of BARLINES) commands[`barline:${k}`] = () => setBarline(k);
 commands['measure-length'] = () => serial(measureLengthDialog);
+// A break after the caret's measure; the same kind again takes it away.
+for (const kind of ['system', 'page']) {
+  commands[`break:${kind}`] = () => {
+    const doc = active();
+    if (!doc) return;
+    const m = doc.caret.measure;
+    const now = doc.score.measures[m].break_after;
+    act({ type: 'set_break', measure: m, layout_break: now === kind ? null : kind });
+  };
+}
+const breakAt = () => {
+  const doc = active();
+  return doc?.score.measures[doc.caret.measure]?.break_after ?? null;
+};
 commands['repeat-start'] = toggleRepeatStart;
 commands['repeat-end'] = toggleRepeatEnd;
 commands['repeat-selection'] = repeatSelection;
@@ -3077,6 +3098,8 @@ const MENUS = [
       { label: t('menu.score.measure.add'), cmd: 'add-measure', key: 'Ctrl+Enter', desc: t('toolbar.addmeasure.desc') },
       { label: t('menu.score.measure.remove'), cmd: 'remove-measure', desc: t('toolbar.removemeasure.desc') },
       { label: t('menu.score.measure.length'), cmd: 'measure-length', desc: t('menu.score.measure.length.desc') },
+      { label: t('break.system'), cmd: 'break:system', checked: () => breakAt() === 'system', desc: t('break.system.desc') },
+      { label: t('break.page'), cmd: 'break:page', checked: () => breakAt() === 'page', desc: t('break.page.desc') },
       { sep: true },
       { label: t('menu.score.measure.barline'), value: () => t(`barline.${barlineAt()}.short`), items: BARLINES.map((k) =>
         ({ ...choice(`barline.${k}`, `barline:${k}`, () => barlineAt() === k), desc: t(`barline.${k}.desc`) })) },

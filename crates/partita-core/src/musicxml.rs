@@ -290,6 +290,8 @@ pub fn export(score: &Score) -> String {
         for (m, cell) in staff.measures.iter().enumerate() {
             let attrs = &score.measures[m];
             let capacity = attrs.capacity();
+            // A break after the previous measure: a new system or page here.
+            let new_line = m.checked_sub(1).and_then(|p| score.measures[p].break_after);
             // A pickup is measure 0, "implicit": not counted.
             if m == 0 && score.has_pickup() {
                 x.push_str("    <measure number=\"0\" implicit=\"yes\">\n");
@@ -297,6 +299,11 @@ pub fn export(score: &Score) -> String {
                 let _ = writeln!(x, "    <measure number=\"{}\" implicit=\"yes\">", m + 1);
             } else {
                 let _ = writeln!(x, "    <measure number=\"{}\">", m + 1);
+            }
+            match new_line {
+                Some(LayoutBreak::System) => x.push_str("      <print new-system=\"yes\"/>\n"),
+                Some(LayoutBreak::Page) => x.push_str("      <print new-page=\"yes\"/>\n"),
+                None => {}
             }
             // Left side: a start repeat and/or the start of an ending.
             let ending_starts = !attrs.ending.is_empty()
@@ -916,7 +923,17 @@ pub fn import(text: &str, fallback_title: &str) -> Result<Import, MusicXmlError>
         "score-timewise" => return Err(MusicXmlError::Timewise),
         _ => return Err(MusicXmlError::NotAScore),
     }
-    Importer::default().run(root, fallback_title)
+    // Breaks are kept from Partita's (and Da Capo's) own files only.
+    let ours = root.descendants().any(|n| {
+        n.has_tag_name("software")
+            && n.text()
+                .is_some_and(|t| t.trim().starts_with("Partita") || t.trim().starts_with("Da Capo"))
+    });
+    Importer {
+        keep_breaks: ours,
+        ..Importer::default()
+    }
+    .run(root, fallback_title)
 }
 
 /// A direction's metronome mark: its beat unit (if Partita has it), the
@@ -1041,6 +1058,11 @@ struct Importer {
     open_ending: Option<Vec<u8>>,
     /// The real length of short measures (pickups), from the first part.
     lengths: HashMap<usize, u32>,
+    /// System and page breaks after measures, from the first part. Kept
+    /// only from Partita's own files: other programs mark every system of
+    /// their own layout, which would fix it here.
+    breaks: HashMap<usize, LayoutBreak>,
+    keep_breaks: bool,
     /// Segnos, codas and jumps by measure, from the first part.
     segnos: std::collections::HashSet<usize>,
     codas: std::collections::HashSet<usize>,
@@ -1215,6 +1237,7 @@ impl Importer {
                 coda: self.codas.remove(&m),
                 jump: self.jumps.remove(&m),
                 length: self.lengths.remove(&m),
+                break_after: self.breaks.remove(&m),
                 ..last.clone()
             });
         }
@@ -1435,6 +1458,13 @@ impl Importer {
                     }
                     // The line closing the measure (on the right, which is
                     // where a barline goes when it does not say).
+                    "print" if first_part && self.keep_breaks && m > 0 => {
+                        if el.attribute("new-page") == Some("yes") {
+                            self.breaks.insert(m - 1, LayoutBreak::Page);
+                        } else if el.attribute("new-system") == Some("yes") {
+                            self.breaks.insert(m - 1, LayoutBreak::System);
+                        }
+                    }
                     "barline" if first_part => {
                         // An ending: from its start to its stop (closed) or
                         // discontinue (open).
@@ -2108,6 +2138,20 @@ mod tests {
         assert_eq!(back.measures[1].repeat_end, Some(3));
         assert_eq!(back.measures[2].ending, vec![3]);
         assert!(back.measures[0].ending.is_empty());
+    }
+
+    #[test]
+    fn breaks_round_trip_from_partita_but_not_from_others() {
+        let mut score = sample();
+        score.measures[0].break_after = Some(LayoutBreak::Page);
+        let xml = export(&score);
+        assert!(xml.contains("<print new-page=\"yes\"/>"));
+        let back = import(&xml, "x").unwrap().score;
+        assert_eq!(back.measures[0].break_after, Some(LayoutBreak::Page));
+        // Another program's layout is not kept.
+        let other = xml.replace("<software>Partita", "<software>Other");
+        let back = import(&other, "x").unwrap().score;
+        assert!(back.measures[0].break_after.is_none());
     }
 
     #[test]

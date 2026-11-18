@@ -239,6 +239,10 @@
           view.score.measures[m] = a;
         }
       },
+      set_break({ measure, layout_break }) {
+        snapshot();
+        view.score.measures[measure] = { ...view.score.measures[measure], break_after: layout_break ?? null };
+      },
       set_measure_length({ measure, length }) {
         snapshot();
         view.score.measures[measure] = { ...view.score.measures[measure], length: length ?? null };

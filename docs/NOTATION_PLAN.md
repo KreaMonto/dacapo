@@ -61,7 +61,7 @@ Every mode needs these. The order inside each group is the planned order of work
 - [x] First and second endings (volta brackets) *(new)*.
 - [x] D.C., D.S., Coda, Segno and *Fine*, and playback that follows them *(new)*.
 - [x] Pickup measure (anacrusis) *(new)*.
-- [ ] System and page breaks *(new)*.
+- [x] System and page breaks *(new)*.
 
 ### Rhythm
 

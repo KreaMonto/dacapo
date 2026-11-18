@@ -5,6 +5,7 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 ## [Unreleased]
 
 ### Added
+- **System and page breaks**: after any measure, from the **Measure** bar or **Score → Measure**; a mark beside the line shows them while editing, and they are never printed. MusicXML keeps them in Partita's files (the layouts of other programs are not imported). Recovery data is now format 15.
 - **Pickup measures (anacrusis)**: **Score → Measure → Length…** makes a measure shorter than its time signature. A short first measure is not numbered (the next one is measure 1); playback and the error check use the real length, and MusicXML keeps it as an implicit measure. Recovery data is now format 14.
 - **Jumps**: segno, coda, *Fine*, *To Coda*, *D.C.* and *D.S.* (plain, *al Fine*, *al Coda*), from the **Jumps** button of the **Indications** bar or **Score → Jumps**. Playback follows them, with the usual convention that repeats are not taken again after the jump and only the last ending plays. MusicXML import and export keep them (they are no longer read as words for a note). Recovery data is now format 13.
 - **First and second endings**: from the **Ending** button of the **Measure** bar or **Score → Measure → Ending** (1st, 2nd, 3rd, or 1st and 2nd), drawn as a numbered bracket over the measures. A first ending gets its end repeat at once. Playback plays each ending on its own time through the repeat, and MusicXML keeps them. Recovery data is now format 12.
