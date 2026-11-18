@@ -310,6 +310,9 @@ export default {
   'bar.measure': 'Compases',
   'bar.staves': 'Pentagramas',
   'bar.view': 'Vista',
+  'bar.tools': 'Herramientas',
+  'bar.indications': 'Indicaciones',
+  'toolbar.label.score': 'Barra de la partitura',
   'bar.more': 'Más herramientas',
   'bar.more.desc': 'Las herramientas que no caben en la ventana.',
   'toolbar.new': 'Partitura nueva',
@@ -472,7 +475,7 @@ export default {
   'pagetext.footer': 'Pie de página (todas)',
   'pagetext.footer.example': '{title} · {composer}',
   // Indicaciones: tempo, textos en las notas, letras de ensayo.
-  'palette.markings': 'Indicaciones',
+  'palette.markings': 'Expresiones',
   'palette.tempo': 'Indicación de tempo',
   'palette.tempo.desc': 'Texto e indicación metronómica (♩ = 76) al inicio del compás del cursor, impresos o no.',
   'palette.expression': 'Expresión',

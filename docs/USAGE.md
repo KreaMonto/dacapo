@@ -68,7 +68,7 @@ All views edit the same way. Clicking, selecting and the pointer figure work ide
 
 ## Words in the music
 
-The **Indications** section of the palette (also in the Notes and Score menus):
+The **Indications** bar of the toolbar has the tempo marking and the rehearsal mark; the **Expressions** section of the palette has the expression and the technique. All four are in the Notes and Score menus too:
 
 | Button | What it adds |
 |---|---|
@@ -81,7 +81,7 @@ A grey hint shows where the words go; type over it and press **Enter** (**Esc** 
 
 ## Text boxes
 
-The **T** tool (next to Select and the eraser in the palette, or **Score → Text Box**) writes anywhere on a page: click where the text should start and type. **Shift+Enter** starts a new line; **Enter** (or a click elsewhere) keeps it, **Esc** leaves nothing. A text box stays where it was put on its page, whatever the music does, so it is only shown in page layout.
+The **T** tool (in the **Tools** bar, next to Select and the eraser, or **Score → Text Box**) writes anywhere on a page: click where the text should start and type. **Shift+Enter** starts a new line; **Enter** (or a click elsewhere) keeps it, **Esc** leaves nothing. A text box stays where it was put on its page, whatever the music does, so it is only shown in page layout.
 
 - **Drag** a box to move it; **click** it to change its words or look.
 - While typing, the format bar above the text sets its font, size, bold and italic, its alignment (left, centred, right) and a frame around it.
@@ -133,8 +133,8 @@ The palette is grouped into collapsible categories. Click a heading to open or c
 
 | Category | Contents |
 |---|---|
-| **↖ Select** | Back to normal editing: click to place the caret, drag to select. **Esc**, a right-click or `N` leave entry mode. |
-| **Eraser** (next to Select, `X`) | The pointer becomes a crosshair. Aim at a note and click to erase just that note; in a chord, only the tone you aim at goes. Drag a box to erase every note and rest inside it. The note under the crosshair turns red before you click. One Ctrl+Z brings back everything erased in one go. **Esc**, a right-click or `X` leave the eraser. |
+| **↖ Select** (Tools bar) | Back to normal editing: click to place the caret, drag to select. **Esc**, a right-click or `N` leave entry mode. |
+| **Eraser** (Tools bar, next to Select, `X`) | The pointer becomes a crosshair. Aim at a note and click to erase just that note; in a chord, only the tone you aim at goes. Drag a box to erase every note and rest inside it. The note under the crosshair turns red before you click. One Ctrl+Z brings back everything erased in one go. **Esc**, a right-click or `X` leave the eraser. |
 | **Figures** | **Notes \| Rests** switches the figures between notes and their matching rests. **• Dot** makes the figure dotted. **View → Breve and 128th Notes** adds the breve (double whole note), the 64th and the 128th. |
 | **Accidentals** | ♯ ♭ ♮. The key signature's sharps and flats are applied automatically when you place a note. |
 | **Ties & slurs** | **Tie** (`T`) joins a note to the next one of the same pitch. **Slur** (`S`) draws a phrase mark over the selected notes, and needs a selection. Deleting a slurred note removes its slur; undo restores both. |
@@ -153,7 +153,7 @@ The palette is grouped into collapsible categories. Click a heading to open or c
 
 ### Tempo markings
 
-The **Indications** section of the palette has the tempo marking, expression, technique and rehearsal mark buttons (see [Words in the music](#words-in-the-music)).
+The **♩=** button in the **Indications** bar adds a tempo marking; the other words in the music are described in [Words in the music](#words-in-the-music).
 
 **Score → Tempo Marking…** (or the ♩= button) puts a marking at the start of the caret's measure, such as **Andante con moto ♩ = 76**: the words (suggestions such as *Allegro* or *a tempo* appear as you type), and a metronome mark counting quarter notes, eighths, halves or dotted values (♩. = 60 in 6/8 is the same speed as ♩ = 90). Click a printed marking to change or remove it.
 
@@ -265,12 +265,19 @@ A text field opens under the note. Type the syllable, then:
 
 ## Score structure (top toolbar)
 
-The toolbar is a row of thin bars: **File**, **Edit**, **Playback**, **Measure**, **Staves** and **View**. Rest the pointer on a button to see what it does; the name of its bar shows small in the corner. When the window is too narrow for all of them, the last bars move behind **»** at the right end: click it to reach them.
+The toolbar is two rows of thin bars. Rest the pointer on a button to see what it does; the name of its bar shows small in the corner. When the window is too narrow for a row, its last bars move behind **»** at the right end: click it to reach them.
+
+| Row | Bars |
+|---|---|
+| **1** | **File** (new, open, save), **Edit** (undo, redo), **Playback** (from the start, play, stop, tempo), **View** (multi-measure rests) |
+| **2** | **Tools** (select, eraser, text box), **Measure** (clef, key, time, insert or delete a measure), **Staves** (add or delete a staff, bracket, brace, ungroup), **Indications** (tempo marking, rehearsal mark) |
+
 
 - **Clef**: clef of the staff containing the caret.
 - **Key** and **Time**: apply from the caret's measure until the next change. For Time, type something like `3/4` and press Enter.
 - **+ Measure / − Measure**: insert after, or delete, the current measure.
 - **+ Staff / − Staff**: add a staff at the bottom, or delete the current staff.
+- **Bracket / Brace / Ungroup**: group the staves of the selection (see [Staves and instruments](#staves-and-instruments)).
 
 ## Staves and instruments
 

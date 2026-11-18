@@ -306,6 +306,9 @@ export default {
   'bar.measure': 'Measure',
   'bar.staves': 'Staves',
   'bar.view': 'View',
+  'bar.tools': 'Tools',
+  'bar.indications': 'Indications',
+  'toolbar.label.score': 'Score toolbar',
   'bar.more': 'More tools',
   'bar.more.desc': 'The tools that do not fit the window.',
   'toolbar.new': 'New score',
@@ -471,7 +474,7 @@ export default {
   'pagetext.footer': 'Footer (every page)',
   'pagetext.footer.example': '{title} · {composer}',
   // Indications: tempo, words on notes, rehearsal marks.
-  'palette.markings': 'Indications',
+  'palette.markings': 'Expressions',
   'palette.tempo': 'Tempo marking',
   'palette.tempo.desc': 'Words and metronome mark (♩ = 76) at the start of the caret’s measure, printed or not.',
   'palette.expression': 'Expression',

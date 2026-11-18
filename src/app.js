@@ -2668,7 +2668,7 @@ const onControlClick = (ev) => {
   // Back to the score, unless the button opened something to type in.
   if (!textEdit.key && !$('dialog').open) page.focus();
 };
-document.querySelector('.toolbar').addEventListener('click', onControlClick);
+for (const bar of document.querySelectorAll('.toolbar')) bar.addEventListener('click', onControlClick);
 $('palette').addEventListener('click', onControlClick);
 
 // ----- menu bar --------------------------------------------------------------
@@ -2827,7 +2827,7 @@ applyTheme();
 applyExtendedValues();
 
 installTooltips();
-installBars(document.querySelector('.toolbar'));
+installBars(document.querySelector('.toolbars'));
 
 // Palette sections: remember which ones the user keeps open.
 for (const d of document.querySelectorAll('.palette details')) {
