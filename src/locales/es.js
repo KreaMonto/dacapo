@@ -664,6 +664,16 @@ export default {
 
   // ----- barra de estado ----------------------------------------------------------
   'status.position': 'Pentagrama {staff} · Compás {measure}',
+  'status.position.pickup': 'Pentagrama {staff} · Anacrusa',
+  'status.pickup': 'Anacrusa',
+  'menu.score.measure.length': 'Duración…',
+  'menu.score.measure.length.desc': 'Cuánto dura de verdad el compás del cursor: una anacrusa al principio, o el compás que la completa al final.',
+  'length.title': 'Duración del compás {n}',
+  'length.label': 'El compás dura',
+  'length.option': '{n} × {unit}',
+  'length.full': 'El compás entero ({time})',
+  'length.hint.first': 'Un primer compás más corto es una anacrusa: no se numera, y el siguiente es el compás 1.',
+  'length.hint': 'Un compás más corto al final suele completar la anacrusa.',
   'status.voice': ' · Voz {n}',
   'status.lyrics': 'Letra',
   'status.lyrics.verse': ' · estrofa {n}',

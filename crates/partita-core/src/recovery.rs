@@ -47,14 +47,15 @@ pub const DEFAULT_SYNC_INTERVAL: Duration = Duration::from_millis(500);
 // texts to events and rehearsal marks to measures, version 9 text styles
 // and text boxes to the score, version 10 barline types, version 11
 // repeats, version 12 endings and version 13 jumps (segno, coda, D.C.,
-// D.S., Fine) to measures. Older data (version 3: Da Capo 0.2.0 and 0.2.1;
-// version 4: Da Capo 0.2.2; version 5: Partita 0.3.0; versions 6 to 12:
-// development builds before 0.4.0) is still read:
+// D.S., Fine) and version 14 lengths (pickups) to measures. Older data
+// (version 3: Da Capo 0.2.0 and 0.2.1; version 4: Da Capo 0.2.2; version
+// 5: Partita 0.3.0; versions 6 to 13: development builds before 0.4.0) is
+// still read:
 // updating the program must not lose the unsaved work it promises to give
 // back after the restart. It is never written.
 // (The "DC" in the magic bytes is from the project's former name.)
-const FORMAT_VERSION: u32 = 13;
-const READABLE_VERSIONS: [u32; 11] = [13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3];
+const FORMAT_VERSION: u32 = 14;
+const READABLE_VERSIONS: [u32; 12] = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3];
 
 fn journal_magic(version: u32) -> [u8; 4] {
     [b'D', b'C', b'J', version as u8]

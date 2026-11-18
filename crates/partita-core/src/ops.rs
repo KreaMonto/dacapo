@@ -529,6 +529,7 @@ mod tests {
                     segno: true,
                     coda: false,
                     jump: Some(crate::model::Jump::DalSegnoAlCoda),
+                    length: Some(960),
                 },
             },
             Op::SetTextStyle {

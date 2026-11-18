@@ -282,6 +282,7 @@ mod tests {
             )
             .unwrap()
         });
+        s.edit(|d| d.set_measure_length(0, Some(960), 7_000).unwrap());
         let expected = s.doc().score.clone();
         crash(s);
         let found = store.scan();

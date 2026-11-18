@@ -368,7 +368,7 @@ thread_local! {
 /// builds before 0.4.0: no tempo markings in 6; no note texts or rehearsal
 /// marks in 6 and 7; no text styles or text boxes in 6 to 8; no barline
 /// types in 6 to 9; no repeats in 6 to 10; no endings in 6 to 11; no
-/// jumps in any of them).
+/// jumps in 6 to 12; no measure lengths in any of them).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
@@ -597,6 +597,20 @@ pub struct MeasureAttrs {
     /// Fine, To Coda, D.C. or D.S. at the end of this measure. Since file
     /// format 7 (recovery format 13).
     pub jump: Option<Jump>,
+    /// How long the measure really is, in ticks, when it is shorter than its
+    /// time signature: a pickup (anacrusis) at the start, or the measure
+    /// that completes it at the end. Since file format 7 (recovery format
+    /// 14).
+    pub length: Option<u32>,
+}
+
+impl MeasureAttrs {
+    /// The ticks the measure holds: its own length, or the time
+    /// signature's.
+    pub fn capacity(&self) -> u32 {
+        let full = self.time.measure_ticks();
+        self.length.filter(|&l| l > 0 && l < full).unwrap_or(full)
+    }
 }
 
 /// The highest ending number.
@@ -658,6 +672,7 @@ impl Default for MeasureAttrs {
             segno: false,
             coda: false,
             jump: None,
+            length: None,
         }
     }
 }
@@ -683,6 +698,24 @@ struct MeasureAttrsFields {
     #[serde(default)]
     coda: bool,
     #[serde(default)]
+    jump: Option<Jump>,
+    #[serde(default)]
+    length: Option<u32>,
+}
+
+/// [`MeasureAttrs`] as written to recovery format 13 (before measure lengths).
+#[derive(Deserialize)]
+struct MeasureAttrsPreLength {
+    time: TimeSignature,
+    key: KeySignature,
+    tempo: Option<TempoMark>,
+    rehearsal: Option<String>,
+    barline: Barline,
+    repeat_start: bool,
+    repeat_end: Option<u8>,
+    ending: Vec<u8>,
+    segno: bool,
+    coda: bool,
     jump: Option<Jump>,
 }
 
@@ -813,6 +846,23 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
                 ..MeasureAttrs::default()
             });
         }
+        if legacy_format() == 13 {
+            let a = MeasureAttrsPreLength::deserialize(deserializer)?;
+            return Ok(MeasureAttrs {
+                time: a.time,
+                key: a.key,
+                tempo: a.tempo,
+                rehearsal: a.rehearsal,
+                barline: a.barline,
+                repeat_start: a.repeat_start,
+                repeat_end: a.repeat_end,
+                ending: a.ending,
+                segno: a.segno,
+                coda: a.coda,
+                jump: a.jump,
+                length: None,
+            });
+        }
         let a = MeasureAttrsFields::deserialize(deserializer)?;
         Ok(MeasureAttrs {
             time: a.time,
@@ -826,6 +876,7 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
             segno: a.segno,
             coda: a.coda,
             jump: a.jump,
+            length: a.length,
         })
     }
 }
@@ -1455,6 +1506,14 @@ impl Score {
             .unwrap_or(self.tempo)
     }
 
+    /// Whether the first measure is a pickup (shorter than its time
+    /// signature): then it is not numbered, and the next one is measure 1.
+    pub fn has_pickup(&self) -> bool {
+        self.measures
+            .first()
+            .is_some_and(|a| a.capacity() < a.time.measure_ticks())
+    }
+
     /// Whether any measure has a tempo marking.
     pub fn has_tempo_marks(&self) -> bool {
         self.measures.iter().any(|a| a.tempo.is_some())
@@ -1476,6 +1535,7 @@ impl Score {
                     || a.segno
                     || a.coda
                     || a.jump.is_some()
+                    || a.length.is_some()
             })
             || self
                 .staves
@@ -1598,7 +1658,7 @@ impl Score {
                         message: format!("staff {s} measure {m} has {} voices", cell.voices.len()),
                     });
                 }
-                let capacity = self.measures[m].time.measure_ticks();
+                let capacity = self.measures[m].capacity();
                 for (v, events) in cell.voices.iter().enumerate() {
                     let ticks: u32 = events.iter().map(Event::ticks).sum();
                     if ticks > capacity && !is_measure_rest(events, capacity) {

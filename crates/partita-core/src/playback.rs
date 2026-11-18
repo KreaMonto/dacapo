@@ -317,7 +317,7 @@ pub fn build(score: &Score) -> Timeline {
     // Measure lengths: the time signature, stretched if a voice overflows.
     let mut lengths = Vec::with_capacity(score.measures.len());
     for (m, attrs) in score.measures.iter().enumerate() {
-        let capacity = attrs.time.measure_ticks();
+        let capacity = attrs.capacity();
         let longest = score
             .staves
             .iter()
@@ -350,7 +350,7 @@ pub fn build(score: &Score) -> Timeline {
             let mut open_ties: HashMap<u8, usize> = HashMap::new();
             for &(play_start, m) in &plays {
                 let events = &staff.measures[m].voices[v];
-                let capacity = score.measures[m].time.measure_ticks();
+                let capacity = score.measures[m].capacity();
                 if crate::model::is_measure_rest(events, capacity) {
                     open_ties.clear();
                     continue;
@@ -503,6 +503,21 @@ mod tests {
         s.measures[2].ending = vec![2];
         s.measures[4].repeat_end = Some(2);
         assert_eq!(play_order(&s), vec![0, 1, 0, 2, 3, 4, 3, 4]);
+    }
+
+    #[test]
+    fn a_pickup_plays_only_its_length() {
+        let mut s = Score::new("t", 2);
+        let quarter = TimeSignature::COMMON.measure_ticks() as u64 / 4;
+        s.measures[0].length = Some(quarter as u32);
+        s.staves[0].measures[0].voices[0] = vec![note(1, Step::G, DurationBase::Quarter)];
+        s.staves[0].measures[1].voices[0] = vec![note(2, Step::C, DurationBase::Whole)];
+        let tl = build(&s);
+        assert_eq!(tl.measure_starts, vec![0, quarter]);
+        assert_eq!(
+            tl.notes[1].start, quarter,
+            "the downbeat comes right after the pickup"
+        );
     }
 
     #[test]

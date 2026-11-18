@@ -512,7 +512,7 @@ impl Document {
         // Writing into a measure that only holds a measure rest replaces the
         // rest, as in any notation program.
         if ops.is_empty() {
-            let capacity = self.score.measures[caret.measure].time.measure_ticks();
+            let capacity = self.score.measures[caret.measure].capacity();
             let events = self
                 .score
                 .voice(caret.staff, caret.measure, caret.voice)
@@ -1493,6 +1493,31 @@ impl Document {
         self.commit(TxKind::Edit, ops, caret, now_ms, false)
     }
 
+    /// How long `measure` really is, in ticks (`None`: as its time
+    /// signature says): a pickup, or the measure that completes it. A
+    /// length of the whole measure or more means none.
+    pub fn set_measure_length(
+        &mut self,
+        measure: usize,
+        length: Option<u32>,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let Some(current) = self.score.measures.get(measure).cloned() else {
+            return Err(crate::ops::OpError::MeasureIndex(measure).into());
+        };
+        let full = current.time.measure_ticks();
+        let length = length.filter(|&l| l > 0 && l < full);
+        if current.length == length {
+            return Ok(());
+        }
+        let op = Op::SetMeasureAttrs {
+            index: measure,
+            attrs: MeasureAttrs { length, ..current },
+        };
+        let caret = self.caret;
+        self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
+    }
+
     /// The jump marks of `measure`, in one undo step: a segno and the start
     /// of the coda at its beginning, Fine / To Coda / D.C. / D.S. at its end.
     pub fn set_jumps(
@@ -1620,6 +1645,7 @@ impl Document {
             segno: false,
             coda: false,
             jump: None,
+            length: None,
             ..self.score.measures[index.saturating_sub(1).min(self.score.measures.len() - 1)]
                 .clone()
         };
@@ -2173,6 +2199,30 @@ mod tests {
             Some(2),
             "the repeat stays"
         );
+    }
+
+    #[test]
+    fn a_pickup_measure_is_shorter_and_not_numbered() {
+        let mut doc = Document::new(Score::new("Etude", 3));
+        let quarter = TimeSignature::COMMON.measure_ticks() / 4;
+        doc.set_measure_length(0, Some(quarter), 1_000).unwrap();
+        assert_eq!(doc.score.measures[0].capacity(), quarter);
+        assert!(doc.score.has_pickup());
+        // A whole quarter in it is fine; two are too many.
+        doc.insert_note(Step::C, Duration::new(DurationBase::Quarter), 2_000)
+            .unwrap();
+        assert!(doc.score.validate().is_empty());
+        let mut two = doc.score.clone();
+        let mut extra = two.staves[0].measures[0].voices[0][0].clone();
+        extra.id = 999;
+        two.staves[0].measures[0].voices[0].push(extra);
+        assert!(!two.validate().is_empty(), "a second quarter does not fit");
+        // A length of the whole measure, or more, means none.
+        doc.set_measure_length(0, Some(4 * quarter), 4_000).unwrap();
+        assert!(doc.score.measures[0].length.is_none() && !doc.score.has_pickup());
+        doc.undo().unwrap();
+        assert_eq!(doc.score.measures[0].length, Some(quarter), "one undo step");
+        assert!(doc.set_measure_length(9, Some(quarter), 5_000).is_err());
     }
 
     #[test]
