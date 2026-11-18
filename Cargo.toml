@@ -5,7 +5,7 @@ members = ["crates/partita-core", "src-tauri"]
 [workspace.package]
 # The single source of the app version: Tauri reads it from here (there is
 # no "version" in tauri.conf.json), and the About dialog shows it.
-version = "0.3.0"
+version = "0.3.14"
 edition = "2021"
 license = "GPL-3.0-or-later"
 rust-version = "1.89"
