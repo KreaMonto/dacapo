@@ -367,7 +367,7 @@ thread_local! {
 /// page texts), 5 (Partita 0.3.0: no page texts), or 6 to 8 (development
 /// builds before 0.4.0: no tempo markings in 6; no note texts or rehearsal
 /// marks in 6 and 7; no text styles or text boxes in 6 to 8; no barline
-/// types in any of them).
+/// types in 6 to 9; no repeats in any of them).
 ///
 /// The binary recovery format is not self-describing, so a new field
 /// cannot simply default to empty as it does in JSON. Recovery data from
@@ -574,7 +574,17 @@ pub struct MeasureAttrs {
     /// The barline at the end of this measure. Since file format 7
     /// (recovery format 10).
     pub barline: Barline,
+    /// A repeated passage starts at the beginning of this measure. Since
+    /// file format 7 (recovery format 11).
+    pub repeat_start: bool,
+    /// A repeated passage ends with this measure, played this many times in
+    /// all (2 for an ordinary repeat). Drawn instead of the barline. Since
+    /// file format 7 (recovery format 11).
+    pub repeat_end: Option<u8>,
 }
+
+/// How many times a repeated passage can be played in all.
+pub const REPEAT_TIMES: std::ops::RangeInclusive<u8> = 2..=10;
 
 impl Default for MeasureAttrs {
     fn default() -> Self {
@@ -584,6 +594,8 @@ impl Default for MeasureAttrs {
             tempo: None,
             rehearsal: None,
             barline: Barline::Single,
+            repeat_start: false,
+            repeat_end: None,
         }
     }
 }
@@ -597,6 +609,20 @@ struct MeasureAttrsFields {
     #[serde(default)]
     rehearsal: Option<String>,
     #[serde(default)]
+    barline: Barline,
+    #[serde(default)]
+    repeat_start: bool,
+    #[serde(default)]
+    repeat_end: Option<u8>,
+}
+
+/// [`MeasureAttrs`] as written to recovery format 10 (before repeats).
+#[derive(Deserialize)]
+struct MeasureAttrsPreRepeat {
+    time: TimeSignature,
+    key: KeySignature,
+    tempo: Option<TempoMark>,
+    rehearsal: Option<String>,
     barline: Barline,
 }
 
@@ -632,9 +658,7 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
             return Ok(MeasureAttrs {
                 time: a.time,
                 key: a.key,
-                tempo: None,
-                rehearsal: None,
-                barline: Barline::Single,
+                ..MeasureAttrs::default()
             });
         }
         if legacy_format() == 7 {
@@ -643,8 +667,7 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
                 time: a.time,
                 key: a.key,
                 tempo: a.tempo,
-                rehearsal: None,
-                barline: Barline::Single,
+                ..MeasureAttrs::default()
             });
         }
         if matches!(legacy_format(), 8 | 9) {
@@ -654,7 +677,18 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
                 key: a.key,
                 tempo: a.tempo,
                 rehearsal: a.rehearsal,
-                barline: Barline::Single,
+                ..MeasureAttrs::default()
+            });
+        }
+        if legacy_format() == 10 {
+            let a = MeasureAttrsPreRepeat::deserialize(deserializer)?;
+            return Ok(MeasureAttrs {
+                time: a.time,
+                key: a.key,
+                tempo: a.tempo,
+                rehearsal: a.rehearsal,
+                barline: a.barline,
+                ..MeasureAttrs::default()
             });
         }
         let a = MeasureAttrsFields::deserialize(deserializer)?;
@@ -664,6 +698,8 @@ impl<'de> Deserialize<'de> for MeasureAttrs {
             tempo: a.tempo,
             rehearsal: a.rehearsal,
             barline: a.barline,
+            repeat_start: a.repeat_start,
+            repeat_end: a.repeat_end,
         })
     }
 }
@@ -1299,16 +1335,18 @@ impl Score {
     }
 
     /// Whether the score has tempo markings, rehearsal marks, texts on
-    /// notes, text styles, text boxes or barlines other than single (which
-    /// need file format 7).
+    /// notes, text styles, text boxes, barlines other than single or
+    /// repeats (which need file format 7).
     pub fn has_markings(&self) -> bool {
         self.has_tempo_marks()
             || !self.text_styles.is_empty()
             || !self.text_boxes.is_empty()
-            || self
-                .measures
-                .iter()
-                .any(|a| a.rehearsal.is_some() || a.barline != Barline::Single)
+            || self.measures.iter().any(|a| {
+                a.rehearsal.is_some()
+                    || a.barline != Barline::Single
+                    || a.repeat_start
+                    || a.repeat_end.is_some()
+            })
             || self
                 .staves
                 .iter()

@@ -19,7 +19,7 @@ use crate::model::{
     GroupKind, KeySignature, LyricJoin, MeasureAttrs, Metadata, NoteText, NoteTextKind, Pitch,
     Score, Slur, StaffGroup, Step, Syllable, TempoMark, TextBox, TextKind, TextStyle,
     TimeSignature, Transposition, MAX_NOTE_TEXT_CHARS, MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS,
-    MAX_TEXT_BOX_CHARS, MAX_VERSES, TEXT_SIZE_RANGE,
+    MAX_TEXT_BOX_CHARS, MAX_VERSES, REPEAT_TIMES, TEXT_SIZE_RANGE,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
 
@@ -1409,6 +1409,49 @@ impl Document {
         self.commit(TxKind::Edit, ops, caret, now_ms, false)
     }
 
+    /// A repeated passage from the start of measure `first` to the end of
+    /// measure `last`, in one undo step: `start` says whether a repeat
+    /// begins at `first`, `end` how many times in all the passage ending at
+    /// `last` plays (`None` for no end repeat there). Other measures are
+    /// left as they are.
+    pub fn set_repeat(
+        &mut self,
+        first: usize,
+        last: usize,
+        start: bool,
+        end: Option<u8>,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let n = self.score.measures.len();
+        if first >= n || last >= n {
+            return Err(crate::ops::OpError::MeasureIndex(first.max(last)).into());
+        }
+        let end = end.map(|t| t.clamp(*REPEAT_TIMES.start(), *REPEAT_TIMES.end()));
+        let mut changed: Vec<(usize, MeasureAttrs)> = Vec::new();
+        let mut put = |m: usize, f: &dyn Fn(&mut MeasureAttrs)| {
+            let mut a = changed
+                .iter()
+                .find(|(i, _)| *i == m)
+                .map(|(_, a)| a.clone())
+                .unwrap_or_else(|| self.score.measures[m].clone());
+            f(&mut a);
+            changed.retain(|(i, _)| *i != m);
+            changed.push((m, a));
+        };
+        put(first, &|a| a.repeat_start = start);
+        put(last, &|a| a.repeat_end = end);
+        let ops: Vec<Op> = changed
+            .into_iter()
+            .filter(|(m, a)| self.score.measures[*m] != *a)
+            .map(|(index, attrs)| Op::SetMeasureAttrs { index, attrs })
+            .collect();
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
+    }
+
     // ----- clipboard -----------------------------------------------------
 
     pub fn copy(&self) -> Option<Clipboard> {
@@ -1500,6 +1543,8 @@ impl Document {
             tempo: None,
             rehearsal: None,
             barline: Barline::Single,
+            repeat_start: false,
+            repeat_end: None,
             ..self.score.measures[index.saturating_sub(1).min(self.score.measures.len() - 1)]
                 .clone()
         };
@@ -1998,6 +2043,26 @@ mod tests {
         doc.set_barline(1, 1, Barline::Double, 3_000).unwrap();
         assert_eq!(doc.can_undo(), before);
         assert!(doc.set_barline(0, 99, Barline::Final, 4_000).is_err());
+    }
+
+    #[test]
+    fn repeats_are_set_in_one_step() {
+        let mut doc = Document::new(Score::new("Etude", 4));
+        doc.set_repeat(1, 2, true, Some(2), 1_000).unwrap();
+        assert!(doc.score.measures[1].repeat_start);
+        assert_eq!(doc.score.measures[2].repeat_end, Some(2));
+        assert!(doc.score.measures[0].repeat_end.is_none() && !doc.score.measures[2].repeat_start);
+        doc.undo().unwrap();
+        assert!(!doc.score.measures[1].repeat_start, "one undo step");
+        assert!(doc.score.measures[2].repeat_end.is_none(), "one undo step");
+        // One measure repeated on its own; times are kept in range.
+        doc.set_repeat(3, 3, true, Some(40), 2_000).unwrap();
+        assert!(doc.score.measures[3].repeat_start);
+        assert_eq!(doc.score.measures[3].repeat_end, Some(10));
+        // A measure inserted after it starts without repeats.
+        doc.insert_measure(4, 3_000).unwrap();
+        assert!(!doc.score.measures[4].repeat_start && doc.score.measures[4].repeat_end.is_none());
+        assert!(doc.set_repeat(0, 9, true, None, 4_000).is_err());
     }
 
     #[test]

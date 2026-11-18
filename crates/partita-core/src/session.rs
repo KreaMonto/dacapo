@@ -270,6 +270,7 @@ mod tests {
             d.set_barline(0, 0, crate::model::Barline::Double, 3_000)
                 .unwrap()
         });
+        s.edit(|d| d.set_repeat(0, 1, true, Some(3), 4_000).unwrap());
         let expected = s.doc().score.clone();
         crash(s);
         let found = store.scan();

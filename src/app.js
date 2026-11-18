@@ -636,6 +636,13 @@ function syncControls(doc) {
   const mr = document.querySelector('[data-cmd=multirest]');
   mr.classList.toggle('on', state.multiRest);
   mr.setAttribute('aria-pressed', String(state.multiRest));
+  // The repeat buttons show the caret's measure (or the selection's ends).
+  const [r0, r1] = selectedMeasures(doc);
+  for (const [cmd, on] of [['repeat-start', !!doc.score.measures[r0]?.repeat_start], ['repeat-end', !!doc.score.measures[r1]?.repeat_end]]) {
+    const b = document.querySelector(`[data-cmd="${cmd}"]`);
+    b?.classList.toggle('on', on);
+    b?.setAttribute('aria-pressed', String(on));
+  }
   renderVoices(doc);
   if (document.activeElement !== $('clef')) $('clef').value = staff.clef;
   if (document.activeElement !== $('key')) $('key').value = String(attrs.key.fifths);
@@ -767,6 +774,59 @@ function setBarline(barline) {
   last = Math.min(last, doc.score.measures.length - 1);
   act({ type: 'set_barline', first, last, barline });
 }
+/**
+ * Repeats. A start repeat goes on the caret's measure (or the first of the
+ * selection), an end repeat on the caret's measure (or the last of the
+ * selection); each button turns its sign on or off.
+ */
+function selectedMeasures(doc) {
+  const sel = doc.selection;
+  if (!sel) return [doc.caret.measure, doc.caret.measure];
+  const first = sel.start.measure;
+  const last = sel.end.tick === 0 && sel.end.measure > first ? sel.end.measure - 1 : sel.end.measure;
+  return [first, Math.min(last, doc.score.measures.length - 1)];
+}
+function setRepeat(first, last, start, end) {
+  act({ type: 'set_repeat', first, last, start, end: end ?? null });
+}
+function toggleRepeatStart() {
+  const doc = active();
+  if (!doc) return;
+  const [m] = selectedMeasures(doc);
+  const a = doc.score.measures[m];
+  setRepeat(m, m, !a.repeat_start, a.repeat_end);
+}
+function toggleRepeatEnd() {
+  const doc = active();
+  if (!doc) return;
+  const [, m] = selectedMeasures(doc);
+  const a = doc.score.measures[m];
+  setRepeat(m, m, a.repeat_start, a.repeat_end ? null : 2);
+}
+/** Both signs around the selection: it is played twice. */
+function repeatSelection() {
+  const doc = active();
+  if (!doc?.selection) return;
+  const [first, last] = selectedMeasures(doc);
+  const end = doc.score.measures[last].repeat_end ?? 2;
+  if (first === last) setRepeat(first, last, true, end);
+  else act({ type: 'set_repeat', first, last, start: true, end });
+}
+const repeatEndAt = () => {
+  const doc = active();
+  return doc ? doc.score.measures[selectedMeasures(doc)[1]]?.repeat_end ?? null : null;
+};
+const repeatStartAt = () => {
+  const doc = active();
+  return doc ? !!doc.score.measures[selectedMeasures(doc)[0]]?.repeat_start : false;
+};
+function setRepeatTimes(times) {
+  const doc = active();
+  if (!doc) return;
+  const [, m] = selectedMeasures(doc);
+  setRepeat(m, m, doc.score.measures[m].repeat_start, times);
+}
+
 const barlineAt = () => {
   const doc = active();
   return doc?.score.measures[doc.caret.measure]?.barline ?? 'single';
@@ -2761,6 +2821,11 @@ commands['page-texts'] = () => pageTextsDialog();
 commands['tempo-mark'] = () => { const doc = active(); if (doc) tempoDialog(doc.caret.measure); };
 const BARLINES = ['single', 'double', 'final', 'dashed'];
 for (const k of BARLINES) commands[`barline:${k}`] = () => setBarline(k);
+commands['repeat-start'] = toggleRepeatStart;
+commands['repeat-end'] = toggleRepeatEnd;
+commands['repeat-selection'] = repeatSelection;
+const REPEAT_COUNTS = [2, 3, 4, 5, 6];
+for (const n of REPEAT_COUNTS) commands[`repeat-times:${n}`] = () => setRepeatTimes(n);
 
 // View → Toolbars: show or hide each bar; Reset brings back Partita's layout.
 for (const { ids } of barZones()) for (const id of ids) commands[`toolbar:${id}`] = () => setBarShown(id, !isBarShown(id));
@@ -2906,6 +2971,14 @@ const MENUS = [
       { sep: true },
       { label: t('menu.score.measure.barline'), value: () => t(`barline.${barlineAt()}.short`), items: BARLINES.map((k) =>
         ({ ...choice(`barline.${k}`, `barline:${k}`, () => barlineAt() === k), desc: t(`barline.${k}.desc`) })) },
+      { label: t('menu.score.measure.repeat'), items: [
+        { label: t('repeat.start'), cmd: 'repeat-start', checked: repeatStartAt, desc: t('repeat.start.desc') },
+        { label: t('repeat.end'), cmd: 'repeat-end', checked: () => !!repeatEndAt(), desc: t('repeat.end.desc') },
+        { label: t('repeat.selection'), cmd: 'repeat-selection', enabled: hasSelection, desc: t('repeat.selection.desc') },
+        { sep: true },
+        { label: t('repeat.times'), enabled: () => !!repeatEndAt(), value: () => (repeatEndAt() ? `×${repeatEndAt()}` : ''), items: REPEAT_COUNTS.map((n) =>
+          ({ label: t('repeat.times.n', { n }), cmd: `repeat-times:${n}`, radio: true, checked: () => repeatEndAt() === n })) },
+      ] },
     ] },
     { label: t('menu.score.staff'), enabled: hasDoc, items: [
       { label: t('menu.score.staff.add'), cmd: 'add-staff', desc: t('toolbar.addstaff.desc') },

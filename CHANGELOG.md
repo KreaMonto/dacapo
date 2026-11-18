@@ -5,6 +5,7 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 ## [Unreleased]
 
 ### Added
+- **Repeats**: start and end repeat signs, from the **Measure** bar or **Score → Measure → Repeat**, on the caret's measure or around the selection, with the number of times played (×3, ×4… over the sign). Playback plays the repeats, and the playhead goes back with the music. Multi-measure rests stop at them, and MusicXML keeps them. Recovery data is now format 11.
 - **Barline types**: the line closing a measure can be single, double (the end of a section), final or dashed. The **Measure** bar has a button for it (it shows the last kind chosen), and so does **Score → Measure → Barline**; it changes the caret's measure or every measure in the selection, in one undo step. Multi-measure rests stop at them, and MusicXML import and export keep them. Recovery data is now format 10; unsaved work from earlier builds is still recovered.
 - **Text boxes**: the **T** tool writes anywhere on a page; a box stays where it is put, whatever the music does. Drag it to move it, click it to change it; several lines, alignment and an optional frame.
 - **Text styles**: every kind of text (title, tempo markings, expressions, lyrics, staff names, header, page numbers…) has its font, size, bold and italic. A format bar appears above any text being typed, and **Score → Text Styles…** shows them all. Sizes are in points; spacing follows them.

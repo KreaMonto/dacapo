@@ -523,6 +523,8 @@ mod tests {
                     }),
                     rehearsal: Some("C".into()),
                     barline: crate::model::Barline::Double,
+                    repeat_start: true,
+                    repeat_end: Some(3),
                 },
             },
             Op::SetTextStyle {

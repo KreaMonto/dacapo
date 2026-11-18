@@ -224,6 +224,12 @@
         }
       },
       // As Document::set_barline: one undo step for the measures first..last.
+      // As Document::set_repeat: the start on `first`, the end on `last`.
+      set_repeat({ first, last, start, end }) {
+        snapshot();
+        view.score.measures[first] = { ...view.score.measures[first], repeat_start: start };
+        view.score.measures[last] = { ...view.score.measures[last], repeat_end: end ?? null };
+      },
       set_barline({ first, last, barline }) {
         snapshot();
         for (let m = Math.min(first, last); m <= Math.max(first, last); m++) {

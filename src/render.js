@@ -11,6 +11,8 @@
 import { t } from './i18n.js';
 
 export const SP = 10; // one staff space, in px (CSS .m uses font-size 4·SP)
+// Room a repeat sign takes: thick and thin line and the dots.
+const REPEAT_W = 1.4 * SP;
 const STAFF_GAP = 10 * SP; // staff top to next staff top inside a system
 const SYSTEM_GAP = 7 * SP;
 const MARGIN_X = 28;
@@ -430,8 +432,11 @@ export function layout(view, width, opts = {}) {
       tempoShown: tempoShown(attrs.tempo, m, score),
       rehearsal: attrs.rehearsal || null,
       barline: attrs.barline || 'single', // the line closing the measure
+      repeatStart: !!attrs.repeat_start,
+      repeatEnd: attrs.repeat_end ?? null, // times the passage is played
       overfull,
-      content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP, Math.min(lyricW, 80 * SP) + 2.6 * SP),
+      // An end repeat takes room before the barline for its dots.
+      content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP, Math.min(lyricW, 80 * SP) + 2.6 * SP) + (attrs.repeat_end ? REPEAT_W : 0),
       timeChange: !prev || prev.time.beats !== attrs.time.beats || prev.time.beat_type !== attrs.time.beat_type,
       keyChange: !!prev && prev.key.fifths !== attrs.key.fifths,
     };
@@ -445,10 +450,10 @@ export function layout(view, width, opts = {}) {
     let j = i;
     if (opts.multiRest && single[i].restOnly) {
       // A tempo marking (even a hidden one) starts a new run: it may change the tempo.
-      while (j + 1 < single.length && single[j].barline === 'single' && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo && !single[j + 1].rehearsal) j++;
+      while (j + 1 < single.length && single[j].barline === 'single' && !single[j].repeatEnd && !single[j + 1].repeatStart && single[j + 1].restOnly && !single[j + 1].timeChange && !single[j + 1].keyChange && !single[j + 1].tempo && !single[j + 1].rehearsal) j++;
     }
     if (j > i) {
-      measures.push({ ...single[i], mEnd: single[j].m, multi: j - i + 1, barline: single[j].barline, content: 13 * SP });
+      measures.push({ ...single[i], mEnd: single[j].m, multi: j - i + 1, barline: single[j].barline, repeatEnd: single[j].repeatEnd, content: 13 * SP + (single[j].repeatEnd ? REPEAT_W : 0) });
     } else {
       measures.push(single[i]);
     }
@@ -486,8 +491,10 @@ export function layout(view, width, opts = {}) {
   const systems = [];
   let sys = null;
   for (const ms of measures) {
-    const startPrefix = 0.6 * SP + CLEF_COL + keyRoom(ms.attrs.key.fifths) + (ms.timeChange ? 2.8 * SP : 0) + SP;
-    const midPrefix = (ms.keyChange ? keyRoom(ms.attrs.key.fifths) + SP : 0) + (ms.timeChange ? 2.8 * SP : 0);
+    // A start repeat sits after the clef, key and time, before the music.
+    const repeatRoom = ms.repeatStart ? REPEAT_W : 0;
+    const startPrefix = 0.6 * SP + CLEF_COL + keyRoom(ms.attrs.key.fifths) + (ms.timeChange ? 2.8 * SP : 0) + SP + repeatRoom;
+    const midPrefix = (ms.keyChange ? keyRoom(ms.attrs.key.fifths) + SP : 0) + (ms.timeChange ? 2.8 * SP : 0) + repeatRoom;
     const room = avail - (systems.length === 1 ? nameIndent : shortIndent);
     const fitsMid = sys && sys.width + midPrefix + ms.content <= room;
     if (!fitsMid) {
@@ -582,7 +589,7 @@ export function layout(view, width, opts = {}) {
       ms.x = x;
       ms.system = s;
       ms.contentX = x + ms.prefix + 1.4 * SP;
-      ms.contentW = ms.w - ms.prefix - 2.6 * SP;
+      ms.contentW = ms.w - ms.prefix - 2.6 * SP - (ms.repeatEnd ? REPEAT_W : 0);
       x += ms.w;
     }
     s.x0 = marginX + indent;
@@ -937,10 +944,26 @@ export function renderScore(view, width, opts = {}) {
       const bx = ms.x + ms.w;
       const joined = lay.groups.some((g) => st >= g.first && st < g.last);
       const barBottom = joined ? lay.staffTop(ms, st + 1) : top + 4 * SP;
-      // Its kind: a single barline at the very end is drawn as a final one.
-      const kind = ms.barline === 'single' && lastMeasure ? 'final' : ms.barline;
+      // Its kind: a single barline at the very end is drawn as a final one;
+      // an end repeat replaces it.
+      const kind = ms.repeatEnd ? 'repeat' : ms.barline === 'single' && lastMeasure ? 'final' : ms.barline;
       const thin = (x, cls = 'bar') => push(`<line class="${cls}" x1="${x}" x2="${x}" y1="${top}" y2="${barBottom}"/>`);
-      if (kind === 'final') {
+      const thick = (x) => push(`<rect class="barthick" x="${x}" y="${top}" width="3.5" height="${barBottom - top}"/>`);
+      // Repeat dots: in the two middle spaces of the staff.
+      const dots = (x) => push(`<circle class="repeat-dot" cx="${x}" cy="${top + 1.5 * SP}" r="1.8"/><circle class="repeat-dot" cx="${x}" cy="${top + 2.5 * SP}" r="1.8"/>`);
+      if (ms.repeatStart && !ms.multi) {
+        const x0 = ms.x + ms.prefix - REPEAT_W + 0.2 * SP;
+        thick(x0);
+        thin(x0 + 6.5);
+        dots(x0 + 10.5);
+      }
+      if (kind === 'repeat') {
+        dots(bx - 10.5);
+        thin(bx - 6);
+        thick(bx - 3.5);
+        // Played more than twice: the number of times, over the top staff.
+        if (st === 0 && ms.repeatEnd > 2) push(`<text class="repeat-times" x="${bx - 2}" y="${top - 0.7 * SP}" text-anchor="end">×${ms.repeatEnd}</text>`);
+      } else if (kind === 'final') {
         thin(bx - 6);
         push(`<rect class="barthick" x="${bx - 3.5}" y="${top}" width="3.5" height="${barBottom - top}"/>`);
       } else if (kind === 'double') {

@@ -306,6 +306,15 @@ enum Action {
         measure: usize,
         text: Option<String>,
     },
+    /// A repeat from the start of `first` to the end of `last`: whether
+    /// one starts at `first`, and how many times the passage ending at
+    /// `last` plays (`None`: no end repeat there).
+    SetRepeat {
+        first: usize,
+        last: usize,
+        start: bool,
+        end: Option<u8>,
+    },
     /// The barline at the end of measures `first` to `last`.
     SetBarline {
         first: usize,
@@ -556,6 +565,12 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::SetTextBox { text_box } => d.set_text_box(text_box, now),
             Action::RemoveTextBox { id } => d.remove_text_box(id, now),
             Action::SetRehearsal { measure, text } => d.set_rehearsal(measure, text, now),
+            Action::SetRepeat {
+                first,
+                last,
+                start,
+                end,
+            } => d.set_repeat(first, last, start, end, now),
             Action::SetBarline {
                 first,
                 last,
