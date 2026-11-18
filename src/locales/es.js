@@ -314,6 +314,7 @@ export default {
   'bar.accidentals': 'Alteraciones',
   'bar.voice': 'Voz',
   'toolbar.label.entry': 'Entrada de notas',
+  'toolbar.label.marks': 'Marcas',
   'bar.tools': 'Herramientas',
   'bar.indications': 'Indicaciones',
   'toolbar.label.score': 'Barra de la partitura',
@@ -367,7 +368,6 @@ export default {
   'keysig.major': '{note} mayor',
 
   // ----- paleta -----------------------------------------------------------------
-  'palette.label': 'Paleta',
   'palette.select': 'Herramienta de selección',
   'palette.select.desc': 'Haz clic para ubicar el cursor; arrastra o usa Mayús+clic para seleccionar.',
   'palette.erase': 'Borrador',
@@ -406,6 +406,7 @@ export default {
   'palette.fermata': 'Calderón',
   'palette.fermata.desc': 'Se sostiene más de lo escrito. También sirve en silencios.',
   'palette.dynamics': 'Dinámicas',
+  'palette.dynamics.drop': 'Haz clic para elegir una; el botón muestra la última usada.',
   'palette.ppp': 'Pianississimo',
   'palette.ppp.desc': 'Lo más suave posible.',
   'palette.pp': 'Pianissimo',

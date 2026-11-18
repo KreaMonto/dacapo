@@ -15,6 +15,8 @@ export const DEFAULT_LAYOUT = {
   top2: ['tools', 'measure', 'staves', 'indications'],
   // A column left of the score: what you write with.
   left: ['figures', 'accidentals', 'voice'],
+  // A column right of the score: what goes on the notes.
+  right: ['lines', 'articulations', 'dynamics', 'expressions'],
 };
 
 /** Puts every bar named in `layout` into its zone, in order. */
@@ -34,8 +36,9 @@ export function applyLayout(root, layout = DEFAULT_LAYOUT) {
  * row its width, a column (`.vzone`) its height. Every `.toolbar` zone has
  * a `.tbar-row`, a `.tbar-more` button and a `.tbar-overflow` panel.
  */
-export function installBars(root) {
+export function installBars(root, { onChange } = {}) {
   applyLayout(root);
+  for (const drop of root.querySelectorAll('.drop')) installDrop(drop, onChange);
   const rows = [...root.querySelectorAll('.toolbar')].map(fitRow);
   const fitAll = () => { for (const r of rows) r.fit(); };
   // Each row also watches itself; this covers the window and the fonts.
@@ -43,6 +46,70 @@ export function installBars(root) {
   document.fonts?.ready.then(fitAll);
   return { fit: fitAll };
 }
+
+/**
+ * A drop-down button for a large group (the dynamics): the button shows the
+ * last item chosen, and a click opens the whole group beside it. Choosing an
+ * item does what the item does (the toolbar's click handler sees the click)
+ * and closes the group. The last choice is remembered.
+ *
+ * The group is placed with fixed coordinates, so the column's clipping
+ * (overflow: hidden, for ») does not cut it.
+ */
+function installDrop(drop, onChange) {
+  const face = drop.querySelector('.drop-btn');
+  const pop = drop.querySelector('.drop-pop');
+  const key = `partita.drop.${drop.dataset.drop}`;
+  const show = (item) => {
+    if (!item) return;
+    face.textContent = item.textContent;
+    onChange?.(face);
+  };
+  let saved = null;
+  try { saved = localStorage.getItem(key); } catch { /* no storage: the default stays */ }
+  if (saved) show([...pop.children].find((b) => markValue(b) === saved));
+
+  const close = () => {
+    pop.hidden = true;
+    face.setAttribute('aria-expanded', 'false');
+  };
+  const open = () => {
+    pop.hidden = false;
+    face.setAttribute('aria-expanded', 'true');
+    // Beside the button, towards the score: left of a right column, right
+    // of anything else; kept inside the window.
+    const r = face.getBoundingClientRect();
+    const p = pop.getBoundingClientRect();
+    const toLeft = !!drop.closest('[data-zone="right"]');
+    let x = toLeft ? r.left - p.width - 6 : r.right + 6;
+    x = Math.max(4, Math.min(x, window.innerWidth - p.width - 4));
+    const y = Math.max(4, Math.min(r.top, window.innerHeight - p.height - 4));
+    pop.style.left = `${x}px`;
+    pop.style.top = `${y}px`;
+  };
+
+  face.addEventListener('click', (ev) => {
+    ev.stopPropagation(); // not a command for the toolbar's click handler
+    if (pop.hidden) open(); else close();
+  });
+  pop.addEventListener('click', (ev) => {
+    const item = ev.target.closest('button');
+    if (!item) return;
+    show(item);
+    try { localStorage.setItem(key, markValue(item)); } catch { /* not remembered */ }
+    close();
+  });
+  document.addEventListener('pointerdown', (ev) => {
+    if (!pop.hidden && !drop.contains(ev.target)) close();
+  }, true);
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && !pop.hidden) { close(); face.focus(); }
+  }, true);
+  window.addEventListener('resize', close);
+}
+
+/** What an item of a drop-down stands for, to remember it. */
+const markValue = (b) => b.dataset.dyn ?? b.dataset.artic ?? b.dataset.cmd ?? b.textContent;
 
 function fitRow(toolbar) {
   const row = toolbar.querySelector('.tbar-row');

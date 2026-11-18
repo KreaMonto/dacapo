@@ -68,7 +68,7 @@ All views edit the same way. Clicking, selecting and the pointer figure work ide
 
 ## Words in the music
 
-The **Indications** bar of the toolbar has the tempo marking and the rehearsal mark; the **Expressions** section of the palette has the expression and the technique. All four are in the Notes and Score menus too:
+The **Indications** bar of the toolbar has the tempo marking and the rehearsal mark; the **Expressions** bar, right of the score, has the expression and the technique. All four are in the Notes and Score menus too:
 
 | Button | What it adds |
 |---|---|
@@ -123,9 +123,9 @@ This works like the note palette in Encore. The **entry bars** on the left of th
 
 With the **Select** tool, point at a notehead: the pointer becomes a vertical double arrow. Press and drag up or down to move the note one line or space at a time; it sounds at each step. In a chord, only the note you grabbed moves. Let go to drop it. One **Ctrl+Z** undoes the whole drag. The key signature's accidentals are not applied while dragging: an altered note keeps its accidental, as with **Alt+↑/↓**.
 
-## The entry bars and the palette
+## The bars beside the score
 
-Left of the score, one column of buttons: the **Figures**, **Accidentals** and **Voice** bars. When the window is too short for all of them, the last ones go behind **»** at the bottom. Right of the score, the **palette** holds the marks that go on notes, in collapsible categories: click a heading to open or close it; Partita remembers your choice. Hover any button, or reach it with Tab, to see a tooltip with its name, what it does, its keyboard shortcut and the bar it belongs to.
+Left of the score, one column of buttons: the **Figures**, **Accidentals** and **Voice** bars. When the window is too short for all of them, the last ones go behind **»** at the bottom. Right of the score, another column holds what goes on the notes: the **Ties & slurs**, **Articulations**, **Dynamics** and **Expressions** bars. **Dynamics** is one button that shows the last dynamic you chose: click it to open all of them, then choose one. Hover any button, or reach it with Tab, to see a tooltip with its name, what it does, its keyboard shortcut and the bar it belongs to.
 
 **Accidentals, articulations and dynamics** can be placed with the mouse: click the mark (it stays highlighted and follows the pointer) (it stays highlighted and follows the pointer), then click each note it goes on; the note under the pointer lights up first. An accidental clicked on a chord changes only that tone. **Esc**, a right-click or clicking the mark again puts it down. With a selection, clicking a mark applies it to every note in the selection at once. From the keyboard, marks apply to **the note just before the caret**.
 
@@ -137,9 +137,9 @@ Left of the score, one column of buttons: the **Figures**, **Accidentals** and *
 | **Eraser** (Tools bar, next to Select, `X`) | The pointer becomes a crosshair. Aim at a note and click to erase just that note; in a chord, only the tone you aim at goes. Drag a box to erase every note and rest inside it. The note under the crosshair turns red before you click. One Ctrl+Z brings back everything erased in one go. **Esc**, a right-click or `X` leave the eraser. |
 | **Figures** (left) | The first button switches the figures between notes and their matching rests; it shows a rest, highlighted, while they place rests. The **dot** below the figures makes the figure dotted. **View → Breve and 128th Notes** adds the breve (double whole note), the 64th and the 128th. |
 | **Accidentals** (left) | ♯ ♭ ♮. The key signature's sharps and flats are applied automatically when you place a note. |
-| **Ties & slurs** (palette) | **Tie** (`T`) joins a note to the next one of the same pitch. **Slur** (`S`) draws a phrase mark over the selected notes, and needs a selection. Deleting a slurred note removes its slur; undo restores both. |
-| **Articulations** (palette) | Staccato, staccatissimo, tenuto, accent, marcato, fermata. They are placed on the notehead side; the fermata goes above and also works on rests. |
-| **Dynamics** (palette) | ppp … fff, sfz, fp. Printed below the staff. Choosing the dynamic a note already has removes it. |
+| **Ties & slurs** (right) | **Tie** (`T`) joins a note to the next one of the same pitch. **Slur** (`S`) draws a phrase mark over the selected notes, and needs a selection. Deleting a slurred note removes its slur; undo restores both. |
+| **Articulations** (right) | Staccato, staccatissimo, tenuto, accent, marcato, fermata. They are placed on the notehead side; the fermata goes above and also works on rests. |
+| **Dynamics** (right) | ppp … fff, sfz, fp, behind one button that shows the last one chosen. Printed below the staff. Choosing the dynamic a note already has removes it. |
 | **Voice** (left) | Shows **1** until you need more. **+** adds an independent line on the same staff, for example divisi strings or two melodies in one hand. Its buttons switch between voices (also `Alt+1`…`4`). A voice that contains no music disappears again once you leave it. |
 
 ## Playback

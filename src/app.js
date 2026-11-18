@@ -2667,7 +2667,7 @@ dialogEl.addEventListener('click', (ev) => {
   }
 });
 
-// Toolbar and palette.
+// Toolbars (the rows on top and the columns beside the score).
 const onControlClick = (ev) => {
   const b = ev.target.closest('button');
   if (!b) return;
@@ -2680,7 +2680,6 @@ const onControlClick = (ev) => {
   if (!textEdit.key && !$('dialog').open) page.focus();
 };
 for (const bar of document.querySelectorAll('.toolbar')) bar.addEventListener('click', onControlClick);
-$('palette').addEventListener('click', onControlClick);
 
 // ----- menu bar --------------------------------------------------------------
 
@@ -2839,16 +2838,11 @@ applyTheme();
 applyExtendedValues();
 
 installTooltips();
-installedBars = installBars(document.body);
-// Glyph buttons of the entry bars: centre accidentals and the dot like the figures.
-document.fonts?.ready.then(() => { for (const b of document.querySelectorAll('#entry .glyph:not([data-dur])')) fitGlyph(b); });
+installedBars = installBars(document.body, { onChange: fitGlyph });
+// Glyph buttons of the columns (accidentals, the dot, articulations,
+// dynamics): centre each from its measured ink, like the figures.
+document.fonts?.ready.then(() => { for (const b of document.querySelectorAll('.vzone .glyph:not([data-dur])')) fitGlyph(b); });
 
-// Palette sections: remember which ones the user keeps open.
-for (const d of document.querySelectorAll('.palette details')) {
-  const name = `palette.${d.dataset.section}`;
-  d.open = loadPref(name, d.open);
-  d.addEventListener('toggle', () => savePref(name, d.open));
-}
 
 // The key names' letter is translated (C → Do); the accidental is kept.
 $('key').innerHTML = KEY_NAMES.map((n, i) =>
