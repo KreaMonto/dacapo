@@ -21,22 +21,103 @@ export const DEFAULT_LAYOUT = {
   right: ['lines', 'articulations', 'dynamics', 'expressions'],
 };
 
-// The person's own arrangement, kept between sessions: which bars are hidden
-// (View → Toolbars) and where each one was dragged. Reset brings back
-// Partita's layout.
+/**
+ * Partita's own layouts. They cannot be changed: moving or hiding a bar
+ * changes the arrangement on screen, and choosing the layout again (or
+ * Reset) brings it back. The instrument modes will add theirs here.
+ */
+export const BUILT_IN_LAYOUTS = [
+  { id: 'partita', nameKey: 'layout.partita', layout: DEFAULT_LAYOUT, hidden: [] },
+];
+
+// Kept between sessions:
+// - the arrangement on screen (`partita.toolbars`): which bars are hidden,
+//   where each one is, and the layout it comes from (`active`);
+// - the person's own layouts (`partita.layouts`): each with its name, the
+//   built-in layout it started from (`base`), and its arrangement. While one
+//   of them is active, every change is kept in it.
 const STORE = 'partita.toolbars';
-const stored = load();
+const LAYOUTS = 'partita.layouts';
+const stored = load(STORE) || {};
+let own = (load(LAYOUTS) || []).filter((l) => l && typeof l.id === 'string' && typeof l.name === 'string');
+let active = stored.active && findLayout(stored.active) ? stored.active : 'partita';
 let hidden = new Set(stored.hidden);
 let layout = mergeLayout(stored.layout);
 let rootEl = null;
 let fitAll = () => {};
 let refitBar = () => {};
 
-function load() {
-  try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch { return {}; }
+function load(key) {
+  try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
+}
+function store(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* not kept */ }
 }
 function save() {
-  try { localStorage.setItem(STORE, JSON.stringify({ hidden: [...hidden], layout })); } catch { /* not kept */ }
+  store(STORE, { active, hidden: [...hidden], layout });
+  const mine = own.find((l) => l.id === active);
+  if (mine) {
+    mine.hidden = [...hidden];
+    mine.layout = structuredClone(layout);
+    store(LAYOUTS, own);
+  }
+}
+
+function findLayout(id) {
+  return BUILT_IN_LAYOUTS.find((l) => l.id === id) ?? own.find((l) => l.id === id);
+}
+const builtInOf = (id) => (BUILT_IN_LAYOUTS.some((l) => l.id === id) ? id : (findLayout(id)?.base ?? 'partita'));
+
+/** Every layout, Partita's first: { id, name, builtIn }. */
+export const layoutList = () => [
+  ...BUILT_IN_LAYOUTS.map((l) => ({ id: l.id, name: t(l.nameKey), builtIn: true })),
+  ...own.map((l) => ({ id: l.id, name: l.name, builtIn: false })),
+];
+export const activeLayout = () => active;
+export const activeLayoutName = () => layoutList().find((l) => l.id === active)?.name ?? '';
+
+/** Puts layout `id` on screen, as it was saved (a built-in one, as Partita made it). */
+export function chooseLayout(id) {
+  const l = findLayout(id);
+  if (!l) return;
+  active = id;
+  hidden = new Set(l.hidden ?? []);
+  layout = mergeLayout(l.layout);
+  save();
+  showLayout();
+}
+
+/**
+ * Keeps the arrangement on screen as the person's own layout `name` (an
+ * existing one of theirs with that name is replaced), and makes it active.
+ */
+export function saveLayoutAs(name) {
+  const clean = String(name).trim().slice(0, 40);
+  if (!clean) return null;
+  let mine = own.find((l) => l.name.toLowerCase() === clean.toLowerCase());
+  if (!mine) {
+    mine = { id: `own-${Date.now().toString(36)}`, name: clean, base: builtInOf(active) };
+    own.push(mine);
+  }
+  active = mine.id;
+  save(); // fills in its arrangement
+  return mine.id;
+}
+
+/** Removes one of the person's layouts; if it was on screen, its built-in layout takes over. */
+export function deleteLayout(id) {
+  const mine = own.find((l) => l.id === id);
+  if (!mine) return;
+  own = own.filter((l) => l !== mine);
+  store(LAYOUTS, own);
+  if (active === id) chooseLayout(mine.base ?? 'partita');
+}
+
+function showLayout() {
+  if (!rootEl) return;
+  applyLayout(rootEl, layout);
+  for (const bar of rootEl.querySelectorAll('[data-bar-id]')) refitBar(bar);
+  applyVisibility();
 }
 
 /**
@@ -75,14 +156,12 @@ export function setBarShown(id, shown) {
   applyVisibility();
 }
 
-/** Every bar back, in Partita's layout. */
+/**
+ * Back to the built-in layout the one on screen comes from, as Partita made
+ * it. The person's own layouts are kept: choosing one brings it back.
+ */
 export function resetBars() {
-  hidden = new Set();
-  layout = mergeLayout(null);
-  try { localStorage.removeItem(STORE); } catch { /* nothing kept */ }
-  applyLayout(rootEl, layout);
-  for (const bar of rootEl.querySelectorAll('[data-bar-id]')) refitBar(bar);
-  applyVisibility();
+  chooseLayout(builtInOf(active));
 }
 
 /** Hides the hidden bars, and a zone with nothing left to show. */

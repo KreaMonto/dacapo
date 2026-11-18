@@ -46,7 +46,7 @@ The steps, one pull request each:
 - [x] **0.4 Marks bar.** What goes on notes moves to the right, with drop-down buttons for the large groups.
 - [x] **0.5 View → Toolbars.** Show or hide each bar, remembered; **Reset** brings back the default layout.
 - [x] **0.6 Moving bars.** Drag a bar by its handle (⋮⋮) to another zone or another place in its zone; remembered between sessions.
-- [ ] **0.7 Layouts.** Built-in layouts and the user's own: **Save Layout As…**, choose one, **Reset** to its built-in layout. The base for the instrument modes.
+- [x] **0.7 Layouts.** Built-in layouts and the user's own: **Save Layout As…**, choose one, **Reset** to its built-in layout. The base for the instrument modes.
 - [ ] *Later:* floating bars.
 
 ## 1. Common base
@@ -93,6 +93,7 @@ Every mode needs these. The order inside each group is the planned order of work
 - [ ] Insert vs. overwrite mode.
 - [ ] Box selection.
 - [ ] A panel with the properties of the selected note.
+- [ ] **Reorder staves, and choose where a new one goes** *(new, to discuss)*: today a new staff is always added at the bottom. Moving staves up and down, and placing a new one, should be easy to guess and visual.
 - [ ] **Edit one staff or voice alone** *(new)*: as in Encore, take one instrument or voice out of a large score, work on it by itself, and have the result saved back in the full score. Especially useful for large choral scores.
 
 ## 2. Modes

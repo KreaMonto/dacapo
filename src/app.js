@@ -7,7 +7,10 @@ import {
   currentStyle, cssFont, resolveStyle, TEXT_KINDS, TEXT_DEFAULTS, UNITS_PER_PT, UNITS_PER_TENTH_MM,
 } from './render.js';
 import { installTooltips } from './tooltip.js';
-import { installBars, barZones, barNameKey, isBarShown, setBarShown, resetBars } from './toolbars.js';
+import {
+  installBars, barZones, barNameKey, isBarShown, setBarShown, resetBars,
+  layoutList, activeLayout, activeLayoutName, chooseLayout, saveLayoutAs, deleteLayout,
+} from './toolbars.js';
 import { installMenuBar } from './menu.js';
 import {
   t, tn, has, keyLabel, applyTranslations, LANGUAGES, LANGUAGE_NAMES, languageChoice,
@@ -1348,6 +1351,8 @@ const commands = {
 };
 
 function runCommand(cmd) {
+  // Saved layouts come and go, so their commands carry the layout's id.
+  if (cmd?.startsWith('layout:')) { chooseLayout(cmd.slice(7)); return; }
   commands[cmd]?.();
 }
 
@@ -2733,6 +2738,40 @@ commands['tempo-mark'] = () => { const doc = active(); if (doc) tempoDialog(doc.
 // View → Toolbars: show or hide each bar; Reset brings back Partita's layout.
 for (const { ids } of barZones()) for (const id of ids) commands[`toolbar:${id}`] = () => setBarShown(id, !isBarShown(id));
 commands['toolbars-reset'] = () => resetBars();
+commands['layout-save'] = () => serial(saveLayoutDialog);
+commands['layout-delete'] = () => serial(deleteLayoutDialog);
+
+/** Asks for a name and keeps the bars as they are now as one of the person's layouts. */
+async function saveLayoutDialog() {
+  const mine = layoutList().find((l) => l.id === activeLayout() && !l.builtIn);
+  const body = `<div class="staff-form"><label>${esc(t('layout.save.name'))}
+    <input id="layout-name" type="text" maxlength="40" value="${esc(mine?.name ?? '')}" placeholder="${esc(t('layout.save.example'))}" autocomplete="off"></label>
+    <p class="muted hint">${esc(t('layout.save.hint'))}</p></div>`;
+  const pending = choiceDialog(t('layout.save.title'), body, [
+    { spacer: true },
+    { label: t('button.cancel'), value: 'cancel' },
+    { label: t('layout.save.button'), value: 'save', primary: true },
+  ]);
+  const input = $('layout-name');
+  input.focus();
+  input.select();
+  // Enter saves, as the button does.
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); $('dialog').querySelector('[data-answer="save"]').click(); }
+  });
+  if (await pending === 'save' && input.value.trim()) saveLayoutAs(input.value);
+  page.focus();
+}
+
+async function deleteLayoutDialog() {
+  const mine = layoutList().find((l) => l.id === activeLayout() && !l.builtIn);
+  if (!mine) return;
+  const answer = await choiceDialog(t('layout.delete.title', { name: mine.name }),
+    `<p>${esc(t('layout.delete.body'))}</p>`,
+    [{ spacer: true }, { label: t('button.cancel'), value: 'cancel', primary: true }, { label: t('layout.delete.button'), value: 'delete' }]);
+  if (answer === 'delete') deleteLayout(mine.id);
+  page.focus();
+}
 commands['note-text:expression'] = () => startNoteText('expression');
 commands['note-text:technique'] = () => startNoteText('technique');
 commands.rehearsal = () => rehearsalMark();
@@ -2791,12 +2830,19 @@ const MENUS = [
       choice('menu.view.paper.letter', 'paper:letter', () => state.paper === 'letter'),
     ] },
     // One group per zone: the rows on top, then the columns left and right.
-    { label: t('menu.view.toolbars'), items: [
-      ...barZones().flatMap(({ ids }, i) => [
+    // The layouts (Partita's, then the person's own), what to do with them,
+    // and every bar to show or hide. The list is read when the menu opens.
+    { label: t('menu.view.toolbars'), value: () => activeLayoutName(), items: () => [
+      ...layoutList().map((l) => ({ label: l.name, cmd: `layout:${l.id}`, checked: () => activeLayout() === l.id })),
+      { sep: true },
+      { label: t('menu.view.toolbars.save'), cmd: 'layout-save', desc: t('menu.view.toolbars.save.desc') },
+      { label: t('menu.view.toolbars.delete'), cmd: 'layout-delete', enabled: () => !layoutList().find((l) => l.id === activeLayout())?.builtIn, desc: t('menu.view.toolbars.delete.desc') },
+      { sep: true },
+      // One group per zone: the rows on top, then the columns left and right.
+      { label: t('menu.view.toolbars.bars'), items: barZones().flatMap(({ ids }, i) => [
         ...(i > 1 ? [{ sep: true }] : []),
         ...ids.map((id) => ({ label: t(barNameKey(id)), cmd: `toolbar:${id}`, checked: () => isBarShown(id) })),
-      ]),
-      { sep: true },
+      ]) },
       { label: t('menu.view.toolbars.reset'), cmd: 'toolbars-reset', desc: t('menu.view.toolbars.reset.desc') },
     ] },
     { sep: true },

@@ -20,6 +20,7 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
   - **Left of the score**, one column for note entry: Figures (two columns, each note beside its rest, and the dot), Accidentals and Voice (**1**, **2**… and **+**). Off the staff, the whole and half rests carry a short line so they can be told apart.
   - **Right of the score**, one column for what goes on the notes: Ties & slurs, Articulations, Dynamics and Expressions (*dolce*, *pizz.*). The dynamics are one button that shows the last one chosen and opens all of them.
   - **Every bar can be moved**: drag it by its grip to another place, in its row or column or in another one. **View → Toolbars** shows or hides each bar; a row or column with nothing left disappears. Partita remembers the arrangement, and **Reset Toolbars** brings back its own.
+  - **Layouts**: **View → Toolbars → Save Layout As…** keeps an arrangement of bars under a name, to choose it again from the same menu; changes made while it is chosen are kept in it. Partita's own layout stays as it is.
   - In the menu, bracket, brace and ungroup are now under **Score → Staff → Group**.
 - **The title and composer are drawn on the page** like the music, so they print exactly as shown, and the music moves down to make room for the texts of page 1.
 - Files that use the new page texts are saved as file format 7, which older versions cannot open; other files are still written in the older formats. Unsaved work from Partita 0.3.0 is still recovered after updating.
