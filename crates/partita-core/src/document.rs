@@ -16,8 +16,8 @@ use crate::cursor::{self, Caret, Move, SelectionRange};
 use crate::history::{History, Transaction, TxKind};
 use crate::model::{
     is_measure_rest, Articulation, Barline, Clef, Duration, Dynamic, Event, EventId, EventKind,
-    GroupKind, KeySignature, LyricJoin, MeasureAttrs, Metadata, NoteText, NoteTextKind, Pitch,
-    Score, Slur, StaffGroup, Step, Syllable, TempoMark, TextBox, TextKind, TextStyle,
+    GroupKind, Jump, KeySignature, LyricJoin, MeasureAttrs, Metadata, NoteText, NoteTextKind,
+    Pitch, Score, Slur, StaffGroup, Step, Syllable, TempoMark, TextBox, TextKind, TextStyle,
     TimeSignature, Transposition, MAX_ENDING, MAX_NOTE_TEXT_CHARS, MAX_STAFF_NAME_CHARS,
     MAX_SYLLABLE_CHARS, MAX_TEXT_BOX_CHARS, MAX_VERSES, REPEAT_TIMES, TEXT_SIZE_RANGE,
 };
@@ -1493,6 +1493,36 @@ impl Document {
         self.commit(TxKind::Edit, ops, caret, now_ms, false)
     }
 
+    /// The jump marks of `measure`, in one undo step: a segno and the start
+    /// of the coda at its beginning, Fine / To Coda / D.C. / D.S. at its end.
+    pub fn set_jumps(
+        &mut self,
+        measure: usize,
+        segno: bool,
+        coda: bool,
+        jump: Option<Jump>,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let Some(current) = self.score.measures.get(measure).cloned() else {
+            return Err(crate::ops::OpError::MeasureIndex(measure).into());
+        };
+        let attrs = MeasureAttrs {
+            segno,
+            coda,
+            jump,
+            ..current.clone()
+        };
+        if attrs == current {
+            return Ok(());
+        }
+        let op = Op::SetMeasureAttrs {
+            index: measure,
+            attrs,
+        };
+        let caret = self.caret;
+        self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
+    }
+
     // ----- clipboard -----------------------------------------------------
 
     pub fn copy(&self) -> Option<Clipboard> {
@@ -1587,6 +1617,9 @@ impl Document {
             repeat_start: false,
             repeat_end: None,
             ending: Vec::new(),
+            segno: false,
+            coda: false,
+            jump: None,
             ..self.score.measures[index.saturating_sub(1).min(self.score.measures.len() - 1)]
                 .clone()
         };
@@ -2140,6 +2173,28 @@ mod tests {
             Some(2),
             "the repeat stays"
         );
+    }
+
+    #[test]
+    fn jump_marks_are_set_in_one_step() {
+        let mut doc = Document::new(Score::new("Etude", 4));
+        doc.set_jumps(1, true, false, None, 1_000).unwrap();
+        doc.set_jumps(3, false, false, Some(Jump::DalSegnoAlFine), 2_000)
+            .unwrap();
+        assert!(doc.score.measures[1].segno);
+        assert_eq!(doc.score.measures[3].jump, Some(Jump::DalSegnoAlFine));
+        doc.undo().unwrap();
+        assert!(doc.score.measures[3].jump.is_none());
+        let before = doc.can_undo();
+        doc.set_jumps(1, true, false, None, 3_000).unwrap();
+        assert_eq!(doc.can_undo(), before, "no change, no step");
+        doc.insert_measure(2, 4_000).unwrap();
+        let new = &doc.score.measures[2];
+        assert!(
+            !new.segno && !new.coda && new.jump.is_none(),
+            "an inserted measure has none"
+        );
+        assert!(doc.set_jumps(9, true, true, None, 5_000).is_err());
     }
 
     #[test]

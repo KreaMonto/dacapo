@@ -526,6 +526,9 @@ mod tests {
                     repeat_start: true,
                     repeat_end: Some(3),
                     ending: vec![1, 2],
+                    segno: true,
+                    coda: false,
+                    jump: Some(crate::model::Jump::DalSegnoAlCoda),
                 },
             },
             Op::SetTextStyle {

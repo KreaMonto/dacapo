@@ -844,6 +844,28 @@ const endingAt = () => {
   return doc ? (doc.score.measures[doc.caret.measure]?.ending ?? []).join(',') : '';
 };
 
+/**
+ * The jump marks of the caret's measure: 'segno' and 'coda' turn their
+ * sign on or off; 'none' removes the instruction at its end; any other
+ * puts that instruction there (or takes it away if it is already there).
+ */
+function setJump(kind) {
+  const doc = active();
+  if (!doc) return;
+  const m = doc.caret.measure;
+  const a = doc.score.measures[m];
+  let { segno = false, coda = false, jump = null } = a;
+  if (kind === 'segno') segno = !segno;
+  else if (kind === 'coda') coda = !coda;
+  else if (kind === 'none') jump = null;
+  else jump = jump === kind ? null : kind;
+  act({ type: 'set_jumps', measure: m, segno, coda, jump });
+}
+const jumpsAt = () => {
+  const doc = active();
+  return doc?.score.measures[doc.caret.measure] ?? {};
+};
+
 const barlineAt = () => {
   const doc = active();
   return doc?.score.measures[doc.caret.measure]?.barline ?? 'single';
@@ -2815,6 +2837,7 @@ const onControlClick = (ev) => {
   else if (b.dataset.alter || b.dataset.artic || b.dataset.dyn) useMark(b);
   else if (b.dataset.barline) setBarline(b.dataset.barline);
   else if (b.dataset.ending !== undefined) setEnding(b.dataset.ending);
+  else if (b.dataset.jump) setJump(b.dataset.jump);
   else runCommand(b.dataset.cmd);
   // Back to the score, unless the button opened something to type in.
   if (!textEdit.key && !$('dialog').open) page.focus();
@@ -2843,6 +2866,8 @@ commands['repeat-start'] = toggleRepeatStart;
 commands['repeat-end'] = toggleRepeatEnd;
 commands['repeat-selection'] = repeatSelection;
 const ENDINGS = [['', 'none'], ['1', '1'], ['2', '2'], ['3', '3'], ['1,2', '12']];
+const JUMPS = ['fine', 'to_coda', 'da_capo', 'da_capo_al_fine', 'da_capo_al_coda', 'dal_segno', 'dal_segno_al_fine', 'dal_segno_al_coda'];
+for (const k of ['segno', 'coda', 'none', ...JUMPS]) commands[`jump:${k}`] = () => setJump(k);
 for (const [v, k] of ENDINGS) commands[`ending:${k}`] = () => setEnding(v);
 const REPEAT_COUNTS = [2, 3, 4, 5, 6];
 for (const n of REPEAT_COUNTS) commands[`repeat-times:${n}`] = () => setRepeatTimes(n);
@@ -2982,6 +3007,12 @@ const MENUS = [
     { label: t('menu.score.texts'), cmd: 'page-texts', enabled: hasDoc, desc: t('menu.score.texts.desc') },
     { label: t('menu.score.tempo'), cmd: 'tempo-mark', enabled: hasDoc, desc: t('menu.score.tempo.desc') },
     { label: t('menu.score.rehearsal'), cmd: 'rehearsal', enabled: hasDoc, desc: t('menu.score.rehearsal.desc') },
+    { label: t('menu.score.jumps'), enabled: hasDoc, items: [
+      { label: t('jump.segno'), cmd: 'jump:segno', checked: () => !!jumpsAt().segno, desc: t('jump.segno.desc') },
+      { label: t('jump.coda'), cmd: 'jump:coda', checked: () => !!jumpsAt().coda, desc: t('jump.coda.desc') },
+      { sep: true },
+      ...['none', ...JUMPS].map((k) => ({ ...choice(`jump.${k}`, `jump:${k}`, () => (jumpsAt().jump ?? 'none') === k), desc: t(`jump.${k}.desc`) })),
+    ] },
     { label: t('menu.score.textbox'), cmd: 'text', enabled: hasDoc, desc: t('palette.text.desc') },
     { label: t('menu.score.styles'), cmd: 'text-styles', enabled: hasDoc, desc: t('menu.score.styles.desc') },
     { sep: true },

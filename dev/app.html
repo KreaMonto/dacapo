@@ -239,6 +239,10 @@
           view.score.measures[m] = a;
         }
       },
+      set_jumps({ measure, segno, coda, jump }) {
+        snapshot();
+        view.score.measures[measure] = { ...view.score.measures[measure], segno, coda, jump: jump ?? null };
+      },
       set_barline({ first, last, barline }) {
         snapshot();
         for (let m = Math.min(first, last); m <= Math.max(first, last); m++) {
