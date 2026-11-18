@@ -44,7 +44,7 @@ The steps, one pull request each:
 - [x] **0.2 Granular bars.** Split the top bar into File, Edit, Playback, Tools, Measure, Staves and Indications, in the default layout above.
 - [x] **0.3 Entry bar.** The palette becomes one column on the left, without section titles; one button switches notes and rests. Done as three bars (Figures, Accidentals, Voice). Figures is the only bar with two columns: each note beside its rest, instead of a notes/rests switch.
 - [x] **0.4 Marks bar.** What goes on notes moves to the right, with drop-down buttons for the large groups.
-- [ ] **0.5 View → Toolbars.** Show or hide each bar, remembered; **Reset** brings back the default layout.
+- [x] **0.5 View → Toolbars.** Show or hide each bar, remembered; **Reset** brings back the default layout.
 - [ ] **0.6 Moving bars.** Drag a bar by its handle (⋮⋮) to another zone or another place in its zone; remembered between sessions.
 - [ ] **0.7 Layouts.** Built-in layouts and the user's own: **Save Layout As…**, choose one, **Reset** to its built-in layout. The base for the instrument modes.
 - [ ] *Later:* floating bars.
