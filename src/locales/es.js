@@ -94,6 +94,7 @@ const SHORTCUTS = {
   'entry.extended': 'Cuadrada / garrapatea (Ver → Cuadrada y garrapatea)',
   'entry.dot': 'Puntillo',
   'entry.tuplet': 'Tresillo sí / no (Ctrl+5, 6, 2, 4: otros grupos)',
+  'entry.grace': 'Notas de adorno sí / no (Ctrl+Mayús+G: apoyaturas)',
   'entry.accidental': 'Subir / bajar la alteración',
   'entry.move': 'Mover la nota un grado (Ctrl+Alt: una octava)',
   'entry.tie': 'Ligar a la nota siguiente',
@@ -534,6 +535,21 @@ export default {
   'value.SixtyFourth': 'semifusa', 'value.HundredTwentyEighth': 'garrapatea',
   'value.dotted': '{value} con puntillo',
   'value.tuplet': '{value} ({name})',
+  'value.grace': '{value}, {name}',
+
+  // Barras de corchea a mano: la barra Barras y Notas → Barras.
+  'bar.beams': 'Barras de corchea',
+  'beam.break': 'Cortar barra', 'beam.break.desc': 'Empieza una barra nueva en la nota (o en cada nota seleccionada), o la deja con su corchete.',
+  'beam.join': 'Unir barra', 'beam.join.desc': 'Une la nota a la anterior con la barra, aunque cruce el pulso.',
+  'beam.auto': 'Barras automáticas', 'beam.auto.short': 'auto', 'beam.auto.desc': 'Vuelve a unir la nota como indica el compás.',
+
+  // Notas de adorno: el desplegable de la barra Figuras y Notas → Nota de adorno.
+  'toolbar.grace': 'Nota de adorno',
+  'toolbar.grace.desc': 'Escribe las notas siguientes como notas de adorno, pequeñas y antes de la nota que adornan; no ocupan tiempo en el compás. Elige el mismo tipo otra vez para quitarlo.',
+  'grace.acciaccatura': 'Acciaccatura', 'grace.acciaccatura.name': 'acciaccatura',
+  'grace.acciaccatura.desc': 'Nota de adorno tachada, tocada lo más breve posible.',
+  'grace.appoggiatura': 'Apoyatura', 'grace.appoggiatura.name': 'apoyatura',
+  'grace.appoggiatura.desc': 'Nota de adorno sin tachar, tocada como la mitad de la nota que sigue.',
 
   // Grupos irregulares: el desplegable de la barra Figuras y Notas → Grupo irregular.
   'toolbar.tuplet': 'Grupo irregular',

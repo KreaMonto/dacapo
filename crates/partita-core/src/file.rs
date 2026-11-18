@@ -84,7 +84,7 @@ fn required_version(score: &Score) -> u32 {
                 .any(|m| m.voices.iter().any(|v| v.iter().any(test)))
         })
     };
-    if score.has_tuplets() {
+    if score.has_rhythm_marks() {
         8
     } else if score.metadata.uses_page_texts() || score.has_markings() {
         7
@@ -408,6 +408,38 @@ mod tests {
         score.staves[0].measures[0].voices[0] = (0..3)
             .map(|i| crate::model::Event::new(100 + i, d, crate::model::EventKind::Rest))
             .collect();
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format_version"], 8);
+        assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
+    }
+
+    #[test]
+    fn grace_notes_need_format_8() {
+        use crate::model::{Duration, DurationBase, Grace};
+        let mut score = Score::new("Etude", 2);
+        let g = Duration::new(DurationBase::Eighth).as_grace(Grace::Appoggiatura);
+        score.staves[0].measures[0].voices[0] = vec![crate::model::Event::new(
+            100,
+            g,
+            crate::model::EventKind::Chord {
+                pitches: vec![crate::model::Pitch::new(crate::model::Step::D, 5)],
+            },
+        )];
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format_version"], 8);
+        assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
+    }
+
+    #[test]
+    fn manual_beams_need_format_8() {
+        let mut score = Score::new("Etude", 2);
+        let mut e = crate::model::Event::new(
+            100,
+            crate::model::Duration::new(crate::model::DurationBase::Eighth),
+            crate::model::EventKind::Rest,
+        );
+        e.beam = Some(crate::model::Beam::Break);
+        score.staves[0].measures[0].voices[0] = vec![e];
         let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
         assert_eq!(v["format_version"], 8);
         assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);

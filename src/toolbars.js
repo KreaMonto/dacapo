@@ -27,7 +27,7 @@ export const DEFAULT_LAYOUT = {
   // Left of the score: what you write with.
   left: [['figures', 'accidentals', 'voice']],
   // Right of the score: what goes on the notes.
-  right: [['lines', 'articulations', 'dynamics', 'expressions']],
+  right: [['lines', 'beams', 'articulations', 'dynamics', 'expressions']],
 };
 
 /**

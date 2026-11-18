@@ -321,11 +321,27 @@ const baseKey = (b) => b.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
 const valueIdx = (d) => BASES.indexOf(baseKey(d.base));
 
 export function durationTicks(d) {
+  if (d.grace) return 0;
   const base = (2 * TICKS_WHOLE) >> valueIdx(d);
   let t = 0;
   for (let i = 0; i <= d.dots; i++) t += base >> i;
   const tp = d.tuplet;
   return tp && tp.actual > 0 ? (t * tp.normal) / tp.actual : t;
+}
+
+/** Whether an event is a grace note (it takes no time). */
+const isGrace = (e) => !!e.duration.grace;
+
+/** Grace notes are drawn this much smaller than the others. */
+const GRACE_K = 0.65;
+/** Room each grace note takes before its main note. */
+const GRACE_STEP = 1.35 * SP;
+
+/** How many grace notes come before the first real note of a voice. */
+function leadingGraces(events) {
+  let n = 0;
+  while (n < events.length && isGrace(events[n])) n++;
+  return n === events.length ? 0 : n;
 }
 
 const sameTuplet = (a, b) => !!a && !!b && a.actual === b.actual && a.normal === b.normal && a.unit === b.unit;
@@ -440,6 +456,7 @@ export function layout(view, width, opts = {}) {
   const single = score.measures.map((attrs, m) => {
     let maxEvents = 0;
     let maxFill = 0;
+    let maxLead = 0; // grace notes before the first beat
     let restOnly = true;
     // Per staff: the fullest voice, when it exceeds the time signature.
     const overfull = new Map();
@@ -451,6 +468,7 @@ export function layout(view, width, opts = {}) {
         const mrest = isMeasureRest(voice, capacity(attrs));
         const fill = mrest ? capacity(attrs) : voice.reduce((t, e) => t + durationTicks(e.duration), 0);
         maxEvents = Math.max(maxEvents, voice.length);
+        maxLead = Math.max(maxLead, leadingGraces(voice));
         maxFill = Math.max(maxFill, fill);
         if (fill > capacity(attrs)) overfull.set(s, Math.max(overfull.get(s) || 0, fill));
         if (v === 0 ? !mrest : voice.length > 0) restOnly = false;
@@ -495,8 +513,9 @@ export function layout(view, width, opts = {}) {
       jump: attrs.jump ?? null, // Fine, To Coda, D.C., D.S. at the end
       breakAfter: attrs.break_after ?? null, // 'system' or 'page' after it
       overfull,
+      graceLead: maxLead * GRACE_STEP,
       // An end repeat takes room before the barline for its dots.
-      content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP, Math.min(lyricW, 80 * SP) + 2.6 * SP) + (attrs.repeat_end ? REPEAT_W : 0),
+      content: Math.max(9 * SP, maxEvents * 3.6 * SP + 2 * SP, Math.min(lyricW, 80 * SP) + 2.6 * SP) + maxLead * GRACE_STEP + (attrs.repeat_end ? REPEAT_W : 0),
       timeChange: !prev || prev.time.beats !== attrs.time.beats || prev.time.beat_type !== attrs.time.beat_type,
       keyChange: !!prev && prev.key.fifths !== attrs.key.fifths,
     };
@@ -656,8 +675,8 @@ export function layout(view, width, opts = {}) {
       ms.w += Math.max(0, stretch);
       ms.x = x;
       ms.system = s;
-      ms.contentX = x + ms.prefix + 1.4 * SP;
-      ms.contentW = ms.w - ms.prefix - 2.6 * SP - (ms.repeatEnd ? REPEAT_W : 0);
+      ms.contentX = x + ms.prefix + 1.4 * SP + (ms.graceLead || 0);
+      ms.contentW = ms.w - ms.prefix - 2.6 * SP - (ms.graceLead || 0) - (ms.repeatEnd ? REPEAT_W : 0);
       x += ms.w;
     }
     s.x0 = marginX + indent;
@@ -691,8 +710,14 @@ const centerX = (ms) => ms.contentX + ms.contentW / 2;
 function eventXs(lay, ms, events) {
   if (isMeasureRest(events, capacity(ms.attrs))) return [centerX(ms)];
   let tick = 0;
-  return events.map((e) => {
-    const x = lay.tickX(ms, tick);
+  return events.map((e, i) => {
+    let x = lay.tickX(ms, tick);
+    if (isGrace(e)) {
+      // Before the note it ornaments: one step per grace note left.
+      let k = 0;
+      while (i + k < events.length && isGrace(events[i + k])) k++;
+      x -= k * GRACE_STEP + (i + k < events.length ? 0.3 * SP : 0);
+    }
     tick += durationTicks(e.duration);
     return x;
   });
@@ -706,7 +731,8 @@ function gapX(lay, ms, events, index) {
   }
   let tick = 0;
   for (let i = 0; i < index && i < events.length; i++) tick += durationTicks(events[i].duration);
-  if (index < events.length) return lay.tickX(ms, tick) - 1.0 * SP;
+  // (Before a grace note: left of it, not of the note it ornaments.)
+  if (index < events.length) return eventXs(lay, ms, events)[index] - (isGrace(events[index]) ? 0.7 : 1.0) * SP;
   if (events.length === 0) return ms.contentX - 0.6 * SP;
   const lastStart = tick - durationTicks(events[events.length - 1].duration);
   return Math.max(lay.tickX(ms, tick) - 1.0 * SP, lay.tickX(ms, lastStart) + 1.6 * SP);
@@ -1149,14 +1175,25 @@ export function renderScore(view, width, opts = {}) {
           g.forEach((i) => groupOf.set(i, gi));
           return multi ? v % 2 === 0 : groupStemsUp(g.map((i) => events[i]), mid);
         });
+        const graceBeams = isMeasureRest(events, capacity(ms.attrs)) ? [] : graceGroups(events);
+        const graceBeamed = new Set(graceBeams.flat());
         const infos = events.map((e, i) => {
           const gi = groupOf.get(i);
           const opts = gi === undefined ? {} : { up: groupUp[gi], beamed: true };
-          const info = drawEvent(push, e, xs[i], top, yOf, mid, v, multi, writtenFifths(staff, ms.attrs.key.fifths), cls, opts);
+          const fifths = writtenFifths(staff, ms.attrs.key.fifths);
+          const info = isGrace(e) && e.kind !== 'rest'
+            ? drawGrace(push, e, xs[i], yOf, mid, v, multi, fifths, cls, { beamed: graceBeamed.has(i) })
+            : drawEvent(push, e, xs[i], top, yOf, mid, v, multi, fifths, cls, opts);
           return Object.assign(info, { e, ms, top, staff: st, voice: v, cls, sung: lay.verses[st] > 0 });
         });
         const starts = eventStarts(events);
         groups.forEach((g, gi) => drawBeams(push, g.map((i) => infos[i]), g.map((i) => starts[i]), groupUp[gi], multi ? null : yOf(mid), cls));
+        for (const g of graceBeams) {
+          const gInfos = g.map((i) => infos[i]);
+          drawBeams(push, gInfos, g.map((_, k) => k * TICKS_WHOLE), gInfos[0].up, null, `${cls} grace`, GRACE_K);
+          // An acciaccatura's stroke crosses the first stem of the group.
+          if (gInfos[0].e.duration.grace === 'Acciaccatura') drawGraceSlash(push, gInfos[0], cls);
+        }
         for (const [a, b] of tupletGroups(events)) {
           const g = groupOf.get(a);
           const beamed = g !== undefined && groups[g][0] === a && groups[g][groups[g].length - 1] === b;
@@ -1189,7 +1226,7 @@ export function renderScore(view, width, opts = {}) {
       const prev = seq[i - 1];
       slots.push({
         id: n.e.id, staff: n.staff, voice: n.voice, x: n.x, system: n.ms.system, page: n.ms.system.page || 0,
-        singable: !n.rest && !(prev && !prev.rest && prev.e.tie),
+        singable: !n.rest && !n.grace && !(prev && !prev.rest && prev.e.tie),
       });
     });
   }
@@ -1435,6 +1472,72 @@ function drawEvent(push, e, x, top, yOf, mid, voice, multi, fifths, cls, opts = 
   };
 }
 
+// ----- grace notes ---------------------------------------------------------------
+
+/**
+ * Draws a grace note: smaller noteheads, accidentals and flag, the stem up
+ * (down in a lower voice), and an acciaccatura's stroke through the stem.
+ * Beamed grace notes get their stems and beams from drawBeams. Returns the
+ * same info as drawEvent.
+ */
+function drawGrace(push, e, x, yOf, mid, voice, multi, fifths, cls, opts = {}) {
+  const k = GRACE_K;
+  const baseIdx = valueIdx(e.duration);
+  const pitches = pitchesOf(e);
+  push(`<g class="${cls} grace"${e.id !== undefined ? ` data-id="${e.id}"` : ''}>`);
+  const headIdx = Math.min(baseIdx, 3);
+  const w = HEAD_W[headIdx] * SP * k;
+  const left = x - w / 2;
+  const ds = pitches.map(diatonic).sort((a, b) => a - b);
+  const lo = ds[0];
+  const hi = ds[ds.length - 1];
+  const ledger = (d) => {
+    const y = yOf(d);
+    push(`<line class="ledger" x1="${left - 0.3 * SP}" x2="${left + w + 0.3 * SP}" y1="${y}" y2="${y}"/>`);
+  };
+  for (let d = mid + 6; d <= hi; d += 2) ledger(d);
+  for (let d = mid - 6; d >= lo; d -= 2) ledger(d);
+  for (const p of pitches) {
+    const y = yOf(diatonic(p));
+    push(glyph(HEAD[headIdx], left, y, 'small'));
+    if (p.alter !== keyAlter(fifths, p.step)) {
+      const a = String(p.alter);
+      push(glyph(ACC[a], left - 0.2 * SP - ACC_W[a] * SP * k, y, 'small'));
+    }
+  }
+  const up = multi ? voice % 2 === 0 : true;
+  const sx = up ? left + w - (STEM_W * k) / 2 : left + (STEM_W * k) / 2;
+  const yStart = up ? yOf(lo) - 0.12 * SP : yOf(hi) + 0.12 * SP;
+  let stemEnd = null;
+  const info = {
+    x, left, w, up, stemEnd, mid, grace: true,
+    stemX: sx, stemStart: yStart, beamRef: up ? yOf(hi) : yOf(lo),
+    heads: pitches.map((p) => ({ key: `${p.step}${p.octave}`, step: p.step, octave: p.octave, y: yOf(diatonic(p)), d: diatonic(p) })),
+    hi: yOf(hi) - 0.4 * SP,
+    lo: yOf(lo) + 0.4 * SP,
+  };
+  if (baseIdx >= V_HALF && !opts.beamed) {
+    const extra = Math.max(0, baseIdx - 5) * 0.5 * SP * k;
+    stemEnd = up ? yOf(hi) - STEM_LEN * k - extra : yOf(lo) + STEM_LEN * k + extra;
+    push(`<line class="stem grace-stem" x1="${sx}" x2="${sx}" y1="${yStart}" y2="${stemEnd}"/>`);
+    if (baseIdx >= V_EIGHTH) push(glyph((up ? FLAG_UP : FLAG_DOWN)[baseIdx - V_EIGHTH], sx - (STEM_W * k) / 2, stemEnd, 'small'));
+    Object.assign(info, { stemEnd, hi: Math.min(info.hi, stemEnd), lo: Math.max(info.lo, stemEnd) });
+    if (e.duration.grace === 'Acciaccatura') drawGraceSlash(push, info, '');
+  }
+  push('</g>');
+  return info;
+}
+
+/** The stroke of an acciaccatura, through its stem near the flag or beam. */
+function drawGraceSlash(push, n, cls) {
+  const dir = n.up ? 1 : -1; // from the stem's end towards the notehead
+  const y1 = n.stemEnd + dir * 1.9 * SP * GRACE_K;
+  const y2 = n.stemEnd + dir * 0.5 * SP * GRACE_K;
+  const x1 = n.stemX - 0.7 * SP * GRACE_K;
+  const x2 = n.stemX + 1.0 * SP * GRACE_K;
+  push(`<line class="grace-slash${cls ? ` ${cls}` : ''}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`);
+}
+
 // ----- tuplets ------------------------------------------------------------------
 
 /**
@@ -1500,7 +1603,7 @@ export function beamGroups(events, time) {
     : bt >= 8 ? TICKS_WHOLE / 4
       : unitOf;
   const starts = eventStarts(events);
-  const beamable = (e) => e.kind !== 'rest' && valueIdx(e.duration) >= V_EIGHTH;
+  const beamable = (e) => e.kind !== 'rest' && !isGrace(e) && valueIdx(e.duration) >= V_EIGHTH;
   // A tuplet is beamed on its own: its edges break the beam.
   const tupletOf = new Map();
   tupletGroups(events).forEach(([a, b], g) => { for (let i = a; i <= b; i++) tupletOf.set(i, g); });
@@ -1512,7 +1615,11 @@ export function beamGroups(events, time) {
   events.forEach((e, i) => {
     if (!beamable(e)) { flush(); return; }
     const beat = tupletOf.has(i) ? `t${tupletOf.get(i)}` : Math.floor(starts[i] / unit);
-    if (cur.length && (beat !== curBeat || tupletOf.get(i) !== tupletOf.get(cur[cur.length - 1]))) flush();
+    const prev = cur[cur.length - 1];
+    // Set by hand: a new beam here, or joined to the note before.
+    const joined = e.beam === 'join' && prev === i - 1;
+    if (cur.length && (e.beam === 'break'
+      || (!joined && (beat !== curBeat || tupletOf.get(i) !== tupletOf.get(prev))))) flush();
     cur.push(i);
     curBeat = beat;
   });
@@ -1521,16 +1628,32 @@ export function beamGroups(events, time) {
   if (beats === 4 && bt === 4) {
     const half = TICKS_WHOLE / 2;
     for (let h = 0; h < 2; h++) {
-      const idx = events.map((_, i) => i).filter((i) => starts[i] >= h * half && starts[i] < (h + 1) * half);
+      const idx = events.map((_, i) => i).filter((i) => !isGrace(events[i]) && starts[i] >= h * half && starts[i] < (h + 1) * half);
       const plainEighths = idx.length === 4 && idx.every((i) => beamable(events[i])
         && valueIdx(events[i].duration) === V_EIGHTH && !events[i].duration.dots);
-      if (plainEighths) {
+      // Beams set by hand in the half bar, or reaching into it, stay.
+      const byHand = idx.some((i) => events[i].beam)
+        || groups.some((g) => g.some((i) => idx.includes(i)) && g.some((i) => !idx.includes(i)));
+      if (plainEighths && !byHand) {
         groups = groups.filter((g) => !g.some((i) => idx.includes(i)));
         groups.push(idx);
       }
     }
     groups.sort((a, b) => a[0] - b[0]);
   }
+  return groups;
+}
+
+/** Runs of two or more grace notes of an eighth or shorter: beamed together. */
+function graceGroups(events) {
+  const groups = [];
+  let cur = [];
+  const flush = () => { if (cur.length > 1) groups.push(cur); cur = []; };
+  events.forEach((e, i) => {
+    if (isGrace(e) && e.kind !== 'rest' && valueIdx(e.duration) >= V_EIGHTH) cur.push(i);
+    else flush();
+  });
+  flush();
   return groups;
 }
 
@@ -1548,7 +1671,7 @@ function groupStemsUp(events, mid) {
  * the middle line (null with several voices, whose stems stay short).
  * Updates each info's stem end and ink extent.
  */
-function drawBeams(push, infos, starts, up, midY, cls) {
+function drawBeams(push, infos, starts, up, midY, cls, k = 1) {
   const levels = infos.map((n) => valueIdx(n.e.duration) - V_EIGHTH); // 0 = 8th, 1 = 16th…
   const count = Math.max(...levels) + 1;
   const away = up ? -1 : 1; // from the noteheads towards the beam
@@ -1568,7 +1691,7 @@ function drawBeams(push, infos, starts, up, midY, cls) {
 
   // Place the beam so every stem is long enough for all its beams and
   // reaches at least the middle line.
-  const minLen = Math.max(STEM_LEN, 2.5 * SP + (count - 1) * BEAM_STEP);
+  const minLen = k * Math.max(STEM_LEN, 2.5 * SP + (count - 1) * BEAM_STEP);
   const need = infos.flatMap((n) => [n.beamRef + away * minLen, midY ?? n.beamRef + away * minLen])
     .map((y, k) => y - slope * (infos[k >> 1].stemX - x1));
   const b = up ? Math.min(...need) : Math.max(...need);
@@ -1583,10 +1706,10 @@ function drawBeams(push, infos, starts, up, midY, cls) {
     else n.lo = Math.max(n.lo, y);
   }
   const beam = (xa, xb, level) => {
-    const off = -away * level * BEAM_STEP; // further beams sit closer to the noteheads
+    const off = -away * level * BEAM_STEP * k; // further beams sit closer to the noteheads
     const ya = yAt(xa) + off;
     const yb = yAt(xb) + off;
-    const t = -away * BEAM_T;
+    const t = -away * BEAM_T * k;
     push(`<polygon class="beam" points="${xa},${ya} ${xb},${yb} ${xb},${yb + t} ${xa},${ya + t}"/>`);
   };
   const half = STEM_W / 2;
@@ -1603,7 +1726,7 @@ function drawBeams(push, infos, starts, up, midY, cls) {
         // A lone shorter note gets a beamlet, pointing into the group: right
         // at the start, left at the end, otherwise towards its own beat.
         const n = infos[i];
-        const ticks = durationTicks(n.e.duration);
+        const ticks = durationTicks(n.e.duration) || 1;
         const right = i === 0 || (i < infos.length - 1 && Math.round((starts[i] - starts[0]) / ticks) % 2 === 0);
         const neighbour = infos[right ? i + 1 : i - 1];
         const len = Math.min(1.1 * SP, Math.abs(neighbour.stemX - n.stemX) / 2);

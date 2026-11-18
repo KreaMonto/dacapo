@@ -169,6 +169,12 @@
       set_caret({ caret }) { view.caret = caret; },
       set_tempo({ bpm }) { snapshot(); view.score.tempo = bpm; },
       // Marks act on the event before the caret (the fake has no selections).
+      set_beam({ beam }) {
+        const e = voiceOf(view.caret)[view.caret.index - 1];
+        if (!e || e.kind === 'rest') return;
+        snapshot();
+        e.beam = beam && e.beam !== beam ? beam : null;
+      },
       toggle_tie() { const e = voiceOf(view.caret)[view.caret.index - 1]; if (e && e.kind !== 'rest') { snapshot(); e.tie = !e.tie; } },
       toggle_articulation({ articulation: a }) {
         const e = voiceOf(view.caret)[view.caret.index - 1];
@@ -416,7 +422,7 @@
             view.dirty = undo.length > 0;
             view.can_undo = undo.length > 0;
             // Same rule as Score::validate: a voice longer than its measure.
-            const ticks = (d) => { const b = 7680 >> ['Breve', 'Whole', 'Half', 'Quarter', 'Eighth', 'Sixteenth', 'ThirtySecond', 'SixtyFourth', 'HundredTwentyEighth'].indexOf(d.base); let t = 0; for (let i = 0; i <= d.dots; i++) t += b >> i; return d.tuplet ? t * d.tuplet.normal / d.tuplet.actual : t; };
+            const ticks = (d) => { if (d.grace) return 0; const b = 7680 >> ['Breve', 'Whole', 'Half', 'Quarter', 'Eighth', 'Sixteenth', 'ThirtySecond', 'SixtyFourth', 'HundredTwentyEighth'].indexOf(d.base); let t = 0; for (let i = 0; i <= d.dots; i++) t += b >> i; return d.tuplet ? t * d.tuplet.normal / d.tuplet.actual : t; };
             view.issues = [];
             view.score.staves.forEach((st, s) => st.measures.forEach((m, mi) => m.voices.forEach((v, vi) => {
               const t = v.reduce((a, e) => a + ticks(e.duration), 0);

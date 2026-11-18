@@ -15,11 +15,12 @@ use thiserror::Error;
 use crate::cursor::{self, Caret, Move, SelectionRange};
 use crate::history::{History, Transaction, TxKind};
 use crate::model::{
-    is_measure_rest, Articulation, Barline, Clef, Duration, Dynamic, Event, EventId, EventKind,
-    GroupKind, Jump, KeySignature, LayoutBreak, LyricJoin, MeasureAttrs, Metadata, NoteText,
-    NoteTextKind, Pitch, Score, Slur, StaffGroup, Step, Syllable, TempoMark, TextBox, TextKind,
-    TextStyle, TimeSignature, Transposition, MAX_ENDING, MAX_NOTE_TEXT_CHARS, MAX_STAFF_NAME_CHARS,
-    MAX_SYLLABLE_CHARS, MAX_TEXT_BOX_CHARS, MAX_VERSES, REPEAT_TIMES, TEXT_SIZE_RANGE,
+    is_measure_rest, Articulation, Barline, Beam, Clef, Duration, Dynamic, Event, EventId,
+    EventKind, GroupKind, Jump, KeySignature, LayoutBreak, LyricJoin, MeasureAttrs, Metadata,
+    NoteText, NoteTextKind, Pitch, Score, Slur, StaffGroup, Step, Syllable, TempoMark, TextBox,
+    TextKind, TextStyle, TimeSignature, Transposition, MAX_ENDING, MAX_NOTE_TEXT_CHARS,
+    MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS, MAX_TEXT_BOX_CHARS, MAX_VERSES, REPEAT_TIMES,
+    TEXT_SIZE_RANGE,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
 
@@ -1048,6 +1049,27 @@ impl Document {
         })
     }
 
+    /// Sets how the target notes are beamed to the note before each:
+    /// `Break` starts a new beam, `Join` beams across a beat, `None` goes
+    /// back to the automatic beaming. Choosing what they all already have
+    /// goes back to automatic too.
+    pub fn set_beam(&mut self, beam: Option<Beam>, now_ms: u64) -> Result<(), EditError> {
+        let targets: Vec<_> = self
+            .target_events()
+            .into_iter()
+            .filter(|(_, _, e)| !e.is_rest())
+            .collect();
+        let value = if beam.is_some() && targets.iter().all(|(_, _, e)| e.beam == beam) {
+            None
+        } else {
+            beam
+        };
+        self.rewrite_targets(targets, now_ms, |e| Event {
+            beam: value,
+            ..e.clone()
+        })
+    }
+
     /// Puts a dynamic under the target events; choosing the one they all
     /// already have removes it.
     pub fn set_dynamic(&mut self, dynamic: Dynamic, now_ms: u64) -> Result<(), EditError> {
@@ -2055,6 +2077,7 @@ mod tests {
         base: DurationBase::Quarter,
         dots: 0,
         tuplet: None,
+        grace: None,
     };
 
     fn steps(doc: &Document, staff: usize, measure: usize) -> Vec<Option<Step>> {
@@ -2064,6 +2087,25 @@ mod tests {
             .iter()
             .map(|e| e.pitches().first().map(|p| p.step))
             .collect()
+    }
+
+    #[test]
+    fn beams_are_set_by_hand_and_undone() {
+        let mut doc = Document::new(Score::new("t", 1));
+        let e = Duration::new(DurationBase::Eighth);
+        for s in [C, D, E, F] {
+            doc.insert_note(s, e, 1_000).unwrap();
+        }
+        // On the note before the caret.
+        doc.set_beam(Some(Beam::Break), 2_000).unwrap();
+        assert_eq!(doc.score.voice(0, 0, 0).unwrap()[3].beam, Some(Beam::Break));
+        // The same again: back to automatic.
+        doc.set_beam(Some(Beam::Break), 3_000).unwrap();
+        assert_eq!(doc.score.voice(0, 0, 0).unwrap()[3].beam, None);
+        doc.set_beam(Some(Beam::Join), 4_000).unwrap();
+        assert_eq!(doc.score.voice(0, 0, 0).unwrap()[3].beam, Some(Beam::Join));
+        doc.undo().unwrap();
+        assert_eq!(doc.score.voice(0, 0, 0).unwrap()[3].beam, None);
     }
 
     #[test]

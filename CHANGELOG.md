@@ -5,10 +5,12 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 ## [Unreleased]
 
 ### Added
+- **Beams set by hand**: the new **Beams** bar (right of the score, and **Notes → Beams**) starts a new beam at a note, joins it to the note before across the beat, or brings back the automatic beaming, on the note before the caret or every selected note. The rest of the measure keeps its usual beaming. (MusicXML does not keep them yet: beams are worked out again on import.)
+- **Grace notes**: acciaccaturas (with the stroke) and appoggiaturas, from the **Grace Note** button of the **Figures** bar, **Notes → Grace Note**, or **Ctrl+G** (**Ctrl+Shift+G** for appoggiaturas). The next notes go in small, before the note they ornament, and take no time in the measure; two or more short ones are beamed together. Playback takes their time from the note after them: an acciaccatura a 32nd at most, an appoggiatura half of that note. MusicXML import and export keep them (they used to be left out on import).
 - **Tuplets**: triplets, quintuplets, sextuplets, duplets and quadruplets. The **Tuplet** button of the **Figures** bar (or **Notes → Tuplet**, or **Ctrl+3**, **Ctrl+5**, **Ctrl+6**, **Ctrl+2**, **Ctrl+4**) writes the next notes and rests in the group until it is turned off; the value in use when it is turned on is what the group counts in, so a quarter and an eighth can share a triplet of eighths. On a selection it changes the selected notes. A beamed group shows its number; any other gets a bracket. Playback, the error check and MusicXML import and export follow them (septuplets and other groups that do not divide evenly still import with their written values).
 
 ### Changed
-- Scores with tuplets are saved as file format 8, which Partita 0.3.14 can't open; other scores are saved as before.
+- Scores with tuplets, grace notes or beams set by hand are saved as file format 8, which Partita 0.3.14 can't open; other scores are saved as before.
 
 ## [0.3.14] - 2026-11-18
 

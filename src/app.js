@@ -636,6 +636,10 @@ function syncControls(doc) {
   document.querySelector('[data-cmd=dot]').classList.toggle('on', state.duration.dots > 0);
   const tupletFace = document.querySelector('.tuplet-face');
   tupletFace.classList.toggle('on', !!state.duration.tuplet);
+  document.querySelector('.grace-face').classList.toggle('on', !!state.duration.grace);
+  document.querySelectorAll('[data-cmd^="grace:"]').forEach((b) => {
+    b.classList.toggle('on', b.dataset.cmd === `grace:${state.duration.grace?.toLowerCase()}`);
+  });
   document.querySelectorAll('[data-cmd^="tuplet:"]').forEach((b) => {
     b.classList.toggle('on', b.dataset.cmd === `tuplet:${state.duration.tuplet?.actual}`);
   });
@@ -706,7 +710,8 @@ function renderStatus() {
     const d = state.duration;
     const base = t(`value.${d.base}`);
     const plain = d.dots ? t('value.dotted', { value: base }) : base;
-    const value = d.tuplet ? t('value.tuplet', { value: plain, name: t(`tuplet.${d.tuplet.actual}.name`) }) : plain;
+    const tupled = d.tuplet ? t('value.tuplet', { value: plain, name: t(`tuplet.${d.tuplet.actual}.name`) }) : plain;
+    const value = d.grace ? t('value.grace', { value: tupled, name: t(`grace.${d.grace.toLowerCase()}.name`) }) : tupled;
     const verse = state.lyric && state.layout?.verses[state.lyric.staff] > 1 ? t('status.lyrics.verse', { n: state.lyric.verse + 1 }) : '';
     const bold = (head, help) => `<b>${esc(head)}</b> ${esc(t(help))}`;
     parts.push(state.lyric
@@ -765,7 +770,7 @@ function scrollCaretIntoView() {
 // ----- input -----------------------------------------------------------------
 
 function setDuration(base, enterMode = false) {
-  state.duration = { base, dots: 0, tuplet: state.duration.tuplet ?? null };
+  state.duration = { base, dots: 0, tuplet: state.duration.tuplet ?? null, grace: state.duration.grace ?? null };
   if (enterMode) state.mode = state.kind;
   const doc = active();
   if (doc && doc.selection) act({ type: 'set_duration', duration: state.duration });
@@ -788,6 +793,24 @@ function setTuplet(n) {
   const face = document.querySelector('.tuplet-face');
   const item = document.querySelector(`[data-cmd="tuplet:${n}"]`);
   if (tuplet && face && item && face.innerHTML !== item.innerHTML) {
+    face.innerHTML = item.innerHTML;
+    fitGlyph(face);
+  }
+  const doc = active();
+  if (doc && doc.selection) act({ type: 'set_duration', duration: state.duration });
+  else render();
+}
+
+/**
+ * Grace notes: the next notes go in as acciaccaturas or appoggiaturas,
+ * until the same kind is chosen again. (They are never in a tuplet.)
+ */
+function setGrace(kind) {
+  const grace = state.duration.grace === kind ? null : kind;
+  state.duration = { ...state.duration, grace };
+  const face = document.querySelector('.grace-face');
+  const item = document.querySelector(`[data-cmd="grace:${kind.toLowerCase()}"]`);
+  if (grace && face && item && face.innerHTML !== item.innerHTML) {
     face.innerHTML = item.innerHTML;
     fitGlyph(face);
   }
@@ -958,6 +981,7 @@ async function measureLengthDialog() {
 const beatValue = (beatType) => ({ 1: 'Whole', 2: 'Half', 4: 'Quarter', 8: 'Eighth', 16: 'Sixteenth' })[beatType] ?? 'Quarter';
 const BASE_TICKS = { Breve: 7680, Whole: 3840, Half: 1920, Quarter: 960, Eighth: 480, Sixteenth: 240, ThirtySecond: 120, SixtyFourth: 60, HundredTwentyEighth: 30 };
 function eventTicks(e) {
+  if (e.duration.grace) return 0;
   let ticks = BASE_TICKS[e.duration.base] ?? 0;
   let add = ticks;
   for (let d = 0; d < (e.duration.dots || 0); d++) { add /= 2; ticks += add; }
@@ -1031,6 +1055,9 @@ document.addEventListener('keydown', (ev) => {
       case '2': case '3': case '4': case '5': case '6':
         ev.preventDefault();
         return setTuplet(Number(lower));
+      case 'g':
+        ev.preventDefault();
+        return setGrace(ev.shiftKey ? 'Appoggiatura' : 'Acciaccatura');
     }
     if (!ev.altKey) return;
   }
@@ -2624,6 +2651,7 @@ const SHORTCUTS = [
     ['8 / 9', 'entry.extended'],
     ['.', 'entry.dot'],
     ['Ctrl + 3', 'entry.tuplet'],
+    ['Ctrl + G', 'entry.grace'],
     ['+ / −', 'entry.accidental'],
     ['Alt + ↑ / ↓', 'entry.move'],
     ['T', 'entry.tie'],
@@ -2983,6 +3011,10 @@ const JUMPS = ['fine', 'to_coda', 'da_capo', 'da_capo_al_fine', 'da_capo_al_coda
 for (const k of ['segno', 'coda', 'none', ...JUMPS]) commands[`jump:${k}`] = () => setJump(k);
 for (const [v, k] of ENDINGS) commands[`ending:${k}`] = () => setEnding(v);
 for (const n of Object.keys(TUPLETS)) commands[`tuplet:${n}`] = () => setTuplet(Number(n));
+commands['grace:acciaccatura'] = () => setGrace('Acciaccatura');
+for (const k of ['break', 'join']) commands[`beam:${k}`] = () => act({ type: 'set_beam', beam: k });
+commands['beam:auto'] = () => act({ type: 'set_beam', beam: null });
+commands['grace:appoggiatura'] = () => setGrace('Appoggiatura');
 const REPEAT_COUNTS = [2, 3, 4, 5, 6];
 for (const n of REPEAT_COUNTS) commands[`repeat-times:${n}`] = () => setRepeatTimes(n);
 
@@ -3170,6 +3202,10 @@ const MENUS = [
     { label: t('menu.notes.lyrics'), cmd: 'lyrics', key: 'Ctrl+L', enabled: hasDoc, checked: () => !!state.lyric, desc: t('menu.notes.lyrics.desc') },
     { label: t('menu.notes.expression'), cmd: 'note-text:expression', key: 'Ctrl+E', enabled: hasDoc, desc: t('notetext.expression.desc') },
     { label: t('menu.notes.technique'), cmd: 'note-text:technique', enabled: hasDoc, desc: t('notetext.technique.desc') },
+    { label: t('bar.beams'), enabled: hasDoc, items: ['break', 'join', 'auto'].map((k) =>
+      ({ label: t(`beam.${k}`), cmd: `beam:${k}`, desc: t(`beam.${k}.desc`) })) },
+    { label: t('toolbar.grace'), enabled: hasDoc, items: [['acciaccatura', 'Ctrl+G'], ['appoggiatura', 'Ctrl+Shift+G']].map(([k, key]) =>
+      ({ label: t(`grace.${k}`), cmd: `grace:${k}`, key, checked: () => state.duration.grace?.toLowerCase() === k, desc: t(`grace.${k}.desc`) })) },
     { label: t('toolbar.tuplet'), enabled: hasDoc, items: [3, 5, 6, 2, 4].map((n) =>
       ({ label: t(`tuplet.${n}`), cmd: `tuplet:${n}`, key: `Ctrl+${n}`, checked: () => state.duration.tuplet?.actual === n, desc: t(`tuplet.${n}.desc`) })) },
     { sep: true },

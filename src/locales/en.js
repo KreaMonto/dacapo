@@ -90,6 +90,7 @@ const SHORTCUTS = {
   'entry.extended': 'Breve / 128th (View → Breve and 128th Notes)',
   'entry.dot': 'Dot',
   'entry.tuplet': 'Triplet on / off (Ctrl+5, 6, 2, 4: other tuplets)',
+  'entry.grace': 'Grace notes on / off (Ctrl+Shift+G: appoggiaturas)',
   'entry.accidental': 'Raise / lower the accidental',
   'entry.move': 'Move the note a step (Ctrl+Alt: an octave)',
   'entry.tie': 'Tie to the next note',
@@ -533,6 +534,21 @@ export default {
   'value.SixtyFourth': '64th', 'value.HundredTwentyEighth': '128th',
   'value.dotted': 'dotted {value}',
   'value.tuplet': '{value} ({name})',
+  'value.grace': '{value} {name}',
+
+  // Beams set by hand: the Beams bar and Notes → Beams.
+  'bar.beams': 'Beams',
+  'beam.break': 'Break Beam', 'beam.break.desc': 'Starts a new beam at the note (or at each selected note), or leaves it with its flag.',
+  'beam.join': 'Join Beam', 'beam.join.desc': 'Beams the note to the one before it, even across the beat.',
+  'beam.auto': 'Automatic Beams', 'beam.auto.short': 'auto', 'beam.auto.desc': 'Beams the note as the time signature says again.',
+
+  // Grace notes: the drop-down in the Figures bar and Notes → Grace Note.
+  'toolbar.grace': 'Grace Note',
+  'toolbar.grace.desc': 'Writes the next notes as grace notes, small and before the note they ornament; they take no time in the measure. Choose the same kind again to turn it off.',
+  'grace.acciaccatura': 'Acciaccatura', 'grace.acciaccatura.name': 'acciaccatura',
+  'grace.acciaccatura.desc': 'A grace note with a stroke, played as short as possible.',
+  'grace.appoggiatura': 'Appoggiatura', 'grace.appoggiatura.name': 'appoggiatura',
+  'grace.appoggiatura.desc': 'A grace note without the stroke, played as half of the note after it.',
 
   // Tuplets: the drop-down in the Figures bar and Notes → Tuplet.
   'toolbar.tuplet': 'Tuplet',

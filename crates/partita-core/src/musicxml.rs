@@ -6,7 +6,7 @@
 //! A part with several staves (a piano) becomes several staves. What the
 //! model cannot hold yet is simplified, and [`Import::notes`] says what:
 //! septuplets and other tuplets that do not come out in whole ticks keep
-//! their written value, grace notes are left out, voices
+//! their written value, voices
 //! beyond four per staff are dropped, and only the first clef of a staff
 //! is kept.
 
@@ -557,6 +557,11 @@ fn write_event(
     };
     for (i, p) in pitches.iter().enumerate() {
         x.push_str("      <note>");
+        match e.duration.grace {
+            Some(Grace::Acciaccatura) => x.push_str("<grace slash=\"yes\"/>"),
+            Some(Grace::Appoggiatura) => x.push_str("<grace/>"),
+            None => {}
+        }
         if i > 0 {
             x.push_str("<chord/>");
         }
@@ -570,7 +575,10 @@ fn write_event(
                 let _ = write!(x, "<octave>{}</octave></pitch>", p.octave);
             }
         }
-        let _ = write!(x, "<duration>{duration}</duration>");
+        // Grace notes take no time: no duration.
+        if e.duration.grace.is_none() {
+            let _ = write!(x, "<duration>{duration}</duration>");
+        }
         let tie_stop = p.is_some_and(|p| {
             prev.is_some_and(|q| q.tie && q.pitches().iter().any(|o| o.midi() == p.midi()))
         });
@@ -802,8 +810,6 @@ pub struct ImportNote {
 pub enum ImportNoteKind {
     /// Tuplet notes kept their written values.
     Tuplets,
-    /// Grace notes were left out.
-    GraceNotes,
     /// Notes beyond the fourth voice of a staff were left out.
     ExtraVoices,
     /// Clef changes after the first clef were left out.
@@ -827,11 +833,6 @@ impl fmt::Display for ImportNote {
                 f,
                 "{} kept their written values: Partita writes triplets, quintuplets, sextuplets, duplets and quadruplets, not septuplets and the like yet. Those measures may show as too full.",
                 plural("One tuplet note", "tuplet notes")
-            ),
-            ImportNoteKind::GraceNotes => write!(
-                f,
-                "{} left out (not supported yet).",
-                plural("One grace note was", "grace notes were")
             ),
             ImportNoteKind::ExtraVoices => write!(
                 f,
@@ -1066,7 +1067,6 @@ struct Importer {
     tempo: Option<u16>,
     next_id: u64,
     tuplets: usize,
-    grace: usize,
     dropped_voices: usize,
     extra_clefs: usize,
     overlaps: usize,
@@ -1283,7 +1283,6 @@ impl Importer {
 
         let notes: Vec<ImportNote> = [
             (ImportNoteKind::Tuplets, self.tuplets),
-            (ImportNoteKind::GraceNotes, self.grace),
             (ImportNoteKind::ExtraVoices, self.dropped_voices),
             (ImportNoteKind::ClefChanges, self.extra_clefs),
             (ImportNoteKind::Overlaps, self.overlaps),
@@ -1649,10 +1648,6 @@ impl Importer {
                         }
                     }
                     "note" => {
-                        if child(el, "grace").is_some() {
-                            self.grace += 1;
-                            continue;
-                        }
                         if child(el, "cue").is_some() {
                             continue;
                         }
@@ -1777,6 +1772,17 @@ impl Importer {
                                     self.tuplets += 1;
                                 }
                                 tupled
+                            }
+                            _ => duration,
+                        };
+                        // A grace note: struck through or not.
+                        let duration = match child(el, "grace") {
+                            Some(g) if !measure_rest => {
+                                duration.as_grace(if g.attribute("slash") == Some("yes") {
+                                    Grace::Acciaccatura
+                                } else {
+                                    Grace::Appoggiatura
+                                })
                             }
                             _ => duration,
                         };
@@ -2277,6 +2283,40 @@ mod tests {
     }
 
     #[test]
+    fn grace_notes_round_trip() {
+        let mut score = sample();
+        let n = |id, d: Duration, step| {
+            Event::new(
+                id,
+                d,
+                EventKind::Chord {
+                    pitches: vec![Pitch::new(step, 5)],
+                },
+            )
+        };
+        let e = Duration::new(DurationBase::Eighth);
+        let s = Duration::new(DurationBase::Sixteenth);
+        score.staves[0].measures[0].voices[0] = vec![
+            n(700, e.as_grace(Grace::Acciaccatura), Step::D),
+            n(701, Duration::new(DurationBase::Half), Step::C),
+            n(702, s.as_grace(Grace::Appoggiatura), Step::F),
+            n(703, s.as_grace(Grace::Appoggiatura), Step::E),
+            n(704, Duration::new(DurationBase::Half), Step::D),
+        ];
+        assert!(score.validate().is_empty(), "grace notes take no time");
+        let xml = export(&score);
+        assert!(xml.contains("<note><grace slash=\"yes\"/><pitch><step>D</step>"));
+        assert_eq!(xml.matches("<grace/>").count(), 2);
+        let back = import(&xml, "x").unwrap();
+        assert!(back.notes.is_empty(), "{:?}", back.notes);
+        let voice = &back.score.staves[0].measures[0].voices[0];
+        assert_eq!(voice.len(), 5);
+        assert_eq!(voice[0].duration, e.as_grace(Grace::Acciaccatura));
+        assert_eq!(voice[3].duration, s.as_grace(Grace::Appoggiatura));
+        assert_eq!(voice[4].duration, Duration::new(DurationBase::Half));
+    }
+
+    #[test]
     fn jumps_round_trip() {
         let mut score = sample();
         score.measures[0].segno = true;
@@ -2511,21 +2551,14 @@ mod tests {
         assert!(s.staves[0].measures[1].voices[0][0].is_rest());
         assert_eq!(
             imp.notes,
-            [
-                ImportNote {
-                    kind: ImportNoteKind::Tuplets,
-                    count: 1
-                },
-                ImportNote {
-                    kind: ImportNoteKind::GraceNotes,
-                    count: 1
-                },
-            ]
+            [ImportNote {
+                kind: ImportNoteKind::Tuplets,
+                count: 1
+            },]
         );
-        assert_eq!(
-            imp.notes[1].to_string(),
-            "One grace note was left out (not supported yet)."
-        );
+        let low = &s.staves[1].measures[1].voices[0];
+        assert_eq!(low[0].duration.grace, Some(Grace::Appoggiatura));
+        assert_eq!(low[0].pitches()[0], Pitch::new(Step::A, 2));
         assert!(imp.unnamed_staves.is_empty(), "the part is named Piano");
         assert!(s.validate().is_empty());
     }

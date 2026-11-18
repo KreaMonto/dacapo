@@ -16,7 +16,7 @@ use partita_core::document::StaffProps;
 use partita_core::document::{Clipboard, Document};
 use partita_core::file;
 use partita_core::model::{
-    Articulation, Barline, Clef, Duration, Dynamic, GroupKind, Issue, Jump, KeySignature,
+    Articulation, Barline, Beam, Clef, Duration, Dynamic, GroupKind, Issue, Jump, KeySignature,
     LayoutBreak, LyricJoin, Metadata, NoteTextKind, Score, Step, TempoMark, TextBox, TextKind,
     TextStyle, TimeSignature, Transposition,
 };
@@ -230,6 +230,10 @@ enum Action {
     },
     SetDynamic {
         dynamic: Dynamic,
+    },
+    /// How the target notes are beamed (`null`: automatically).
+    SetBeam {
+        beam: Option<Beam>,
     },
     /// The syllable event `id` sings in `verse` (0 = first); empty text
     /// removes it.
@@ -532,6 +536,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::ToggleSlur => d.toggle_slur(now),
             Action::ToggleArticulation { articulation } => d.toggle_articulation(articulation, now),
             Action::SetDynamic { dynamic } => d.set_dynamic(dynamic, now),
+            Action::SetBeam { beam } => d.set_beam(beam, now),
             Action::SetLyric {
                 id,
                 verse,

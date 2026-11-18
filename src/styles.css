@@ -500,6 +500,10 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .score .m { font-family: Bravura; font-size: 40px; }
 .score .tsig, .score .mark { text-anchor: middle; }
 .score .tuplet-num { text-anchor: middle; }
+/* Grace notes: 65 % of the size (GRACE_K in render.js). */
+.score .m.small { font-size: 26px; }
+.score .grace .stem, .score .grace-stem { stroke-width: 1; }
+.score .grace-slash { stroke: currentColor; stroke-width: 1; }
 .score .tuplet-bracket { fill: none; stroke: currentColor; stroke-width: 1; }
 .score .ev .arc { fill: currentColor; }
 .score .mnum { font-size: 10px; fill: var(--muted); }

@@ -48,7 +48,7 @@ pub const DEFAULT_SYNC_INTERVAL: Duration = Duration::from_millis(500);
 // and text boxes to the score, version 10 barline types, version 11
 // repeats, version 12 endings and version 13 jumps (segno, coda, D.C.,
 // D.S., Fine), version 14 lengths (pickups) and version 15 system and page
-// breaks to measures, version 16 tuplets to durations. Older data
+// breaks to measures, version 16 tuplets and grace notes to durations. Older data
 // (version 3: Da Capo 0.2.0 and 0.2.1; version 4: Da Capo 0.2.2; version
 // 5: Partita 0.3.0; versions 6 to 14: development builds before 0.3.14;
 // version 15: Partita 0.3.14) is still read:

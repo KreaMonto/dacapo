@@ -26,6 +26,9 @@
 //!   segno. After the jump, repeats are not taken again and of a group of
 //!   endings only the last is played; *al Fine* stops at Fine, *al Coda*
 //!   goes on from To Coda to the coda.
+//! - **Grace notes** take their time from the start of the note after
+//!   them: an acciaccatura a 32nd at most (less before a short note), an
+//!   appoggiatura half of that note, shared by a group of them.
 //! - Fermatas do not change timing yet.
 
 use std::collections::{HashMap, HashSet};
@@ -33,8 +36,11 @@ use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 
 use crate::model::{
-    Articulation, Dynamic, Event, EventId, Jump, Score, MAX_VOICES, TICKS_PER_QUARTER,
+    Articulation, Dynamic, Event, EventId, Grace, Jump, Score, MAX_VOICES, TICKS_PER_QUARTER,
 };
+
+/// The longest an acciaccatura sounds: a 32nd.
+const ACCIACCATURA_TICKS: u64 = TICKS_PER_QUARTER as u64 / 8;
 
 /// One note to play, in absolute ticks from the start of the score.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -356,10 +362,38 @@ pub fn build(score: &Score) -> Timeline {
                     continue;
                 }
                 let mut at = play_start;
+                // Grace notes waiting for the note they ornament.
+                let mut graces: Vec<&Event> = Vec::new();
                 for e in events {
-                    let written = e.ticks() as u64;
-                    let start = at;
-                    at += written;
+                    if e.duration.grace.is_some() {
+                        graces.push(e);
+                        continue;
+                    }
+                    let mut start = at;
+                    at += e.ticks() as u64;
+                    if !graces.is_empty() {
+                        let full = at - start;
+                        let n = graces.len() as u64;
+                        let each = if graces[0].duration.grace == Some(Grace::Appoggiatura) {
+                            full / 2 / n
+                        } else {
+                            (full / 2 / n).min(ACCIACCATURA_TICKS)
+                        };
+                        for g in graces.drain(..) {
+                            for p in g.pitches() {
+                                let key = staff.transposition.sounding_midi(*p).clamp(0, 127) as u8;
+                                notes.push(Note {
+                                    start,
+                                    end: start + each.max(1),
+                                    key,
+                                    velocity,
+                                    staff: s,
+                                });
+                            }
+                            start += each;
+                        }
+                    }
+                    let written = at - start;
                     // Dynamics: sfz/fp affect this note specially.
                     let mut note_velocity = velocity;
                     if let Some(d) = e.dynamic {
@@ -405,7 +439,7 @@ pub fn build(score: &Score) -> Timeline {
                         };
                         if e.tie {
                             // A tied note sounds through to the next one.
-                            notes[index].end = start + written;
+                            notes[index].end = at;
                             next_open.insert(key, index);
                         }
                     }
@@ -503,6 +537,28 @@ mod tests {
         s.measures[2].ending = vec![2];
         s.measures[4].repeat_end = Some(2);
         assert_eq!(play_order(&s), vec![0, 1, 0, 2, 3, 4, 3, 4]);
+    }
+
+    #[test]
+    fn grace_notes_take_their_time_from_the_next_note() {
+        let mut grace = note(1, Step::D, DurationBase::Eighth);
+        grace.duration = grace.duration.as_grace(Grace::Acciaccatura);
+        let s = score_with(vec![grace, note(2, Step::C, DurationBase::Whole)], vec![]);
+        let tl = build(&s);
+        let short = TICKS_PER_QUARTER as u64 / 8;
+        assert_eq!(
+            (tl.notes[0].start, tl.notes[0].end),
+            (0, short),
+            "a 32nd, on the beat"
+        );
+        assert_eq!(tl.notes[1].start, short, "the main note comes after it");
+        // An appoggiatura takes half the main note.
+        let mut app = note(1, Step::D, DurationBase::Eighth);
+        app.duration = app.duration.as_grace(Grace::Appoggiatura);
+        let s = score_with(vec![app, note(2, Step::C, DurationBase::Whole)], vec![]);
+        let tl = build(&s);
+        let half = TimeSignature::COMMON.measure_ticks() as u64 / 2;
+        assert_eq!(tl.notes[1].start, half);
     }
 
     #[test]

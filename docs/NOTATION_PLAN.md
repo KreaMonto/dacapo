@@ -33,7 +33,7 @@ The default layout:
 | **Measure** | row 2 | clef, key, time, add / delete measure; later barlines, repeats, endings, D.C. / Coda |
 | **Staves** | row 2 | add / delete staff, groups |
 | **Indications** | row 2 | tempo marking, rehearsal mark |
-| **Entry** | left, one column | figures, dot, notes / rests, later tuplets; accidentals; voice |
+| **Entry** | left, one column | figures, dot, grace notes, tuplets, notes / rests; accidentals; voice |
 | **Marks** | right, one column | ties and slurs, articulations, dynamics, expressions and techniques; later ornaments and lines |
 | **Status** | bottom | as today |
 
@@ -65,9 +65,11 @@ Every mode needs these. The order inside each group is the planned order of work
 
 ### Rhythm
 
+*The whole group ships as one pull request: tuplets, grace notes and manual beams are built one after another on `feature/tuplets`, and the PR is opened once all three are done.*
+
 - [x] Tuplets (triplets and other groups), with MusicXML import and export. Septuplets and other groups that do not divide 960 ticks evenly still import as written.
-- [ ] Grace notes (acciaccatura and appoggiatura).
-- [ ] Manual beam control: break or join beams on a note.
+- [x] Grace notes (acciaccatura and appoggiatura), played in the time of the note after them, with MusicXML import and export.
+- [x] Manual beam control: break or join beams on a note (the Beams bar). MusicXML does not keep them yet.
 
 ### Clefs and pitch
 
