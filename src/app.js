@@ -986,6 +986,7 @@ function eventTicks(e) {
   let ticks = BASE_TICKS[e.duration.base] ?? 0;
   let add = ticks;
   for (let d = 0; d < (e.duration.dots || 0); d++) { add /= 2; ticks += add; }
+  if (e.duration.tremolo?.between) return ticks / 2;
   const tp = e.duration.tuplet;
   return tp && tp.actual > 0 ? (ticks * tp.normal) / tp.actual : ticks;
 }
@@ -2983,6 +2984,11 @@ const hasSelection = () => !!active()?.selection;
 // They go on the selection, or on the note before the caret.
 const ACCIDENTALS = [['sharp', 1], ['flat', -1], ['natural', 0]];
 const ARTICULATIONS = ['staccato', 'staccatissimo', 'tenuto', 'accent', 'marcato', 'fermata'];
+// Ornaments and other marks: articulations in the core, in the Ornaments bar.
+const ORNAMENTS = ['mordent', 'mordent_lower', 'turn', 'arpeggio', 'breath_mark', 'caesura'];
+for (const a of ORNAMENTS) commands[`artic:${a}`] = () => act({ type: 'toggle_articulation', articulation: a });
+for (const n of [1, 2, 3]) commands[`tremolo:${n}`] = () => act({ type: 'set_tremolo', strokes: n, between: false });
+commands['tremolo-between'] = () => act({ type: 'set_tremolo', strokes: 3, between: true });
 const DYNAMICS = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'sfz', 'fp'];
 for (const [name, alter] of ACCIDENTALS) commands[`alter:${name}`] = () => act({ type: 'set_accidental', alter });
 commands.respell = () => act({ type: 'respell' });
@@ -3229,6 +3235,14 @@ const MENUS = [
     { label: t('palette.respell'), cmd: 'respell', key: 'J', desc: t('palette.respell.desc') }] },
     { label: t('palette.articulations'), enabled: hasDoc, items: ARTICULATIONS.map((a) =>
       ({ label: t(`palette.${a}`), cmd: `artic:${a}`, desc: t(`palette.${a}.desc`) })) },
+    { label: t('bar.ornaments'), enabled: hasDoc, items: [
+      ...ORNAMENTS.slice(0, 3).map((a) => ({ label: t(`palette.${a}`), cmd: `artic:${a}`, desc: t(`palette.${a}.desc`) })),
+      { sep: true },
+      ...[1, 2, 3].map((n) => ({ label: t(`tremolo.${n}`), cmd: `tremolo:${n}`, desc: t('tremolo.desc') })),
+      { label: t('tremolo.between'), cmd: 'tremolo-between', desc: t('tremolo.between.desc') },
+      { sep: true },
+      ...ORNAMENTS.slice(3).map((a) => ({ label: t(`palette.${a}`), cmd: `artic:${a}`, desc: t(`palette.${a}.desc`) })),
+    ] },
     { label: t('palette.dynamics'), enabled: hasDoc, items: DYNAMICS.map((d) =>
       ({ label: t('menu.notes.dynamic', { name: t(`palette.${d}`), mark: d }), cmd: `dyn:${d}`, desc: t(`palette.${d}.desc`) })) },
   ] },

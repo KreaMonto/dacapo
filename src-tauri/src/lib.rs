@@ -225,6 +225,12 @@ enum Action {
     },
     /// The same sound written another way (F♯ ↔ G♭).
     Respell,
+    /// Tremolo strokes on the target notes, or between two of them.
+    SetTremolo {
+        strokes: u8,
+        #[serde(default)]
+        between: bool,
+    },
     ToggleTie,
     ToggleSlur,
     ToggleArticulation {
@@ -539,6 +545,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::Accidental { delta } => d.change_accidental(delta, now),
             Action::SetAccidental { alter } => d.set_accidental(alter, now),
             Action::Respell => d.respell(now),
+            Action::SetTremolo { strokes, between } => d.set_tremolo(strokes, between, now),
             Action::ToggleTie => d.toggle_tie(now),
             Action::ToggleSlur => d.toggle_slur(now),
             Action::ToggleArticulation { articulation } => d.toggle_articulation(articulation, now),

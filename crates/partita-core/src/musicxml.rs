@@ -446,6 +446,7 @@ pub fn export(score: &Score) -> String {
                 } else {
                     // Where each tuplet group starts and ends.
                     let groups = tuplet_groups(events);
+                    let tremolos = tremolo_roles(events);
                     for (i, e) in events.iter().enumerate() {
                         let tuplet_mark = (
                             groups.iter().any(|&(a, _)| a == i),
@@ -477,6 +478,7 @@ pub fn export(score: &Score) -> String {
                         let marks = NoteMarks {
                             slurs: slur_marks.get(&e.id).map(Vec::as_slice).unwrap_or(&[]),
                             tuplet: tuplet_mark,
+                            tremolo: tremolos[i],
                             line_starts: line_starts.get(&e.id).map(Vec::as_slice).unwrap_or(&[]),
                             line_stops: line_stops.get(&e.id).map(Vec::as_slice).unwrap_or(&[]),
                         };
@@ -583,8 +585,39 @@ pub fn export_to(path: &Path, score: &Score) -> std::io::Result<()> {
 struct NoteMarks<'a> {
     slurs: &'a [(&'static str, usize)],
     tuplet: (bool, bool),
+    /// Its tremolo: "single", or "start" / "stop" between two notes.
+    tremolo: Option<&'static str>,
     line_starts: &'a [(LineKind, usize)],
     line_stops: &'a [(LineKind, usize)],
+}
+
+/// The role of each event's tremolo in MusicXML: "single" on one note,
+/// "start" and "stop" for the two notes of a tremolo between them (taken
+/// two by two).
+fn tremolo_roles(events: &[Event]) -> Vec<Option<&'static str>> {
+    let mut roles = vec![None; events.len()];
+    let mut open = false;
+    for (i, e) in events.iter().enumerate() {
+        roles[i] = match e.duration.tremolo {
+            Some(t)
+                if t.between
+                    && !open
+                    && events
+                        .get(i + 1)
+                        .is_some_and(|b| b.duration.tremolo.is_some_and(|t| t.between)) =>
+            {
+                open = true;
+                Some("start")
+            }
+            Some(t) if t.between && open => {
+                open = false;
+                Some("stop")
+            }
+            Some(_) => Some("single"),
+            None => None,
+        };
+    }
+    roles
 }
 
 /// The `<direction>` that starts (or stops) a line drawn between the
@@ -693,6 +726,10 @@ fn write_event(
         for _ in 0..e.duration.dots {
             x.push_str("<dot/>");
         }
+        if marks.tremolo.is_some_and(|r| r != "single") {
+            // Each note of a tremolo between two notes counts half.
+            x.push_str("<time-modification><actual-notes>2</actual-notes><normal-notes>1</normal-notes></time-modification>");
+        }
         if let Some(t) = e.duration.tuplet {
             let _ = write!(
                 x,
@@ -736,8 +773,21 @@ fn write_event(
             if e.articulations.contains(&Articulation::Fermata) {
                 notations.push_str("<fermata type=\"upright\"/>");
             }
-            // Trills (tr and the wavy line) and glissandos are on the notes.
-            let mut ornaments = String::new();
+            // Trills (tr and the wavy line) and glissandos are on the notes,
+            // and so are mordents, turns and tremolos.
+            let mut ornaments: String = e
+                .articulations
+                .iter()
+                .filter_map(|a| ornament_name(*a))
+                .map(|n| format!("<{n}/>"))
+                .collect();
+            if let (Some(role), Some(t)) = (marks.tremolo, e.duration.tremolo) {
+                let _ = write!(
+                    ornaments,
+                    "<tremolo type=\"{role}\">{}</tremolo>",
+                    t.strokes
+                );
+            }
             for &(kind, n) in marks.line_starts {
                 match kind {
                     LineKind::Trill => {
@@ -769,6 +819,9 @@ fn write_event(
             if !ornaments.is_empty() {
                 let _ = write!(notations, "<ornaments>{ornaments}</ornaments>");
             }
+        }
+        if e.articulations.contains(&Articulation::Arpeggio) && p.is_some() {
+            notations.push_str("<arpeggiate/>");
         }
         if !notations.is_empty() {
             let _ = write!(x, "<notations>{notations}</notations>");
@@ -1036,7 +1089,25 @@ fn articulation_name(a: Articulation) -> Option<&'static str> {
         Articulation::Accent => Some("accent"),
         Articulation::Tenuto => Some("tenuto"),
         Articulation::Marcato => Some("strong-accent"),
-        Articulation::Fermata => None, // a notation of its own
+        Articulation::BreathMark => Some("breath-mark"),
+        Articulation::Caesura => Some("caesura"),
+        // Notations of their own: <fermata>, <ornaments>, <arpeggiate>.
+        Articulation::Fermata
+        | Articulation::Mordent
+        | Articulation::MordentLower
+        | Articulation::Turn
+        | Articulation::Arpeggio => None,
+    }
+}
+
+/// The `<ornaments>` element of an articulation, if it is one. MusicXML's
+/// `inverted-mordent` is the upper one.
+fn ornament_name(a: Articulation) -> Option<&'static str> {
+    match a {
+        Articulation::Mordent => Some("inverted-mordent"),
+        Articulation::MordentLower => Some("mordent"),
+        Articulation::Turn => Some("turn"),
+        _ => None,
     }
 }
 
@@ -2066,8 +2137,14 @@ impl Importer {
                                 .unwrap_or(Duration::new(DurationBase::Quarter))
                         };
                         // A tuplet: its ratio, and the value it counts in.
+                        // (A tremolo between two notes says so with a
+                        // time-modification of its own: not a tuplet.)
+                        let two_note_tremolo = el.descendants().any(|n| {
+                            n.has_tag_name("tremolo")
+                                && matches!(n.attribute("type"), Some("start" | "stop"))
+                        });
                         let duration = match child(el, "time-modification") {
-                            Some(tm) if !measure_rest => {
+                            Some(tm) if !measure_rest && !two_note_tremolo => {
                                 let actual = number_of(tm, "actual-notes").unwrap_or(0.0) as u8;
                                 let normal = number_of(tm, "normal-notes").unwrap_or(0.0) as u8;
                                 let unit = text_of(tm, "normal-type")
@@ -2148,6 +2225,8 @@ impl Importer {
                                                 "accent" => Some(Articulation::Accent),
                                                 "tenuto" => Some(Articulation::Tenuto),
                                                 "strong-accent" => Some(Articulation::Marcato),
+                                                "breath-mark" => Some(Articulation::BreathMark),
+                                                "caesura" => Some(Articulation::Caesura),
                                                 _ => None,
                                             };
                                             if let Some(a) = art {
@@ -2160,6 +2239,40 @@ impl Importer {
                                     "fermata" => {
                                         if !e.articulations.contains(&Articulation::Fermata) {
                                             e.articulations.push(Articulation::Fermata);
+                                        }
+                                    }
+                                    "arpeggiate" => {
+                                        if !e.articulations.contains(&Articulation::Arpeggio) {
+                                            e.articulations.push(Articulation::Arpeggio);
+                                        }
+                                    }
+                                    "ornaments" => {
+                                        for o in c.children().filter(|o| o.is_element()) {
+                                            let art = match o.tag_name().name() {
+                                                "inverted-mordent" => Some(Articulation::Mordent),
+                                                "mordent" => Some(Articulation::MordentLower),
+                                                "turn" => Some(Articulation::Turn),
+                                                "tremolo" => {
+                                                    let strokes = o
+                                                        .text()
+                                                        .and_then(|t| t.trim().parse::<u8>().ok())
+                                                        .unwrap_or(3)
+                                                        .clamp(1, 3);
+                                                    let between = matches!(
+                                                        o.attribute("type"),
+                                                        Some("start" | "stop")
+                                                    );
+                                                    e.duration.tremolo =
+                                                        Some(Tremolo { strokes, between });
+                                                    None
+                                                }
+                                                _ => None,
+                                            };
+                                            if let Some(a) = art {
+                                                if !e.articulations.contains(&a) {
+                                                    e.articulations.push(a);
+                                                }
+                                            }
                                         }
                                     }
                                     "dynamics" => {
@@ -2596,6 +2709,72 @@ mod tests {
         assert_eq!(voice[0].duration, eighth);
         assert_eq!(voice[3].duration, quarter);
         assert_eq!(tuplet_groups(voice), vec![(0, 2), (3, 4)]);
+    }
+
+    #[test]
+    fn ornaments_and_tremolos_round_trip() {
+        let mut score = sample();
+        let voice = &mut score.staves[0].measures[0].voices[0];
+        assert!(voice.len() >= 2);
+        voice[0].articulations = vec![
+            Articulation::Mordent,
+            Articulation::Turn,
+            Articulation::Arpeggio,
+        ];
+        voice[1].articulations = vec![
+            Articulation::MordentLower,
+            Articulation::BreathMark,
+            Articulation::Caesura,
+        ];
+        voice[1].articulations.sort();
+        voice[0].articulations.sort();
+        voice[0].duration.tremolo = Some(Tremolo {
+            strokes: 2,
+            between: false,
+        });
+        let before: Vec<_> = voice
+            .iter()
+            .map(|e| (e.articulations.clone(), e.duration))
+            .collect();
+        let back = import(&export(&score), "x").unwrap();
+        assert!(back.notes.is_empty(), "{:?}", back.notes);
+        let after: Vec<_> = back.score.staves[0].measures[0].voices[0]
+            .iter()
+            .map(|e| (e.articulations.clone(), e.duration))
+            .collect();
+        assert_eq!(after, before);
+        // A tremolo between two notes: written as halves, half a measure.
+        let mut score = sample();
+        let half = |id, step| {
+            let mut d = Duration::new(DurationBase::Half);
+            d.tremolo = Some(Tremolo {
+                strokes: 3,
+                between: true,
+            });
+            Event::new(
+                id,
+                d,
+                EventKind::Chord {
+                    pitches: vec![Pitch::new(step, 4)],
+                },
+            )
+        };
+        score.staves[0].measures[0].voices[0] = vec![
+            half(800, Step::C),
+            half(801, Step::E),
+            Event::new(802, Duration::new(DurationBase::Half), EventKind::Rest),
+        ];
+        assert!(score.validate().is_empty());
+        let xml = export(&score);
+        assert!(xml.contains("<tremolo type=\"start\">3</tremolo>"));
+        let back = import(&xml, "x").unwrap();
+        let v = &back.score.staves[0].measures[0].voices[0];
+        assert_eq!(
+            v[0].duration,
+            score.staves[0].measures[0].voices[0][0].duration
+        );
+        assert_eq!(v[1].ticks(), 960);
+        assert!(back.score.validate().is_empty());
     }
 
     #[test]

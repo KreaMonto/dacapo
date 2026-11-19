@@ -167,6 +167,7 @@ mod tests {
         dots: 0,
         tuplet: None,
         grace: None,
+        tremolo: None,
     };
 
     fn store(dir: &Path) -> RecoveryStore {

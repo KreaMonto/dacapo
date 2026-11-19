@@ -556,6 +556,20 @@ export default {
   'line.15ma': '15ma', 'line.15ma.desc': 'Drawn two octaves lower than they sound.',
   'line.15mb': '15mb', 'line.15mb.desc': 'Drawn two octaves higher than they sound.',
 
+  // Ornaments and other marks: the Ornaments bar and Notes → Ornaments.
+  'bar.ornaments': 'Ornaments',
+  'bar.ornaments.desc': 'Mordents, turn, tremolos, arpeggio, breath mark and caesura, on the selected notes or the note before the caret (or click a note after choosing one). The button shows the last one chosen.',
+  'palette.mordent': 'Mordent', 'palette.mordent.desc': 'The note, the note above and the note again, fast.',
+  'palette.mordent_lower': 'Lower Mordent', 'palette.mordent_lower.desc': 'The note, the note below and the note again, fast.',
+  'palette.turn': 'Turn', 'palette.turn.desc': 'The note above, the note, the note below and the note.',
+  'palette.arpeggio': 'Arpeggio', 'palette.arpeggio.desc': 'The chord rolled from its lowest note up.',
+  'palette.breath_mark': 'Breath Mark', 'palette.breath_mark.desc': 'A breath after the note: it is a little shorter.',
+  'palette.caesura': 'Caesura', 'palette.caesura.desc': 'A clear break after the note: it sounds for half its value.',
+  'tremolo.1': 'Tremolo, 1 Stroke', 'tremolo.2': 'Tremolo, 2 Strokes', 'tremolo.3': 'Tremolo, 3 Strokes',
+  'tremolo.desc': 'Strokes across the stem: the note repeated in eighths, sixteenths or thirty-seconds. The same again takes them away.',
+  'tremolo.between': 'Tremolo Between Two Notes',
+  'tremolo.between.desc': 'Alternates the selected pair of notes (or the note before the caret and the one before it). They are written twice as long and keep their time: two quarters become two halves.',
+
   // Beams set by hand: the Beams bar and Notes → Beams.
   'bar.beams': 'Beams',
   'beam.break': 'Break Beam', 'beam.break.desc': 'Starts a new beam at the note (or at each selected note), or leaves it with its flag.',

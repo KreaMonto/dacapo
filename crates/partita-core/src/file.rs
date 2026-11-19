@@ -431,6 +431,34 @@ mod tests {
     }
 
     #[test]
+    fn ornaments_and_tremolos_need_format_8() {
+        use crate::model::{
+            Articulation, Duration, DurationBase, Event, EventKind, Pitch, Step, Tremolo,
+        };
+        let mut score = Score::new("Etude", 2);
+        let mut e = Event::new(
+            100,
+            Duration::new(DurationBase::Quarter),
+            EventKind::Chord {
+                pitches: vec![Pitch::new(Step::C, 5)],
+            },
+        );
+        e.articulations = vec![Articulation::Mordent];
+        score.staves[0].measures[0].voices[0] = vec![e.clone()];
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format_version"], 8);
+        e.articulations.clear();
+        e.duration.tremolo = Some(Tremolo {
+            strokes: 3,
+            between: false,
+        });
+        score.staves[0].measures[0].voices[0] = vec![e];
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format_version"], 8);
+        assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
+    }
+
+    #[test]
     fn octave_lines_need_format_8() {
         let mut score = Score::new("Etude", 2);
         score.lines.push(crate::model::Line {

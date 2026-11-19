@@ -295,6 +295,12 @@ const ARTIC = {
   marcato: ['', ''],
 };
 const FERMATA = '';
+// Ornaments, over the note (above any articulation, under a fermata).
+const ORNAMENT = { mordent: '', mordent_lower: '', turn: '' };
+const BREATH = '';
+const CAESURA = '';
+// Marks that are not stacked on the notehead side like articulations.
+const NOT_STACKED = new Set(['fermata', 'arpeggio', 'breath_mark', 'caesura', ...Object.keys(ORNAMENT)]);
 export const DYNAMIC = {
   ppp: '', pp: '', p: '', mp: '', mf: '',
   f: '', ff: '', fff: '', sfz: '', fp: '',
@@ -352,6 +358,8 @@ export function durationTicks(d) {
   const base = (2 * TICKS_WHOLE) >> valueIdx(d);
   let t = 0;
   for (let i = 0; i <= d.dots; i++) t += base >> i;
+  // A tremolo between two notes: each written twice as long as it counts.
+  if (d.tremolo?.between) return t / 2;
   const tp = d.tuplet;
   return tp && tp.actual > 0 ? (t * tp.normal) / tp.actual : t;
 }
@@ -479,6 +487,58 @@ function wordAndDashes(push, { x1, x2, first, last }, y, text, hook) {
     const end = last && hook ? ` ${x2},${y + hook}` : '';
     push(`<polyline class="line-dashes" points="${x1 + textW},${y} ${x2},${y}${end}"/>`);
   }
+}
+
+/** A wavy line upwards from y1 to y2 at x (an arpeggio's). */
+function wavyUp(x, y1, y2) {
+  const period = 0.75 * SP;
+  const amp = 0.22 * SP;
+  let d = `M${x},${y1}`;
+  for (let y = y1; y - period >= y2; y -= period) {
+    d += ` q${amp},${-period / 4} 0,${-period / 2} q${-amp},${-period / 4} 0,${-period / 2}`;
+  }
+  return `<path class="line-wavy" d="${d}"/>`;
+}
+
+/** Tremolo strokes across a note's stem (or over a note without one). */
+function drawTremoloStrokes(push, n, strokes) {
+  const stemmed = n.stemEnd !== null && n.stemEnd !== undefined;
+  const cx = stemmed ? n.stemX : n.x;
+  const headY = n.heads.length ? (n.up ? Math.min(...n.heads.map((h) => h.y)) : Math.max(...n.heads.map((h) => h.y))) : n.top + 2 * SP;
+  const towards = n.up ? -1 : 1; // from the notehead towards the stem's end
+  // Along the stem, away from the notehead; over a whole note, beyond it.
+  const centre = stemmed ? headY + towards * 2.0 * SP : headY + towards * 1.8 * SP;
+  for (let k = 0; k < strokes; k++) {
+    const y = centre + towards * (k - (strokes - 1) / 2) * 0.75 * SP;
+    push(tremoloBar(cx - 0.6 * SP, y + 0.25 * SP, cx + 0.6 * SP, y - 0.25 * SP));
+  }
+  if (n.up) n.hi = Math.min(n.hi, centre - strokes * 0.5 * SP);
+  else n.lo = Math.max(n.lo, centre + strokes * 0.5 * SP);
+}
+
+/** One tremolo stroke: a slanted bar from (x1, y1) to (x2, y2). */
+function tremoloBar(x1, y1, x2, y2) {
+  const t = 0.3 * SP;
+  return `<polygon class="beam" points="${x1},${y1} ${x2},${y2} ${x2},${y2 + t} ${x1},${y1 + t}"/>`;
+}
+
+/**
+ * The strokes of a tremolo between two notes: between their stems (not
+ * touching them, as for half notes), or between the noteheads of notes
+ * without a stem.
+ */
+function drawTremoloBetween(push, a, b, strokes, cls) {
+  const end = (n) => (n.stemEnd ?? (n.heads[0]?.y ?? n.top + 2 * SP) + (n.up ? -2.5 : 2.5) * SP);
+  const xa = (a.stemX ?? a.x) + 0.5 * SP;
+  const xb = (b.stemX ?? b.x) - 0.5 * SP;
+  if (xb <= xa) return;
+  const towards = a.up ? 1 : -1; // from the stems' ends towards the noteheads
+  push(`<g class="${cls}">`);
+  for (let k = 0; k < strokes; k++) {
+    const off = towards * (0.6 * SP + k * 0.75 * SP);
+    push(tremoloBar(xa, end(a) + off, xb, end(b) + off));
+  }
+  push('</g>');
 }
 
 /** A wavy line from x1 to x2 at y (a trill's). */
@@ -1409,6 +1469,13 @@ export function renderScore(view, width, opts = {}) {
         });
         const starts = eventStarts(events);
         groups.forEach((g, gi) => drawBeams(push, g.map((i) => infos[i]), g.map((i) => starts[i]), groupUp[gi], multi ? null : yOf(mid), cls));
+        events.forEach((e, i) => {
+          const next = events[i + 1];
+          if (e.duration.tremolo?.between && next?.duration.tremolo?.between && !infos[i].pairedBefore) {
+            drawTremoloBetween(push, infos[i], infos[i + 1], e.duration.tremolo.strokes, cls);
+            infos[i + 1].pairedBefore = true;
+          }
+        });
         for (const g of graceBeams) {
           const gInfos = g.map((i) => infos[i]);
           drawBeams(push, gInfos, g.map((_, k) => k * TICKS_WHOLE), gInfos[0].up, null, `${cls} grace`, GRACE_K);
@@ -2025,7 +2092,7 @@ function drawAttachments(push, info) {
   let y = below ? Math.max(...ys, top + 2 * SP) : Math.min(...ys, top + 2 * SP);
   if (info.rest) y = below ? top + 4 * SP : top;
   for (const a of arts) {
-    if (a === 'fermata') continue;
+    if (NOT_STACKED.has(a)) continue;
     y += below ? 1.0 * SP : -1.0 * SP;
     if (onStaffLine(y, top)) y += below ? 0.5 * SP : -0.5 * SP;
     push(`<text class="m mark" x="${x}" y="${y}">${ARTIC[a][below ? 1 : 0]}</text>`);
@@ -2033,11 +2100,31 @@ function drawAttachments(push, info) {
     if (below) info.lo = Math.max(info.lo, y + 0.8 * SP);
     else info.hi = Math.min(info.hi, y - 0.8 * SP);
   }
+  // Ornaments, then a fermata: above the staff, or above the highest ink.
+  for (const a of arts) {
+    if (!ORNAMENT[a]) continue;
+    const oy = Math.min(top - 0.8 * SP, info.hi - 0.7 * SP, below ? Infinity : y - 0.9 * SP);
+    push(`<text class="m mark" x="${x}" y="${oy}">${ORNAMENT[a]}</text>`);
+    info.hi = Math.min(info.hi, oy - 0.8 * SP);
+  }
   if (arts.includes('fermata')) {
     // Above the staff, or above the highest ink if that is higher.
     const fy = Math.min(top - 0.6 * SP, info.hi - 0.6 * SP, below ? Infinity : y - 0.8 * SP);
     push(`<text class="m mark" x="${x}" y="${fy}">${FERMATA}</text>`);
   }
+  // After the note: a breath mark over the top line, a caesura across it.
+  const after = info.left + info.w + 1.0 * SP;
+  if (arts.includes('breath_mark')) push(glyph(BREATH, after, top - 0.3 * SP));
+  if (arts.includes('caesura')) push(glyph(CAESURA, after, top + 0.6 * SP));
+  // An arpeggio: a wavy line left of the chord, from its lowest to its
+  // highest note.
+  if (arts.includes('arpeggio') && info.heads.length) {
+    const hy = info.heads.map((h) => h.y);
+    push(wavyUp(info.left - 1.2 * SP, Math.max(...hy) + 0.6 * SP, Math.min(...hy) - 0.6 * SP));
+  }
+  // Tremolo strokes on one note: across the stem, or over a note without one.
+  const trem = e.duration.tremolo;
+  if (trem && !trem.between && !info.rest) drawTremoloStrokes(push, info, trem.strokes);
   // Below the staff; above it when the staff has lyrics, as in vocal music.
   const dy = info.sung
     ? Math.min(top - 1.6 * SP, info.hi - 1.4 * SP, below ? Infinity : y - 1.6 * SP)

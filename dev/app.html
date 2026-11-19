@@ -133,7 +133,7 @@
       place_note({ at, step, octave, duration }) {
         snapshot();
         replaceMeasureRest(at);
-        voiceOf(at).splice(at.index, 0, { id: nextId++, duration, kind: { chord: { pitches: [{ step, octave, alter: alter(at.measure, step) }] } } });
+        voiceOf(at).splice(at.index, 0, { id: nextId++, duration: { ...duration }, kind: { chord: { pitches: [{ step, octave, alter: alter(at.measure, step) }] } } });
         view.caret = { ...at, index: at.index + 1 };
       },
       // Keyboard entry, roughly like the core: nearest octave to the previous note.
@@ -155,7 +155,7 @@
       place_rest({ at, duration }) {
         snapshot();
         replaceMeasureRest(at);
-        voiceOf(at).splice(at.index, 0, { id: nextId++, duration, kind: 'rest' });
+        voiceOf(at).splice(at.index, 0, { id: nextId++, duration: { ...duration }, kind: 'rest' });
         view.caret = { ...at, index: at.index + 1 };
       },
       add_pitch({ at, step, octave }) {
@@ -213,6 +213,24 @@
           const i = options.findIndex((o) => o.step === p.step && o.alter === p.alter && o.octave === p.octave);
           return options[(i + 1) % options.length];
         });
+      },
+      // Tremolos on the note before the caret (between: with the one before it).
+      set_tremolo({ strokes, between }) {
+        const v = voiceOf(view.caret);
+        const i = view.caret.index - 1;
+        const targets = (between ? [v[i - 1], v[i]] : [v[i]]).filter((e) => e && e.kind !== 'rest');
+        if (!targets.length || (between && targets.length < 2)) return;
+        snapshot();
+        const BASES = ['Breve', 'Whole', 'Half', 'Quarter', 'Eighth', 'Sixteenth', 'ThirtySecond', 'SixtyFourth', 'HundredTwentyEighth'];
+        const off = targets.every((e) => e.duration.tremolo?.strokes === strokes && !!e.duration.tremolo?.between === between);
+        for (const e of targets) {
+          e.duration = { ...e.duration }; // (inserted notes share the toolbar's object)
+          const was = !!e.duration.tremolo?.between;
+          const k = BASES.indexOf(e.duration.base);
+          if (!was && between && !off && k > 0) e.duration.base = BASES[k - 1];
+          if (was && (off || !between)) e.duration.base = BASES[k + 1];
+          e.duration.tremolo = off ? null : { strokes, between };
+        }
       },
       set_beam({ beam }) {
         const e = voiceOf(view.caret)[view.caret.index - 1];
@@ -467,7 +485,7 @@
             view.dirty = undo.length > 0;
             view.can_undo = undo.length > 0;
             // Same rule as Score::validate: a voice longer than its measure.
-            const ticks = (d) => { if (d.grace) return 0; const b = 7680 >> ['Breve', 'Whole', 'Half', 'Quarter', 'Eighth', 'Sixteenth', 'ThirtySecond', 'SixtyFourth', 'HundredTwentyEighth'].indexOf(d.base); let t = 0; for (let i = 0; i <= d.dots; i++) t += b >> i; return d.tuplet ? t * d.tuplet.normal / d.tuplet.actual : t; };
+            const ticks = (d) => { if (d.grace) return 0; if (d.tremolo?.between) return (7680 >> ['Breve', 'Whole', 'Half', 'Quarter', 'Eighth', 'Sixteenth', 'ThirtySecond', 'SixtyFourth', 'HundredTwentyEighth'].indexOf(d.base)) / 2; const b = 7680 >> ['Breve', 'Whole', 'Half', 'Quarter', 'Eighth', 'Sixteenth', 'ThirtySecond', 'SixtyFourth', 'HundredTwentyEighth'].indexOf(d.base); let t = 0; for (let i = 0; i <= d.dots; i++) t += b >> i; return d.tuplet ? t * d.tuplet.normal / d.tuplet.actual : t; };
             view.issues = [];
             view.score.staves.forEach((st, s) => st.measures.forEach((m, mi) => m.voices.forEach((v, vi) => {
               const t = v.reduce((a, e) => a + ticks(e.duration), 0);

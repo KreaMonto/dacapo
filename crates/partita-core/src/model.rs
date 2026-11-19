@@ -163,6 +163,38 @@ pub enum DurationBase {
 }
 
 impl DurationBase {
+    /// The value twice as long (a quarter's is a half), if there is one.
+    pub fn doubled(self) -> Option<Self> {
+        use DurationBase::*;
+        Some(match self {
+            Breve => return None,
+            Whole => Breve,
+            Half => Whole,
+            Quarter => Half,
+            Eighth => Quarter,
+            Sixteenth => Eighth,
+            ThirtySecond => Sixteenth,
+            SixtyFourth => ThirtySecond,
+            HundredTwentyEighth => SixtyFourth,
+        })
+    }
+
+    /// The value half as long, if there is one.
+    pub fn halved(self) -> Option<Self> {
+        use DurationBase::*;
+        Some(match self {
+            Breve => Whole,
+            Whole => Half,
+            Half => Quarter,
+            Quarter => Eighth,
+            Eighth => Sixteenth,
+            Sixteenth => ThirtySecond,
+            ThirtySecond => SixtyFourth,
+            SixtyFourth => HundredTwentyEighth,
+            HundredTwentyEighth => return None,
+        })
+    }
+
     /// Length in ticks.
     pub fn ticks(self) -> u32 {
         use DurationBase::*;
@@ -216,8 +248,20 @@ pub enum Grace {
     Appoggiatura,
 }
 
+/// Tremolo strokes on a note. On one note (`between` false) it is only
+/// marked and played as repeated notes. Between two notes (both of them
+/// carry it, one after the other) each is written with twice its time and
+/// counts half: a tremolo lasting a half note is written as two halves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Tremolo {
+    /// 1 to 3 strokes: eighths, sixteenths, thirty-seconds.
+    pub strokes: u8,
+    pub between: bool,
+}
+
 /// A rhythmic value: base value plus augmentation dots, the tuplet it
-/// belongs to, and whether it is a grace note (which takes no time).
+/// belongs to, whether it is a grace note (which takes no time), and its
+/// tremolo.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 pub struct Duration {
     pub base: DurationBase,
@@ -226,6 +270,8 @@ pub struct Duration {
     pub tuplet: Option<Tuplet>,
     /// Since file format 8 (recovery format 16).
     pub grace: Option<Grace>,
+    /// Since file format 8 (recovery format 16).
+    pub tremolo: Option<Tremolo>,
 }
 
 #[derive(Deserialize)]
@@ -236,6 +282,8 @@ struct DurationFields {
     tuplet: Option<Tuplet>,
     #[serde(default)]
     grace: Option<Grace>,
+    #[serde(default)]
+    tremolo: Option<Tremolo>,
 }
 
 /// [`Duration`] as written to recovery formats 3 to 15 (before tuplets).
@@ -254,6 +302,7 @@ impl<'de> Deserialize<'de> for Duration {
                 dots: d.dots,
                 tuplet: None,
                 grace: None,
+                tremolo: None,
             });
         }
         let d = DurationFields::deserialize(deserializer)?;
@@ -262,6 +311,7 @@ impl<'de> Deserialize<'de> for Duration {
             dots: d.dots,
             tuplet: d.tuplet,
             grace: d.grace,
+            tremolo: d.tremolo,
         })
     }
 }
@@ -273,6 +323,7 @@ impl Duration {
             dots: 0,
             tuplet: None,
             grace: None,
+            tremolo: None,
         }
     }
 
@@ -330,13 +381,18 @@ impl Duration {
             dots,
             tuplet: None,
             grace: None,
+            tremolo: None,
         }
     }
 
-    /// Length in ticks, dots and tuplet included; none for a grace note.
+    /// Length in ticks, dots and tuplet included; none for a grace note;
+    /// half its written value in a tremolo between two notes.
     pub fn ticks(&self) -> u32 {
         if self.grace.is_some() {
             return 0;
+        }
+        if self.tremolo.is_some_and(|t| t.between) {
+            return self.notated_ticks() / 2;
         }
         let notated = self.notated_ticks();
         match self.tuplet {
@@ -370,6 +426,27 @@ pub enum Articulation {
     Tenuto,
     Marcato,
     Fermata,
+    // Since file format 8 (added last: the recovery journal stores variants
+    // by position).
+    /// Upper mordent: the note, the step above, the note.
+    Mordent,
+    /// Lower mordent: the note, the step below, the note.
+    MordentLower,
+    /// Turn: the step above, the note, the step below, the note.
+    Turn,
+    /// The chord is played upwards, one note after another.
+    Arpeggio,
+    /// A breath (a comma over the staff after the note): a little shorter.
+    BreathMark,
+    /// A caesura (// after the note): a clear break.
+    Caesura,
+}
+
+impl Articulation {
+    /// Whether file format 8 is needed for it.
+    pub fn is_ornament(self) -> bool {
+        self >= Articulation::Mordent
+    }
 }
 
 /// Dynamic marking printed under an event.
@@ -2003,15 +2080,21 @@ impl Score {
             .is_some_and(|a| a.capacity() < a.time.measure_ticks())
     }
 
-    /// Whether any note or rest is in a tuplet, is a grace note or has a
-    /// beam set by hand (which need file format 8).
+    /// Whether any note or rest is in a tuplet, is a grace note, has a
+    /// tremolo, an ornament or a beam set by hand (which need file format 8).
     pub fn has_rhythm_marks(&self) -> bool {
         self.staves
             .iter()
             .flat_map(|s| s.measures.iter())
             .flat_map(|m| m.voices.iter())
             .flatten()
-            .any(|e| e.duration.tuplet.is_some() || e.duration.grace.is_some() || e.beam.is_some())
+            .any(|e| {
+                e.duration.tuplet.is_some()
+                    || e.duration.grace.is_some()
+                    || e.duration.tremolo.is_some()
+                    || e.beam.is_some()
+                    || e.articulations.iter().any(|a| a.is_ornament())
+            })
     }
 
     /// Whether any measure has a tempo marking.
