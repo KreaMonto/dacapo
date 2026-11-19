@@ -5,6 +5,11 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 ## [Unreleased]
 
 ### Added
+- **Lines between notes**, over the selected notes (or the note before the caret), each also in **Notes → Lines**; the same line again takes it away, and deleting its notes deletes it. MusicXML import and export keep all of them.
+  - **Hairpins**: crescendo and diminuendo buttons in the **Dynamics** bar. Playback gets about two dynamic levels louder or softer along them, and stays there unless a dynamic comes inside.
+  - **Trill**: *tr* and a wavy line, from the **Ties & slurs** bar. Playback alternates the note with the step above, in the key.
+  - **Glissando**: a line from a note to the next one (or across the selection), from the **Ties & slurs** bar.
+  - ***rit.* and *accel.***: from the **rit.** button of the **Indications** bar. Playback slows down to 75 % (or speeds up to 125 %) along them, and keeps that tempo until the next tempo marking.
 - **Respelling**: **J**, the **♯⇄♭** button of the **Accidentals** bar or **Notes → Accidentals → Respell** writes the selected notes (or the note before the caret) another way that sounds the same: F♯ → G♭ → E𝄪, C → B♯ → D𝄫. Each press goes on to the next way.
 - **Octave lines**: 8va, 8vb, 15ma and 15mb over the selected notes (or the note before the caret), from the **Octave Lines** button of the **Ties & slurs** bar or **Notes → Octave Lines**. The notes under the line are drawn an octave or two away and keep their sound; a line going on to the next system starts again there as *(8va)*. Choosing the same line again takes it away, and deleting its notes deletes it. MusicXML import and export keep them.
 - **Clef changes**: the **Clef** selector of the **Measure** bar now sets the clef from the caret's measure on. In the first measure it is the staff's own clef; later it is a clef change, drawn smaller at the start of the measure, that lasts until the next one. Notes are drawn and entered in the clef in force. MusicXML import and export keep changes at the start of a measure (and those other programs write at the end of the measure before); changes in the middle of a measure are still left out.
@@ -13,7 +18,7 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 - **Tuplets**: triplets, quintuplets, sextuplets, duplets and quadruplets. The **Tuplet** button of the **Figures** bar (or **Notes → Tuplet**, or **Ctrl+3**, **Ctrl+5**, **Ctrl+6**, **Ctrl+2**, **Ctrl+4**) writes the next notes and rests in the group until it is turned off; the value in use when it is turned on is what the group counts in, so a quarter and an eighth can share a triplet of eighths. On a selection it changes the selected notes. A beamed group shows its number; any other gets a bracket. Playback, the error check and MusicXML import and export follow them (septuplets and other groups that do not divide evenly still import with their written values).
 
 ### Changed
-- Scores with tuplets, grace notes, beams set by hand, clef changes or octave lines are saved as file format 8, which Partita 0.3.14 can't open; other scores are saved as before.
+- Scores with tuplets, grace notes, beams set by hand, clef changes or lines between notes are saved as file format 8, which Partita 0.3.14 can't open; other scores are saved as before.
 
 ## [0.3.14] - 2026-11-18
 

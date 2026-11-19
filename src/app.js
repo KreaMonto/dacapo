@@ -3018,7 +3018,10 @@ for (const n of Object.keys(TUPLETS)) commands[`tuplet:${n}`] = () => setTuplet(
 commands['grace:acciaccatura'] = () => setGrace('Acciaccatura');
 for (const k of ['break', 'join']) commands[`beam:${k}`] = () => act({ type: 'set_beam', beam: k });
 commands['beam:auto'] = () => act({ type: 'set_beam', beam: null });
-for (const k of ['8va', '8vb', '15ma', '15mb']) commands[`ottava:${k}`] = () => act({ type: 'set_octave_line', kind: k });
+// Lines between notes (core LineKind): over the selection, or the note before the caret.
+const lineItem = (k) => ({ label: t(`line.${k}`), cmd: `line:${k}`, desc: t(`line.${k}.desc`) });
+const LINE_KINDS = ['8va', '8vb', '15ma', '15mb', 'crescendo', 'diminuendo', 'trill', 'glissando', 'rit', 'accel'];
+for (const k of LINE_KINDS) commands[`line:${k}`] = () => act({ type: 'set_line', kind: k });
 commands['grace:appoggiatura'] = () => setGrace('Appoggiatura');
 const REPEAT_COUNTS = [2, 3, 4, 5, 6];
 for (const n of REPEAT_COUNTS) commands[`repeat-times:${n}`] = () => setRepeatTimes(n);
@@ -3207,8 +3210,12 @@ const MENUS = [
     { label: t('menu.notes.lyrics'), cmd: 'lyrics', key: 'Ctrl+L', enabled: hasDoc, checked: () => !!state.lyric, desc: t('menu.notes.lyrics.desc') },
     { label: t('menu.notes.expression'), cmd: 'note-text:expression', key: 'Ctrl+E', enabled: hasDoc, desc: t('notetext.expression.desc') },
     { label: t('menu.notes.technique'), cmd: 'note-text:technique', enabled: hasDoc, desc: t('notetext.technique.desc') },
-    { label: t('toolbar.ottava'), enabled: hasDoc, items: ['8va', '8vb', '15ma', '15mb'].map((k) =>
-      ({ label: t(`ottava.${k}`), cmd: `ottava:${k}`, desc: t(`ottava.${k}.desc`) })) },
+    { label: t('menu.notes.lines'), enabled: hasDoc, items: [
+      ...['crescendo', 'diminuendo'].map(lineItem), { sep: true },
+      ...['trill', 'glissando'].map(lineItem), { sep: true },
+      ...['8va', '8vb', '15ma', '15mb'].map(lineItem), { sep: true },
+      ...['rit', 'accel'].map(lineItem),
+    ] },
     { label: t('bar.beams'), enabled: hasDoc, items: ['break', 'join', 'auto'].map((k) =>
       ({ label: t(`beam.${k}`), cmd: `beam:${k}`, desc: t(`beam.${k}.desc`) })) },
     { label: t('toolbar.grace'), enabled: hasDoc, items: [['acciaccatura', 'Ctrl+G'], ['appoggiatura', 'Ctrl+Shift+G']].map(([k, key]) =>

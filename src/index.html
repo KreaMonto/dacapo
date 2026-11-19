@@ -143,6 +143,13 @@
         </div>
         <div class="tbar" role="group" data-bar-id="indications" data-i18n-bar="bar.indications" data-i18n-aria="bar.indications">
           <button data-cmd="tempo-mark" class="text-btn" data-i18n-tip="palette.tempo" data-i18n-desc="palette.tempo.desc" data-i18n-aria="palette.tempo"><span class="m">&#xECA5;</span>&#8202;=</button>
+          <div class="drop" data-drop="tempo-change">
+            <button class="text-btn drop-btn line-word-btn" aria-haspopup="true" aria-expanded="false" data-i18n-tip="toolbar.tempochange" data-i18n-desc="toolbar.tempochange.desc" data-i18n-aria="toolbar.tempochange">rit.</button>
+            <div class="drop-pop" role="group" data-i18n-aria="toolbar.tempochange" hidden>
+              <button data-cmd="line:rit" class="text-btn line-word-btn" data-i18n-tip="line.rit" data-i18n-desc="line.rit.desc" data-i18n-aria="line.rit">rit.</button>
+              <button data-cmd="line:accel" class="text-btn line-word-btn" data-i18n-tip="line.accel" data-i18n-desc="line.accel.desc" data-i18n-aria="line.accel">accel.</button>
+            </div>
+          </div>
           <button data-cmd="rehearsal" class="text-btn" data-i18n-tip="palette.rehearsal" data-i18n-desc="palette.rehearsal.desc" data-i18n-aria="palette.rehearsal"><span class="boxed">A</span></button>
           <!-- Segno, coda, Fine, To Coda, D.C., D.S. for the caret's measure:
                the button shows the last one chosen. -->
@@ -245,15 +252,17 @@
           <button data-cmd="slur" class="icon-btn" data-i18n-aria="palette.slur" data-i18n-tip="palette.slur" data-i18n-desc="palette.slur.desc" data-key="S">
             <svg viewBox="0 0 40 24" aria-hidden="true"><path d="M5 18 Q20 0 35 18 Q20 5 5 18Z"/></svg>
           </button>
+          <button data-cmd="line:trill" class="glyph" data-i18n-aria="line.trill" data-i18n-tip="line.trill" data-i18n-desc="line.trill.desc">&#xE566;</button>
+          <button data-cmd="line:glissando" class="icon-btn" data-i18n-aria="line.glissando" data-i18n-tip="line.glissando" data-i18n-desc="line.glissando.desc"><svg viewBox="0 0 40 24" aria-hidden="true"><ellipse cx="8" cy="18" rx="4.5" ry="3.2" transform="rotate(-20 8 18)"/><ellipse cx="32" cy="6" rx="4.5" ry="3.2" transform="rotate(-20 32 6)"/><path d="M13 16 L27 8" stroke="currentColor" stroke-width="1.8"/></svg></button>
           <!-- Octave lines over the selection (or the note before the caret):
                the button shows the last one chosen. -->
           <div class="drop" data-drop="ottava">
             <button class="text-btn drop-btn ottava-btn" aria-haspopup="true" aria-expanded="false" data-i18n-tip="toolbar.ottava" data-i18n-desc="toolbar.ottava.desc" data-i18n-aria="toolbar.ottava">8va</button>
             <div class="drop-pop" role="group" data-i18n-aria="toolbar.ottava" hidden>
-              <button data-cmd="ottava:8va" class="text-btn ottava-btn" data-i18n-tip="ottava.8va" data-i18n-desc="ottava.8va.desc" data-i18n-aria="ottava.8va">8va</button>
-              <button data-cmd="ottava:8vb" class="text-btn ottava-btn" data-i18n-tip="ottava.8vb" data-i18n-desc="ottava.8vb.desc" data-i18n-aria="ottava.8vb">8vb</button>
-              <button data-cmd="ottava:15ma" class="text-btn ottava-btn" data-i18n-tip="ottava.15ma" data-i18n-desc="ottava.15ma.desc" data-i18n-aria="ottava.15ma">15ma</button>
-              <button data-cmd="ottava:15mb" class="text-btn ottava-btn" data-i18n-tip="ottava.15mb" data-i18n-desc="ottava.15mb.desc" data-i18n-aria="ottava.15mb">15mb</button>
+              <button data-cmd="line:8va" class="text-btn ottava-btn" data-i18n-tip="ottava.8va" data-i18n-desc="ottava.8va.desc" data-i18n-aria="ottava.8va">8va</button>
+              <button data-cmd="line:8vb" class="text-btn ottava-btn" data-i18n-tip="ottava.8vb" data-i18n-desc="ottava.8vb.desc" data-i18n-aria="ottava.8vb">8vb</button>
+              <button data-cmd="line:15ma" class="text-btn ottava-btn" data-i18n-tip="ottava.15ma" data-i18n-desc="ottava.15ma.desc" data-i18n-aria="ottava.15ma">15ma</button>
+              <button data-cmd="line:15mb" class="text-btn ottava-btn" data-i18n-tip="ottava.15mb" data-i18n-desc="ottava.15mb.desc" data-i18n-aria="ottava.15mb">15mb</button>
             </div>
           </div>
         </div>
@@ -279,6 +288,8 @@
         <div class="tbar" role="group" data-bar-id="dynamics" data-i18n-bar="palette.dynamics" data-i18n-aria="palette.dynamics">
           <!-- A drop-down: the button shows the last dynamic chosen; a click
                opens all of them (toolbars.js, installDrops). -->
+          <button data-cmd="line:crescendo" class="icon-btn" data-i18n-aria="line.crescendo" data-i18n-tip="line.crescendo" data-i18n-desc="line.crescendo.desc"><svg viewBox="0 0 40 24" aria-hidden="true"><path d="M5 12 L35 5 M5 12 L35 19" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+          <button data-cmd="line:diminuendo" class="icon-btn" data-i18n-aria="line.diminuendo" data-i18n-tip="line.diminuendo" data-i18n-desc="line.diminuendo.desc"><svg viewBox="0 0 40 24" aria-hidden="true"><path d="M5 5 L35 12 M5 19 L35 12" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
           <div class="drop" data-drop="dynamics">
             <button class="glyph drop-btn" aria-haspopup="true" aria-expanded="false" data-i18n-tip="palette.dynamics" data-i18n-desc="palette.dynamics.drop" data-i18n-aria="palette.dynamics">&#xE52D;</button>
             <div class="drop-pop" role="group" data-i18n-aria="palette.dynamics" hidden>

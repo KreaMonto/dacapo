@@ -282,12 +282,19 @@ pub fn export(score: &Score) -> String {
         slur_marks.entry(slur.end).or_default().push(("stop", n));
     }
 
-    // Octave lines: (kind, number) where they start and where they stop.
-    let mut octave_starts: HashMap<EventId, (Ottava, usize)> = HashMap::new();
-    let mut octave_stops: HashMap<EventId, (Ottava, usize)> = HashMap::new();
-    for (i, l) in score.octave_lines.iter().enumerate() {
-        octave_starts.insert(l.start, (l.kind, i % 16 + 1));
-        octave_stops.insert(l.end, (l.kind, i % 16 + 1));
+    // Lines between notes: (kind, number) at the events where they start
+    // and where they stop.
+    let mut line_starts: HashMap<EventId, Vec<(LineKind, usize)>> = HashMap::new();
+    let mut line_stops: HashMap<EventId, Vec<(LineKind, usize)>> = HashMap::new();
+    for (i, l) in score.lines.iter().enumerate() {
+        line_starts
+            .entry(l.start)
+            .or_default()
+            .push((l.kind, i % 16 + 1));
+        line_stops
+            .entry(l.end)
+            .or_default()
+            .push((l.kind, i % 16 + 1));
     }
 
     for (s, staff) in score.staves.iter().enumerate() {
@@ -464,36 +471,28 @@ pub fn export(score: &Score) -> String {
                                 v + 1
                             );
                         }
-                        // An octave line: MusicXML says which way the notes
-                        // are drawn from their (sounding) pitch.
-                        if let Some(&(kind, n)) = octave_starts.get(&e.id) {
-                            let (way, size) = octave_shift(kind);
-                            let placement = if kind.octaves() > 0 { "above" } else { "below" };
-                            let _ = writeln!(
-                                x,
-                                "      <direction placement=\"{placement}\"><direction-type><octave-shift type=\"{way}\" size=\"{size}\" number=\"{n}\"/></direction-type><voice>{}</voice></direction>",
-                                v + 1
-                            );
+                        for &(kind, n) in line_starts.get(&e.id).into_iter().flatten() {
+                            write_line_direction(&mut x, kind, n, v, true);
                         }
+                        let marks = NoteMarks {
+                            slurs: slur_marks.get(&e.id).map(Vec::as_slice).unwrap_or(&[]),
+                            tuplet: tuplet_mark,
+                            line_starts: line_starts.get(&e.id).map(Vec::as_slice).unwrap_or(&[]),
+                            line_stops: line_stops.get(&e.id).map(Vec::as_slice).unwrap_or(&[]),
+                        };
                         write_event(
                             &mut x,
                             e,
                             v,
                             to_div(e.ticks()),
                             prev_in_voice[v],
-                            slur_marks.get(&e.id).map(Vec::as_slice).unwrap_or(&[]),
-                            tuplet_mark,
+                            &marks,
                             &mut hyphen_open[v],
                         );
                         written += e.ticks();
                         prev_in_voice[v] = Some(e);
-                        if let Some(&(kind, n)) = octave_stops.get(&e.id) {
-                            let (_, size) = octave_shift(kind);
-                            let _ = writeln!(
-                                x,
-                                "      <direction><direction-type><octave-shift type=\"stop\" size=\"{size}\" number=\"{n}\"/></direction-type><voice>{}</voice></direction>",
-                                v + 1
-                            );
+                        for &(kind, n) in line_stops.get(&e.id).into_iter().flatten() {
+                            write_line_direction(&mut x, kind, n, v, false);
                         }
                     }
                 }
@@ -578,17 +577,74 @@ pub fn export_to(path: &Path, score: &Score) -> std::io::Result<()> {
     crate::file::atomic_write(path, export(score).as_bytes())
 }
 
-#[allow(clippy::too_many_arguments)]
+/// What starts or stops at a note, besides the note itself: slurs (kind
+/// and number), whether it opens or closes a tuplet group, and the lines
+/// starting and stopping there (kind and number).
+struct NoteMarks<'a> {
+    slurs: &'a [(&'static str, usize)],
+    tuplet: (bool, bool),
+    line_starts: &'a [(LineKind, usize)],
+    line_stops: &'a [(LineKind, usize)],
+}
+
+/// The `<direction>` that starts (or stops) a line drawn between the
+/// staves' notes: an octave shift, a hairpin (wedge), or rit. / accel.
+/// words with dashes. Trills and glissandos go on the notes instead.
+fn write_line_direction(x: &mut String, kind: LineKind, n: usize, v: usize, start: bool) {
+    let placement = match kind {
+        LineKind::OttavaBassa
+        | LineKind::QuindicesimaBassa
+        | LineKind::Crescendo
+        | LineKind::Diminuendo => "below",
+        _ => "above",
+    };
+    let body = match (kind.family(), start) {
+        (LineFamily::Octave, true) => {
+            let (way, size) = octave_shift(kind);
+            format!("<octave-shift type=\"{way}\" size=\"{size}\" number=\"{n}\"/>")
+        }
+        (LineFamily::Octave, false) => {
+            let (_, size) = octave_shift(kind);
+            format!("<octave-shift type=\"stop\" size=\"{size}\" number=\"{n}\"/>")
+        }
+        (LineFamily::Hairpin, true) => {
+            let way = if kind == LineKind::Crescendo {
+                "crescendo"
+            } else {
+                "diminuendo"
+            };
+            format!("<wedge type=\"{way}\" number=\"{n}\"/>")
+        }
+        (LineFamily::Hairpin, false) => format!("<wedge type=\"stop\" number=\"{n}\"/>"),
+        (LineFamily::Tempo, true) => {
+            let word = if kind == LineKind::Ritardando {
+                "rit."
+            } else {
+                "accel."
+            };
+            format!("<words>{word}</words></direction-type><direction-type><dashes type=\"start\" number=\"{n}\"/>")
+        }
+        (LineFamily::Tempo, false) => format!("<dashes type=\"stop\" number=\"{n}\"/>"),
+        (LineFamily::Trill | LineFamily::Glissando, _) => return,
+    };
+    let _ = writeln!(
+        x,
+        "      <direction placement=\"{placement}\"><direction-type>{body}</direction-type><voice>{}</voice></direction>",
+        v + 1
+    );
+}
+
 fn write_event(
     x: &mut String,
     e: &Event,
     v: usize,
     duration: u32,
     prev: Option<&Event>,
-    slurs: &[(&'static str, usize)],
-    tuplet_mark: (bool, bool),
+    marks: &NoteMarks,
     hyphen_open: &mut [bool; MAX_VERSES],
 ) {
+    let slurs = marks.slurs;
+    let tuplet_mark = marks.tuplet;
     let pitches: Vec<Option<Pitch>> = match &e.kind {
         EventKind::Rest => vec![None],
         EventKind::Chord { pitches } if pitches.is_empty() => vec![None],
@@ -668,17 +724,50 @@ fn write_event(
             for (kind, n) in slurs {
                 let _ = write!(notations, "<slur type=\"{kind}\" number=\"{n}\"/>");
             }
-            let marks: String = e
+            let artics: String = e
                 .articulations
                 .iter()
                 .filter_map(|a| articulation_name(*a))
                 .map(|n| format!("<{n}/>"))
                 .collect();
-            if !marks.is_empty() {
-                let _ = write!(notations, "<articulations>{marks}</articulations>");
+            if !artics.is_empty() {
+                let _ = write!(notations, "<articulations>{artics}</articulations>");
             }
             if e.articulations.contains(&Articulation::Fermata) {
                 notations.push_str("<fermata type=\"upright\"/>");
+            }
+            // Trills (tr and the wavy line) and glissandos are on the notes.
+            let mut ornaments = String::new();
+            for &(kind, n) in marks.line_starts {
+                match kind {
+                    LineKind::Trill => {
+                        let _ = write!(
+                            ornaments,
+                            "<trill-mark/><wavy-line type=\"start\" number=\"{n}\"/>"
+                        );
+                    }
+                    LineKind::Glissando => {
+                        let _ = write!(
+                            notations,
+                            "<glissando type=\"start\" line-type=\"solid\" number=\"{n}\"/>"
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            for &(kind, n) in marks.line_stops {
+                match kind {
+                    LineKind::Trill => {
+                        let _ = write!(ornaments, "<wavy-line type=\"stop\" number=\"{n}\"/>");
+                    }
+                    LineKind::Glissando => {
+                        let _ = write!(notations, "<glissando type=\"stop\" number=\"{n}\"/>");
+                    }
+                    _ => {}
+                }
+            }
+            if !ornaments.is_empty() {
+                let _ = write!(notations, "<ornaments>{ornaments}</ornaments>");
             }
         }
         if !notations.is_empty() {
@@ -761,14 +850,153 @@ fn esc(s: &str) -> String {
     out
 }
 
+/// Reads the lines of a part: from `<direction>`s (octave shifts, wedges,
+/// rit. / accel. with dashes), which come before their first note and after
+/// their last, and from the notations of notes (trills with their wavy
+/// line, glissandos). Lines are open per staff and family.
+#[derive(Default)]
+struct LineReader {
+    /// Started by a direction, waiting for the next note of the staff.
+    pending: HashMap<(u32, LineFamily), LineKind>,
+    /// Started at a note: (kind, first note).
+    open: HashMap<(u32, LineFamily), (LineKind, EventId)>,
+    /// The last note of each staff, where a direction's stop ends a line.
+    last: HashMap<u32, EventId>,
+}
+
+impl LineReader {
+    fn close(&mut self, key: (u32, LineFamily), end: Option<EventId>, out: &mut Vec<Line>) {
+        if let (Some((kind, start)), Some(end)) = (self.open.remove(&key), end) {
+            out.push(Line {
+                id: 0,
+                start,
+                end,
+                kind,
+            });
+        }
+    }
+
+    /// Whether the direction was a line's start or stop (then it is nothing
+    /// else).
+    fn read_direction(&mut self, el: roxmltree::Node, staff: u32, out: &mut Vec<Line>) -> bool {
+        let last = self.last.get(&staff).copied();
+        if let Some(o) = el.descendants().find(|n| n.has_tag_name("octave-shift")) {
+            let big = o
+                .attribute("size")
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(8)
+                >= 15;
+            let kind = match (o.attribute("type"), big) {
+                (Some("stop"), _) => {
+                    self.close((staff, LineFamily::Octave), last, out);
+                    return true;
+                }
+                (Some("down"), false) => LineKind::OttavaAlta,
+                (Some("up"), false) => LineKind::OttavaBassa,
+                (Some("down"), true) => LineKind::QuindicesimaAlta,
+                (Some("up"), true) => LineKind::QuindicesimaBassa,
+                _ => return true,
+            };
+            self.pending.insert((staff, LineFamily::Octave), kind);
+            return true;
+        }
+        if let Some(w) = el.descendants().find(|n| n.has_tag_name("wedge")) {
+            match w.attribute("type") {
+                Some("crescendo") => {
+                    self.pending
+                        .insert((staff, LineFamily::Hairpin), LineKind::Crescendo);
+                }
+                Some("diminuendo") => {
+                    self.pending
+                        .insert((staff, LineFamily::Hairpin), LineKind::Diminuendo);
+                }
+                Some("stop") => self.close((staff, LineFamily::Hairpin), last, out),
+                _ => {}
+            }
+            return true;
+        }
+        if let Some(d) = el.descendants().find(|n| n.has_tag_name("dashes")) {
+            if d.attribute("type") == Some("stop") {
+                self.close((staff, LineFamily::Tempo), last, out);
+                return true;
+            }
+            let words: String = el
+                .descendants()
+                .filter(|n| n.has_tag_name("words"))
+                .filter_map(|n| n.text())
+                .collect::<String>()
+                .to_lowercase();
+            let kind = if words.starts_with("rit") || words.starts_with("rall") {
+                LineKind::Ritardando
+            } else if words.starts_with("accel") {
+                LineKind::Accelerando
+            } else {
+                return false;
+            };
+            self.pending.insert((staff, LineFamily::Tempo), kind);
+            return true;
+        }
+        false
+    }
+
+    /// A new note `id` of `staff`: lines waiting for it start there, and the
+    /// trills and glissandos of its notations start or stop there.
+    fn read_note(&mut self, el: roxmltree::Node, staff: u32, id: EventId, out: &mut Vec<Line>) {
+        let waiting: Vec<_> = self
+            .pending
+            .keys()
+            .filter(|k| k.0 == staff)
+            .copied()
+            .collect();
+        for key in waiting {
+            if let Some(kind) = self.pending.remove(&key) {
+                self.open.insert(key, (kind, id));
+            }
+        }
+        for n in children(el, "notations") {
+            let trill_mark = n.descendants().any(|c| c.has_tag_name("trill-mark"));
+            let mut wavy = None;
+            for c in n.descendants().filter(|c| c.is_element()) {
+                match (c.tag_name().name(), c.attribute("type")) {
+                    ("wavy-line", t) => wavy = t,
+                    ("glissando" | "slide", Some("start")) => {
+                        self.open
+                            .insert((staff, LineFamily::Glissando), (LineKind::Glissando, id));
+                    }
+                    ("glissando" | "slide", Some("stop")) => {
+                        self.close((staff, LineFamily::Glissando), Some(id), out);
+                    }
+                    _ => {}
+                }
+            }
+            match wavy {
+                Some("start") => {
+                    self.open
+                        .insert((staff, LineFamily::Trill), (LineKind::Trill, id));
+                }
+                Some("stop") => self.close((staff, LineFamily::Trill), Some(id), out),
+                // A trill on one note, without a wavy line.
+                _ if trill_mark => out.push(Line {
+                    id: 0,
+                    start: id,
+                    end: id,
+                    kind: LineKind::Trill,
+                }),
+                _ => {}
+            }
+        }
+        self.last.insert(staff, id);
+    }
+}
+
 /// MusicXML's octave-shift: an 8va line draws the notes an octave *down*
 /// from their pitch.
-fn octave_shift(kind: Ottava) -> (&'static str, u8) {
+fn octave_shift(kind: LineKind) -> (&'static str, u8) {
     match kind {
-        Ottava::Alta => ("down", 8),
-        Ottava::Bassa => ("up", 8),
-        Ottava::QuindicesimaAlta => ("down", 15),
-        Ottava::QuindicesimaBassa => ("up", 15),
+        LineKind::OttavaBassa => ("up", 8),
+        LineKind::QuindicesimaAlta => ("down", 15),
+        LineKind::QuindicesimaBassa => ("up", 15),
+        _ => ("down", 8),
     }
 }
 
@@ -1117,7 +1345,7 @@ struct Importer {
     tempo: Option<u16>,
     next_id: u64,
     tuplets: usize,
-    octave_lines: Vec<OctaveLine>,
+    lines: Vec<Line>,
     dropped_voices: usize,
     extra_clefs: usize,
     /// Clef changes found: (staff, measure, clef), applied at the end.
@@ -1379,12 +1607,12 @@ impl Importer {
                 .unwrap_or(DEFAULT_TEMPO),
             text_styles: Default::default(),
             text_boxes: Vec::new(),
-            octave_lines: Vec::new(),
+            lines: Vec::new(),
         };
         // Octave lines get ids after every event.
-        for mut l in std::mem::take(&mut self.octave_lines) {
+        for mut l in std::mem::take(&mut self.lines) {
             l.id = score.alloc_id();
-            score.octave_lines.push(l);
+            score.lines.push(l);
         }
         let mut unnamed_staves = self.unnamed;
         if score.staves.is_empty() {
@@ -1458,11 +1686,10 @@ impl Importer {
         let mut divisions = 1.0f64;
         let mut open_slurs: HashMap<String, EventId> = HashMap::new();
         let mut pending_dynamic: HashMap<u32, Dynamic> = HashMap::new();
-        // Octave lines: waiting for their first note, and open ones (kind,
-        // first note) by staff; the last note of each staff, for the stop.
-        let mut pending_octave: HashMap<u32, Ottava> = HashMap::new();
-        let mut open_octave: HashMap<u32, (Ottava, EventId)> = HashMap::new();
-        let mut last_on_staff: HashMap<u32, EventId> = HashMap::new();
+        // Lines from directions (octave shifts, wedges, rit. / accel.):
+        // waiting for their first note, and open ones (kind, first note) by
+        // staff and family; the last note of each staff, for the stop.
+        let mut lines = LineReader::default();
         // Words waiting for the next note of their staff.
         let mut pending_texts: HashMap<u32, Vec<NoteText>> = HashMap::new();
         let mut capacity = MeasureAttrs::default().time.measure_ticks();
@@ -1641,36 +1868,7 @@ impl Importer {
                     }
                     "direction" => {
                         let staff_no = number_of(el, "staff").map(|n| n as u32).unwrap_or(1);
-                        if let Some(o) = el.descendants().find(|n| n.has_tag_name("octave-shift")) {
-                            let size = o
-                                .attribute("size")
-                                .and_then(|s| s.parse::<u32>().ok())
-                                .unwrap_or(8);
-                            match o.attribute("type") {
-                                Some("stop") => {
-                                    if let (Some((kind, start)), Some(&end)) = (
-                                        open_octave.remove(&staff_no),
-                                        last_on_staff.get(&staff_no),
-                                    ) {
-                                        self.octave_lines.push(OctaveLine {
-                                            id: 0,
-                                            start,
-                                            end,
-                                            kind,
-                                        });
-                                    }
-                                }
-                                Some(way @ ("up" | "down")) => {
-                                    let kind = match (way, size >= 15) {
-                                        ("down", false) => Ottava::Alta,
-                                        ("up", false) => Ottava::Bassa,
-                                        ("down", true) => Ottava::QuindicesimaAlta,
-                                        _ => Ottava::QuindicesimaBassa,
-                                    };
-                                    pending_octave.insert(staff_no, kind);
-                                }
-                                _ => {}
-                            }
+                        if lines.read_direction(el, staff_no, &mut self.lines) {
                             continue;
                         }
                         for d in el.descendants().filter(|n| n.has_tag_name("dynamics")) {
@@ -2025,10 +2223,7 @@ impl Importer {
                             e.lyrics[verse] = Syllable { text, join };
                         }
 
-                        if let Some(kind) = pending_octave.remove(&staff_no) {
-                            open_octave.insert(staff_no, (kind, e.id));
-                        }
-                        last_on_staff.insert(staff_no, e.id);
+                        lines.read_note(el, staff_no, e.id, &mut self.lines);
                         let voice = &mut self.score_staves[slot.index].measures[m].voices[v];
                         voice.push(e);
                         last_event.insert((staff_no, voice_name), (m, voice.len() - 1));
@@ -2404,25 +2599,62 @@ mod tests {
     }
 
     #[test]
+    fn every_kind_of_line_round_trips() {
+        for kind in [
+            LineKind::OttavaBassa,
+            LineKind::QuindicesimaAlta,
+            LineKind::Crescendo,
+            LineKind::Diminuendo,
+            LineKind::Trill,
+            LineKind::Glissando,
+            LineKind::Ritardando,
+            LineKind::Accelerando,
+        ] {
+            let mut score = sample();
+            let voice = score.staves[0].measures[0].voices[0].clone();
+            score.lines.push(Line {
+                id: 990,
+                start: voice[0].id,
+                end: voice[1].id,
+                kind,
+            });
+            let back = import(&export(&score), "x").unwrap();
+            let v = &back.score.staves[0].measures[0].voices[0];
+            assert_eq!(back.score.lines.len(), 1, "{kind:?}");
+            let l = back.score.lines[0];
+            assert_eq!((l.start, l.end, l.kind), (v[0].id, v[1].id, kind));
+            assert!(
+                back.score.staves[0].measures[0].voices[0][0]
+                    .texts
+                    .is_empty(),
+                "rit. is not words"
+            );
+        }
+    }
+
+    #[test]
     fn octave_lines_round_trip() {
         let mut score = sample();
         let voice = score.staves[0].measures[0].voices[0].clone();
         assert!(voice.len() >= 2);
         let pitches: Vec<_> = voice.iter().map(|e| e.pitches().to_vec()).collect();
-        score.octave_lines.push(OctaveLine {
+        score.lines.push(Line {
             id: 990,
             start: voice[0].id,
             end: voice[1].id,
-            kind: Ottava::Alta,
+            kind: LineKind::OttavaAlta,
         });
         let xml = export(&score);
         assert!(xml.contains("<octave-shift type=\"down\" size=\"8\""));
         assert!(xml.contains("<octave-shift type=\"stop\" size=\"8\""));
         let back = import(&xml, "x").unwrap();
         let v = &back.score.staves[0].measures[0].voices[0];
-        assert_eq!(back.score.octave_lines.len(), 1);
-        let l = back.score.octave_lines[0];
-        assert_eq!((l.start, l.end, l.kind), (v[0].id, v[1].id, Ottava::Alta));
+        assert_eq!(back.score.lines.len(), 1);
+        let l = back.score.lines[0];
+        assert_eq!(
+            (l.start, l.end, l.kind),
+            (v[0].id, v[1].id, LineKind::OttavaAlta)
+        );
         // Pitches are as they sound, in Partita and in MusicXML.
         let back_pitches: Vec<_> = v.iter().map(|e| e.pitches().to_vec()).collect();
         assert_eq!(back_pitches, pitches);

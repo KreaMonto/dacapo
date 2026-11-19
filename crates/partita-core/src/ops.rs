@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::model::{
-    Clef, Event, MeasureAttrs, Metadata, OctaveLine, Score, Slur, Staff, StaffGroup, StaffMeasure,
+    Clef, Event, Line, MeasureAttrs, Metadata, Score, Slur, Staff, StaffGroup, StaffMeasure,
     TextBox, TextKind, TextStyle, Transposition, MAX_VOICES,
 };
 
@@ -119,9 +119,9 @@ pub enum Op {
         clef: Option<Clef>,
     },
     /// Adds, replaces (same `id`) or removes (`None`) an octave line.
-    SetOctaveLine {
+    SetLine {
         id: u64,
-        line: Option<OctaveLine>,
+        line: Option<Line>,
     },
 }
 
@@ -446,19 +446,19 @@ impl Op {
                 let old = std::mem::replace(&mut score.tempo, *bpm);
                 Ok(Op::SetTempo { bpm: old })
             }
-            Op::SetOctaveLine { id, line } => {
-                let at = score.octave_lines.iter().position(|l| l.id == *id);
+            Op::SetLine { id, line } => {
+                let at = score.lines.iter().position(|l| l.id == *id);
                 let old = match (at, line) {
-                    (Some(i), Some(l)) => Some(std::mem::replace(&mut score.octave_lines[i], *l)),
-                    (Some(i), None) => Some(score.octave_lines.remove(i)),
+                    (Some(i), Some(l)) => Some(std::mem::replace(&mut score.lines[i], *l)),
+                    (Some(i), None) => Some(score.lines.remove(i)),
                     (None, Some(l)) => {
-                        score.octave_lines.push(*l);
+                        score.lines.push(*l);
                         score.reserve_id(l.id);
                         None
                     }
                     (None, None) => None,
                 };
-                Ok(Op::SetOctaveLine { id: *id, line: old })
+                Ok(Op::SetLine { id: *id, line: old })
             }
             Op::SetMeasureClef {
                 staff,

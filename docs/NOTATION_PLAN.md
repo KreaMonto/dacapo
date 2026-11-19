@@ -81,10 +81,12 @@ Every mode needs these. The order inside each group is the planned order of work
 
 ### Lines
 
-- [ ] Hairpins (crescendo and diminuendo).
-- [ ] Glissando.
-- [ ] Trill with its wavy line *(new)*.
-- [ ] Gradual tempo changes (*rit.*, *accel.*) that playback follows.
+*One pull request for the group, on `feature/lines`. Every line between two notes (these and the octave lines) is one model in the core, `Score.lines` with a `LineKind`, with one command, one undo op and one drawing that splits it over systems.*
+
+- [x] Hairpins (crescendo and diminuendo), which playback follows: about two dynamic levels over the line.
+- [x] Glissando (a straight line; playback does not slide yet).
+- [x] Trill with its wavy line *(new)*, played alternating with the step above.
+- [x] Gradual tempo changes (*rit.*, *accel.*) that playback follows: to 75 % or 125 %, until the next tempo marking.
 
 ### Ornaments and other marks *(new)*
 

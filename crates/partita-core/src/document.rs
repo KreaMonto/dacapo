@@ -16,11 +16,11 @@ use crate::cursor::{self, Caret, Move, SelectionRange};
 use crate::history::{History, Transaction, TxKind};
 use crate::model::{
     is_measure_rest, Articulation, Barline, Beam, Clef, Duration, Dynamic, Event, EventId,
-    EventKind, GroupKind, Jump, KeySignature, LayoutBreak, LyricJoin, MeasureAttrs, Metadata,
-    NoteText, NoteTextKind, OctaveLine, Ottava, Pitch, Score, Slur, StaffGroup, Step, Syllable,
-    TempoMark, TextBox, TextKind, TextStyle, TimeSignature, Transposition, MAX_ENDING,
-    MAX_NOTE_TEXT_CHARS, MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS, MAX_TEXT_BOX_CHARS, MAX_VERSES,
-    REPEAT_TIMES, TEXT_SIZE_RANGE,
+    EventKind, GroupKind, Jump, KeySignature, LayoutBreak, Line, LineKind, LyricJoin, MeasureAttrs,
+    Metadata, NoteText, NoteTextKind, Pitch, Score, Slur, StaffGroup, Step, Syllable, TempoMark,
+    TextBox, TextKind, TextStyle, TimeSignature, Transposition, MAX_ENDING, MAX_NOTE_TEXT_CHARS,
+    MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS, MAX_TEXT_BOX_CHARS, MAX_VERSES, REPEAT_TIMES,
+    TEXT_SIZE_RANGE,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
 
@@ -280,7 +280,7 @@ impl Document {
     /// RemoveSlur ops for slurs that point to events no longer in the score,
     /// highest index first so the indices stay valid.
     fn dangling_slur_ops(&self) -> Vec<Op> {
-        if self.score.slurs.is_empty() && self.score.octave_lines.is_empty() {
+        if self.score.slurs.is_empty() && self.score.lines.is_empty() {
             return Vec::new();
         }
         let ids = self.score.event_ids();
@@ -295,10 +295,10 @@ impl Document {
             .collect();
         ops.extend(
             self.score
-                .octave_lines
+                .lines
                 .iter()
                 .filter(|l| !ids.contains(&l.start) || !ids.contains(&l.end))
-                .map(|l| Op::SetOctaveLine {
+                .map(|l| Op::SetLine {
                     id: l.id,
                     line: None,
                 }),
@@ -1214,10 +1214,11 @@ impl Document {
         self.commit(TxKind::Edit, vec![op], caret, now_ms, true)
     }
 
-    /// Puts an octave line over the selected notes of the top selected
-    /// staff (or over the note before the caret). The same line again takes
-    /// it away; other octave lines it overlaps on that staff are replaced.
-    pub fn set_octave_line(&mut self, kind: Ottava, now_ms: u64) -> Result<(), EditError> {
+    /// Puts a line (see [`LineKind`]) over the selected notes of the top
+    /// selected staff, or over the note before the caret; a glissando from
+    /// that note goes to the next one. The same line again takes it away;
+    /// lines of its family it overlaps on that staff are replaced.
+    pub fn set_line(&mut self, kind: LineKind, now_ms: u64) -> Result<(), EditError> {
         let (staff, ids): (usize, Vec<u64>) = match self.selection() {
             Some(range) => (
                 range.staff_lo,
@@ -1243,6 +1244,14 @@ impl Document {
         let (Some(&start), Some(&end)) = (ids.first(), ids.last()) else {
             return Ok(());
         };
+        let end = if kind == LineKind::Glissando && start == end {
+            match self.next_in_voice(start) {
+                Some(next) => next,
+                None => return Ok(()),
+            }
+        } else {
+            end
+        };
         let span = |a: EventId, b: EventId| -> Option<(u64, u64)> {
             Some((self.score.event_start(a)?, self.score.event_end(b)?))
         };
@@ -1251,8 +1260,10 @@ impl Document {
         };
         let mut ops = Vec::new();
         let mut same = false;
-        for l in &self.score.octave_lines {
-            if self.score.locate(l.start).map(|p| p.0) != Some(staff) {
+        for l in &self.score.lines {
+            if l.kind.family() != kind.family()
+                || self.score.locate(l.start).map(|p| p.0) != Some(staff)
+            {
                 continue;
             }
             let Some((a, b)) = span(l.start, l.end) else {
@@ -1260,28 +1271,38 @@ impl Document {
             };
             if a < to && from < b {
                 same |= l.start == start && l.end == end && l.kind == kind;
-                ops.push(Op::SetOctaveLine {
+                ops.push(Op::SetLine {
                     id: l.id,
                     line: None,
                 });
             }
         }
         if !same {
-            ops.push(Op::SetOctaveLine {
+            ops.push(Op::SetLine {
                 id: self.score.alloc_id(),
-                line: Some(OctaveLine {
+                line: Some(Line {
                     id: 0,
                     start,
                     end,
                     kind,
                 }),
             });
-            if let Some(Op::SetOctaveLine { id, line: Some(l) }) = ops.last_mut() {
+            if let Some(Op::SetLine { id, line: Some(l) }) = ops.last_mut() {
                 l.id = *id;
             }
         }
         let caret = self.caret;
         self.commit(TxKind::Edit, ops, caret, now_ms, true)
+    }
+
+    /// The event after `id` in its voice, in the next measure if need be.
+    fn next_in_voice(&self, id: EventId) -> Option<EventId> {
+        let (s, m, v, i) = self.score.locate(id)?;
+        let staff = &self.score.staves[s];
+        staff.measures[m].voices[v]
+            .get(i + 1)
+            .or_else(|| staff.measures.get(m + 1)?.voices[v].first())
+            .map(|e| e.id)
     }
 
     /// Playback tempo in quarter notes per minute (20–400).
@@ -2215,6 +2236,26 @@ mod tests {
     }
 
     #[test]
+    fn a_glissando_goes_to_the_next_note_and_lines_replace_their_family() {
+        let mut doc = Document::new(Score::new("t", 1));
+        for s in [C, G] {
+            doc.insert_note(s, Q, 1_000).unwrap();
+        }
+        doc.set_caret(at(0, 0, 1), false);
+        doc.set_line(LineKind::Glissando, 2_000).unwrap();
+        let v = doc.score.voice(0, 0, 0).unwrap().clone();
+        let l = doc.score.lines[0];
+        assert_eq!((l.start, l.end), (v[0].id, v[1].id));
+        // A hairpin on the same note is of another family: both stay.
+        doc.set_line(LineKind::Crescendo, 3_000).unwrap();
+        assert_eq!(doc.score.lines.len(), 2);
+        // A diminuendo there replaces the crescendo.
+        doc.set_line(LineKind::Diminuendo, 4_000).unwrap();
+        let kinds: Vec<_> = doc.score.lines.iter().map(|l| l.kind).collect();
+        assert_eq!(kinds, [LineKind::Glissando, LineKind::Diminuendo]);
+    }
+
+    #[test]
     fn respelling_keeps_the_sound_and_is_one_step() {
         let mut doc = Document::new(Score::new("t", 1));
         doc.insert_note(F, Q, 1_000).unwrap();
@@ -2236,29 +2277,28 @@ mod tests {
             doc.insert_note(s, Q, 1_000).unwrap();
         }
         // On the note before the caret.
-        doc.set_octave_line(Ottava::Alta, 2_000).unwrap();
-        assert_eq!(doc.score.octave_lines.len(), 1);
+        doc.set_line(LineKind::OttavaAlta, 2_000).unwrap();
+        assert_eq!(doc.score.lines.len(), 1);
         // 8vb over the same note replaces it; the same again takes it away.
-        doc.set_octave_line(Ottava::Bassa, 3_000).unwrap();
-        assert_eq!(doc.score.octave_lines.len(), 1);
-        assert_eq!(doc.score.octave_lines[0].kind, Ottava::Bassa);
-        doc.set_octave_line(Ottava::Bassa, 4_000).unwrap();
-        assert!(doc.score.octave_lines.is_empty());
+        doc.set_line(LineKind::OttavaBassa, 3_000).unwrap();
+        assert_eq!(doc.score.lines.len(), 1);
+        assert_eq!(doc.score.lines[0].kind, LineKind::OttavaBassa);
+        doc.set_line(LineKind::OttavaBassa, 4_000).unwrap();
+        assert!(doc.score.lines.is_empty());
         // Over a selection: from its first note to its last.
         doc.select_all();
-        doc.set_octave_line(Ottava::QuindicesimaAlta, 5_000)
-            .unwrap();
+        doc.set_line(LineKind::QuindicesimaAlta, 5_000).unwrap();
         let voice = doc.score.voice(0, 0, 0).unwrap().clone();
-        let line = doc.score.octave_lines[0];
+        let line = doc.score.lines[0];
         assert_eq!((line.start, line.end), (voice[0].id, voice[3].id));
         // Pitches are kept as they sound.
         assert_eq!(voice[0].pitches()[0], Pitch::new(Step::C, 5));
         // Deleting its last note takes the line away, and undo brings both.
         doc.set_caret(at(0, 0, 4), false);
         doc.delete_backward(6_000).unwrap();
-        assert!(doc.score.octave_lines.is_empty());
+        assert!(doc.score.lines.is_empty());
         doc.undo().unwrap();
-        assert_eq!(doc.score.octave_lines.len(), 1);
+        assert_eq!(doc.score.lines.len(), 1);
     }
 
     #[test]

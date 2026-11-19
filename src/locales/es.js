@@ -541,12 +541,21 @@ export default {
   'value.grace': '{value}, {name}',
 
   // Líneas de octava: el desplegable de la barra Ligaduras y Notas → Líneas de octava.
+  'menu.notes.lines': 'Líneas',
+  'line.crescendo': 'Crescendo', 'line.crescendo.desc': 'Un regulador que se abre bajo las notas seleccionadas: más fuerte a lo largo de él. Sigue así después, salvo que una dinámica diga otra cosa.',
+  'line.diminuendo': 'Diminuendo', 'line.diminuendo.desc': 'Un regulador que se cierra bajo las notas seleccionadas: más suave a lo largo de él.',
+  'line.trill': 'Trino', 'line.trill.desc': 'tr sobre la nota y una línea ondulada sobre las notas seleccionadas: se toca alternando con la nota de arriba.',
+  'line.glissando': 'Glissando', 'line.glissando.desc': 'Una línea de la nota anterior al cursor a la siguiente (o a lo largo de la selección), deslizándose entre ellas.',
+  'line.rit': 'rit.', 'line.rit.desc': 'Cada vez más lento en las notas seleccionadas, y luego a ese tempo hasta la siguiente indicación de tempo.',
+  'line.accel': 'accel.', 'line.accel.desc': 'Cada vez más rápido en las notas seleccionadas, y luego a ese tempo hasta la siguiente indicación de tempo.',
+  'toolbar.tempochange': 'Cambio de tempo',
+  'toolbar.tempochange.desc': 'rit. o accel. sobre las notas seleccionadas; la reproducción lo sigue. El botón muestra el último elegido.',
   'toolbar.ottava': 'Líneas de octava',
   'toolbar.ottava.desc': 'Escribe las notas seleccionadas (o la nota anterior al cursor) una o dos octavas lejos de como suenan, bajo una línea discontinua. Siguen sonando igual. La misma línea otra vez la quita.',
-  'ottava.8va': '8va', 'ottava.8va.desc': 'Se escriben una octava más abajo de como suenan.',
-  'ottava.8vb': '8vb', 'ottava.8vb.desc': 'Se escriben una octava más arriba de como suenan.',
-  'ottava.15ma': '15ma', 'ottava.15ma.desc': 'Se escriben dos octavas más abajo de como suenan.',
-  'ottava.15mb': '15mb', 'ottava.15mb.desc': 'Se escriben dos octavas más arriba de como suenan.',
+  'line.8va': '8va', 'line.8va.desc': 'Se escriben una octava más abajo de como suenan.',
+  'line.8vb': '8vb', 'line.8vb.desc': 'Se escriben una octava más arriba de como suenan.',
+  'line.15ma': '15ma', 'line.15ma.desc': 'Se escriben dos octavas más abajo de como suenan.',
+  'line.15mb': '15mb', 'line.15mb.desc': 'Se escriben dos octavas más arriba de como suenan.',
 
   // Barras de corchea a mano: la barra Barras y Notas → Barras.
   'bar.beams': 'Barras de corchea',
