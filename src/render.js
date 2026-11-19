@@ -1356,6 +1356,14 @@ export function renderScore(view, width, opts = {}) {
         push(`<text class="errlabel" x="${ms.x + (ms.systemStart ? ms.prefix : 0) + 5}" y="${top - 1.1 * SP}">⚠ ${label}</text>`);
       }
 
+      // A grip to move the staff, at its start on the first system (the
+      // staves joined to it go along; app.js, staff dragging).
+      if (ms.systemStart && ms.system.index === 0 && lay.nStaves > 1) {
+        push(`<g class="staff-grip" data-staff="${st}"><title>${esc(t('order.grip'))}</title>`
+          + `<rect x="${ms.x - 2.2 * SP}" y="${top}" width="${1.2 * SP}" height="${4 * SP}" rx="2"/>`
+          + [1, 2, 3].map((k) => `<line x1="${ms.x - 1.9 * SP}" x2="${ms.x - 1.3 * SP}" y1="${top + k * SP}" y2="${top + k * SP}"/>`).join('')
+          + '</g>');
+      }
       // Prefix: clef, key, time.
       let px = ms.x + 0.6 * SP;
       if (ms.systemStart) {
@@ -1523,7 +1531,8 @@ export function renderScore(view, width, opts = {}) {
   // Caret (the lyric editor shows its own text cursor instead).
   const c = view.caret;
   const cms = opts.lyricEdit ? null : lay.byMeasure[c.measure];
-  if (cms) {
+  // (Not drawn when its staff is not shown: one staff alone.)
+  if (cms && score.staves[c.staff]) {
     onPage(cms.system.page);
     const events = score.staves[c.staff].measures[c.measure].voices[c.voice];
     const x = gapX(lay, cms, events, c.index);

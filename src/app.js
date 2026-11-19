@@ -2,7 +2,7 @@
 // which answers with the full document view to redraw.
 
 import {
-  clefAt,
+  clefAt, shownStaffName,
   SP, renderScore, hitTest, pointerTarget, ghostMarkup, clientToLayout, layoutToClient, playheadMarkup, esc, eraserTarget, eventsInBox,
   lyricTarget, MAX_VERSES, fullMetadata, BEATS, perMinute, toQuarterBpm,
   currentStyle, cssFont, resolveStyle, TEXT_KINDS, TEXT_DEFAULTS, UNITS_PER_PT, UNITS_PER_TENTH_MM,
@@ -11,7 +11,7 @@ import {
 import { installTooltips } from './tooltip.js';
 import {
   installBars, barZones, barNameKey, isBarShown, setBarShown, resetBars,
-  layoutList, activeLayout, activeLayoutName, chooseLayout, saveLayoutAs, deleteLayout,
+  layoutList, activeLayout, activeLayoutName, chooseLayout, saveLayoutAs, deleteLayout, renameLayout,
 } from './toolbars.js';
 import { installMenuBar } from './menu.js';
 import {
@@ -60,6 +60,14 @@ const state = {
   order: [], // tab order
   active: null,
   duration: { base: 'Quarter', dots: 0 },
+  // Typing (and placing with the mouse) overwrites what follows instead of
+  // inserting before it: the Insert key. Sent with each entry action.
+  overwrite: false,
+  // Text boxes chosen with a rectangle (ids): their own layer, never with
+  // notes. They move and are deleted together.
+  boxes: new Set(),
+  // The staff shown alone (its id), or null: the same score, one staff.
+  isolate: null,
   // 'select': click places the caret / drag selects.
   // 'note' / 'rest': the pointer carries the chosen figure; click places it.
   mode: 'select',
@@ -186,6 +194,70 @@ const CLEF_LABELS = Object.fromEntries(['treble', 'bass', 'alto', 'tenor'].map((
  * Picking a sound proposes its usual name and clef, unless the name was
  * already changed by hand.
  */
+/**
+ * The staves in blocks: a staff alone, or the staves joined by a bracket or
+ * brace (they move together, as in Document::staff_block).
+ */
+function staffBlocks(score) {
+  const blocks = [];
+  score.staves.forEach((st, i) => {
+    const last = blocks[blocks.length - 1];
+    if (last && st.group && score.staves[last[last.length - 1]].group?.id === st.group.id) last.push(i);
+    else blocks.push([i]);
+  });
+  return blocks;
+}
+
+/** Score → Staff → Order…: the staves' names in order, moved with arrows. */
+async function staffOrderDialog() {
+  const doc = active();
+  if (!doc || doc.score.staves.length < 2) return;
+  let blocks = staffBlocks(doc.score);
+  let chosen = blocks.findIndex((b) => b.includes(doc.caret.staff));
+  const label = (b) => esc(b.map((i) => shownStaffName(doc.score, i) || t('default.staff', { n: i + 1 })).join(' · '))
+    + (b.length > 1 ? ` <span class="muted">(${esc(t(doc.score.staves[b[0]].group?.kind === 'brace' ? 'menu.score.group.brace' : 'menu.score.group.bracket'))})</span>` : '');
+  const body = `<div class="order-form">
+    <ol class="order-list" id="order-list"></ol>
+    <div class="order-buttons">
+      <button type="button" class="text-btn" id="order-up" aria-label="${esc(t('order.up'))}">↑ ${esc(t('order.up'))}</button>
+      <button type="button" class="text-btn" id="order-down" aria-label="${esc(t('order.down'))}">↓ ${esc(t('order.down'))}</button>
+    </div>
+    <p class="muted hint">${esc(t('order.hint'))}</p>
+  </div>`;
+  const pending = choiceDialog(t('order.title'), body, [
+    { spacer: true },
+    { label: t('button.cancel'), value: 'cancel' },
+    { label: t('button.ok'), value: 'ok', primary: true },
+  ]);
+  const list = $('order-list');
+  const draw = () => {
+    list.innerHTML = blocks.map((b, k) => `<li data-k="${k}" tabindex="0" class="${k === chosen ? 'on' : ''}">${label(b)}</li>`).join('');
+    $('order-up').disabled = chosen <= 0;
+    $('order-down').disabled = chosen < 0 || chosen >= blocks.length - 1;
+  };
+  const move = (d) => {
+    const k = chosen + d;
+    if (chosen < 0 || k < 0 || k >= blocks.length) return;
+    [blocks[chosen], blocks[k]] = [blocks[k], blocks[chosen]];
+    chosen = k;
+    draw();
+    list.querySelector('li.on')?.focus();
+  };
+  list.addEventListener('click', (ev) => {
+    const li = ev.target.closest('li');
+    if (li) { chosen = Number(li.dataset.k); draw(); list.querySelector('li.on')?.focus(); }
+  });
+  list.addEventListener('keydown', (ev) => {
+    if (ev.key === 'ArrowUp' && ev.altKey) { ev.preventDefault(); move(-1); } else if (ev.key === 'ArrowDown' && ev.altKey) { ev.preventDefault(); move(1); } else if (ev.key === 'ArrowUp') { ev.preventDefault(); chosen = Math.max(0, chosen - 1); draw(); list.querySelector('li.on')?.focus(); } else if (ev.key === 'ArrowDown') { ev.preventDefault(); chosen = Math.min(blocks.length - 1, chosen + 1); draw(); list.querySelector('li.on')?.focus(); }
+  });
+  $('order-up').addEventListener('click', () => move(-1));
+  $('order-down').addEventListener('click', () => move(1));
+  draw();
+  list.querySelector('li.on')?.focus();
+  if (await pending !== 'ok') return;
+  act({ type: 'reorder_staves', order: blocks.flat() });
+}
+
 async function staffDialog(staff) {
   const doc = active();
   if (!doc) return;
@@ -378,6 +450,68 @@ async function checkRecovery() {
   });
 }
 
+// ----- one staff alone ---------------------------------------------------------
+//
+// The same document, drawn with only one staff: everything typed there goes
+// to that staff of the full score. Places the drawing gives back (the caret
+// from a click, the target of a note placed with the mouse) say staff 0 and
+// are turned back into the real staff (fromShown).
+
+/** The index of the staff shown alone, or -1. */
+function isolatedIndex(doc) {
+  if (state.isolate === null || !doc) return -1;
+  const k = doc.score.staves.findIndex((st) => st.id === state.isolate);
+  if (k < 0) state.isolate = null; // deleted
+  return k;
+}
+
+/** What is drawn: the document, or it with only the isolated staff. */
+function shownView(doc) {
+  const k = isolatedIndex(doc);
+  if (k < 0) return doc;
+  const sel = doc.selection;
+  const inSel = sel && sel.staff_lo <= k && k <= sel.staff_hi;
+  return {
+    ...doc,
+    score: { ...doc.score, staves: [{ ...doc.score.staves[k], group: null }], text_boxes: [] },
+    caret: { ...doc.caret, staff: doc.caret.staff === k ? 0 : -1 },
+    selection: inSel ? { ...sel, staff_lo: 0, staff_hi: 0 } : null,
+  };
+}
+
+/** A place in the shown view, back in the full score. */
+function fromShown(doc, place) {
+  const k = isolatedIndex(doc);
+  return k < 0 || !place ? place : { ...place, staff: k };
+}
+/** A place in the full score, in the shown view (staff 0). */
+function toShown(doc, place) {
+  const k = isolatedIndex(doc);
+  return k < 0 || !place ? place : { ...place, staff: place.staff === k ? 0 : -1 };
+}
+
+/** Shows the caret's staff alone, or the full score again. */
+function toggleIsolate() {
+  const doc = active();
+  if (!doc) return;
+  state.isolate = state.isolate === null ? doc.score.staves[doc.caret.staff]?.id ?? null : null;
+  render();
+  page.focus();
+}
+
+/** The bar over the score while one staff is shown alone. */
+function renderIsolateBar(doc) {
+  const bar = $('isolate-bar');
+  const k = isolatedIndex(doc);
+  document.querySelector('[data-cmd=isolate]')?.classList.toggle('on', k >= 0);
+  document.querySelector('[data-cmd=isolate]')?.setAttribute('aria-pressed', String(k >= 0));
+  bar.hidden = k < 0;
+  if (k < 0) return;
+  const name = shownStaffName(doc.score, k) || t('default.staff', { n: k + 1 });
+  bar.innerHTML = `<span>${esc(t('isolate.showing', { name }))}</span><button type="button" class="text-btn" data-isolate-back>${esc(t('isolate.back'))}</button><span class="muted">Esc</span>`;
+}
+$('isolate-bar').addEventListener('click', (ev) => { if (ev.target.closest('[data-isolate-back]')) toggleIsolate(); });
+
 // ----- rendering -------------------------------------------------------------
 
 function render() {
@@ -388,8 +522,12 @@ function render() {
   document.body.dataset.view = state.view;
   // At zoom z the wrap view lays out for width/z so it still fills the window.
   const width = (scoreEl.clientWidth || 1000) / state.zoom;
-  const { pages, layout, hits, slots } = renderScore(doc, width, {
-    multiRest: state.multiRest, view: state.view, paper: state.paper, zoom: state.zoom, lyricEdit: lyricEdit(doc),
+  const shown = shownView(doc);
+  renderIsolateBar(doc);
+  const lyricShown = lyricEdit(doc);
+  const { pages, layout, hits, slots } = renderScore(shown, width, {
+    multiRest: state.multiRest, view: state.view, paper: state.paper, zoom: state.zoom,
+    lyricEdit: lyricShown && toShown(doc, lyricShown),
     // Grey hints where an empty title or composer can be clicked (not printed).
     placeholders: { title: t('pagetext.title'), composer: t('pagetext.composer') },
     noteTextEdit: state.noteTextEdit,
@@ -577,7 +715,7 @@ function currentTarget() {
   const doc = active();
   if (!doc || !state.layout || !state.pointer || !entering()) return null;
   const p = pointerInLayout(state.pointer.x, state.pointer.y);
-  return p && pointerTarget(state.layout, doc, p.x, p.y, doc.caret.voice);
+  return p && fromShown(doc, pointerTarget(state.layout, shownView(doc), p.x, p.y, doc.caret.voice));
 }
 
 /** Draws the figure the pointer is carrying (or removes it). */
@@ -599,11 +737,11 @@ function placeAtPointer() {
   if (!t) return false;
   const at = { staff: t.staff, measure: t.measure, voice: t.voice, index: t.index };
   if (state.mode === 'rest') {
-    act({ type: 'place_rest', at, duration: state.duration });
+    act({ type: 'place_rest', at, duration: state.duration, overwrite: state.overwrite });
   } else if (t.onEvent !== null) {
     act({ type: 'add_pitch', at: { ...at, index: t.onEvent }, step: t.step, octave: t.octave });
   } else {
-    act({ type: 'place_note', at, step: t.step, octave: t.octave, duration: state.duration });
+    act({ type: 'place_note', at, step: t.step, octave: t.octave, duration: state.duration, overwrite: state.overwrite });
   }
   return true;
 }
@@ -725,6 +863,8 @@ function renderStatus() {
         text: () => bold(t('status.text'), 'status.text.help'),
         mark: () => bold(t('status.mark', { name: state.mark?.name || '' }), 'status.mark.help'),
       }[state.mode]());
+    // Overwrite is the exception: shown only while it is on.
+    if (state.overwrite) parts.push(`<b class="warn" data-tip="${esc(t('status.overwrite'))}" data-desc="${esc(t('status.overwrite.desc'))}">${esc(t('status.overwrite'))}</b>`);
     parts.push(esc(doc.dirty ? t('status.unsaved') : (doc.path ? t('status.saved') : t('status.new'))));
     parts.push(doc.protected
       ? `<span class="ok" data-tip="${esc(t('status.recovery.tip'))}" data-desc="${esc(t('status.recovery.desc'))}">${esc(t('status.recovery.on'))}</span>`
@@ -769,6 +909,12 @@ function scrollCaretIntoView() {
 }
 
 // ----- input -----------------------------------------------------------------
+
+/** Insert key: typing overwrites what follows, or inserts again. */
+function toggleOverwrite() {
+  state.overwrite = !state.overwrite;
+  render();
+}
 
 function setDuration(base, enterMode = false) {
   state.duration = { base, dots: 0, tuplet: state.duration.tuplet ?? null, grace: state.duration.grace ?? null };
@@ -1075,6 +1221,9 @@ document.addEventListener('keydown', (ev) => {
     case 'Escape':
       ev.preventDefault();
       if (playback.playing) return serial(stopPlayback);
+      clearBoxes();
+      // In select mode, Esc is the way back from one staff alone.
+      if (state.mode === 'select' && state.isolate !== null) return toggleIsolate();
       return setMode('select');
     case ' ':
       ev.preventDefault();
@@ -1091,7 +1240,10 @@ document.addEventListener('keydown', (ev) => {
     case 'Home': return run({ type: 'move', to: 'measure_start', extend: ev.shiftKey });
     case 'End': return run({ type: 'move', to: 'measure_end', extend: ev.shiftKey });
     case 'Backspace': return run({ type: 'delete_backward' });
-    case 'Delete': return run({ type: 'delete_forward' });
+    case 'Delete':
+      if (state.boxes.size) { const ids = [...state.boxes]; clearBoxes(); return run({ type: 'remove_text_boxes', ids }); }
+      return run({ type: 'delete_forward' });
+    case 'Insert': ev.preventDefault(); return toggleOverwrite();
     case '+': return run({ type: 'accidental', delta: 1 });
     case 'j': case 'J': return run({ type: 'respell' });
     case '-': return run({ type: 'accidental', delta: -1 });
@@ -1104,9 +1256,9 @@ document.addEventListener('keydown', (ev) => {
   }
   if (/^[a-g]$/i.test(key)) {
     const step = key.toUpperCase();
-    return run(ev.shiftKey ? { type: 'add_to_chord', step } : { type: 'insert_note', step, duration: state.duration });
+    return run(ev.shiftKey ? { type: 'add_to_chord', step } : { type: 'insert_note', step, duration: state.duration, overwrite: state.overwrite });
   }
-  if (lower === 'r' || key === '0') return run({ type: 'insert_rest', duration: state.duration });
+  if (lower === 'r' || key === '0') return run({ type: 'insert_rest', duration: state.duration, overwrite: state.overwrite });
   const base = DURATION_KEYS[key] || (state.extendedValues && EXTENDED_KEYS[key]);
   if (base) { ev.preventDefault(); setDuration(base); }
 });
@@ -1118,7 +1270,7 @@ function caretFromMouse(ev) {
   const doc = active();
   if (!doc || !state.layout) return null;
   const p = pointerInLayout(ev.clientX, ev.clientY);
-  return p && hitTest(state.layout, doc, p.x, p.y, doc.caret.voice);
+  return p && fromShown(doc, hitTest(state.layout, shownView(doc), p.x, p.y, doc.caret.voice));
 }
 $('score').addEventListener('mousedown', (ev) => {
   if (ev.button !== 0) return;
@@ -1129,6 +1281,13 @@ $('score').addEventListener('mousedown', (ev) => {
     ev.preventDefault();
     const id = Number(tbox.dataset.box);
     if (state.mode === 'erase') { act({ type: 'remove_text_box', id }); return; }
+    // Shift+click adds a box to the chosen ones (or takes it away).
+    if (ev.shiftKey) {
+      if (state.boxes.has(id)) state.boxes.delete(id); else state.boxes.add(id);
+      markBoxes();
+      return;
+    }
+    if (!state.boxes.has(id)) clearBoxes();
     boxDrag = { id, el: tbox, cx: ev.clientX, cy: ev.clientY, moved: false };
     return;
   }
@@ -1206,7 +1365,16 @@ $('score').addEventListener('mousedown', (ev) => {
     return;
   }
   const caret = caretFromMouse(ev);
-  if (!caret) return;
+  if (!caret) {
+    // Away from the music (between text boxes): only a rectangle.
+    const p = state.mode === 'select' && !ev.shiftKey && pointerInLayout(ev.clientX, ev.clientY);
+    if (p) {
+      ev.preventDefault();
+      clearBoxes();
+      rubber.start = { cx: ev.clientX, cy: ev.clientY, x: p.x, y: p.y, page: p.page, dragged: false };
+    }
+    return;
+  }
   ev.preventDefault();
   page.focus();
   // Pressing on a notehead grabs it: dragging up or down changes its pitch.
@@ -1215,10 +1383,17 @@ $('score').addEventListener('mousedown', (ev) => {
   const head = !ev.shiftKey && p && eraserTarget(state.hits || [], p.x, p.y);
   if (head && !head.rest) {
     noteDrag = { id: head.id, pitch: head.pitch, y: p.y, steps: 0 };
+  } else if (!ev.shiftKey && p && state.mode === 'select') {
+    // Dragging draws a rectangle (see rubber); a click places the caret,
+    // when the button comes up (so the score does not scroll meanwhile).
+    clearBoxes();
+    rubber.start = { cx: ev.clientX, cy: ev.clientY, x: p.x, y: p.y, page: p.page, dragged: false, caret };
+    return;
   } else {
     dragging = true;
     lastHit = JSON.stringify(caret);
   }
+  clearBoxes();
   act({ type: 'set_caret', caret, extend: ev.shiftKey });
 });
 $('score').addEventListener('mousemove', (ev) => {
@@ -1264,8 +1439,14 @@ window.addEventListener('mousemove', (ev) => {
   if (!boxDrag.moved && Math.hypot(dx, dy) < 4) return;
   boxDrag.moved = true;
   const k = layoutPerPixel(boxDrag.el);
-  boxDrag.el.setAttribute('transform', `translate(${dx * k} ${dy * k})`);
+  for (const el of draggedBoxes(boxDrag)) el.setAttribute('transform', `translate(${dx * k} ${dy * k})`);
 });
+
+/** The box elements a drag moves: the chosen ones when it holds one of them. */
+function draggedBoxes(d) {
+  if (!state.boxes.has(d.id)) return [d.el];
+  return [...$('score').querySelectorAll('[data-box]')].filter((el) => state.boxes.has(Number(el.dataset.box)));
+}
 window.addEventListener('mouseup', (ev) => {
   const d = boxDrag;
   if (!d || ev.button !== 0) return;
@@ -1273,10 +1454,12 @@ window.addEventListener('mouseup', (ev) => {
   const doc = active();
   const box = doc?.score.text_boxes?.find((b) => b.id === d.id);
   if (!box) return;
-  if (!d.moved) { openTextEdit(`box:${d.id}`); return; }
-  // Moved: one undo step, in tenths of a millimetre on its page.
+  if (!d.moved) { clearBoxes(); openTextEdit(`box:${d.id}`); return; }
+  // Moved: one undo step, in tenths of a millimetre on its page; the chosen
+  // boxes all together.
   const k = layoutPerPixel(d.el) / UNITS_PER_TENTH_MM;
-  act({ type: 'set_text_box', text_box: { ...box, x: Math.round(box.x + (ev.clientX - d.cx) * k), y: Math.round(box.y + (ev.clientY - d.cy) * k) } });
+  const ids = state.boxes.has(d.id) ? [...state.boxes] : [d.id];
+  act({ type: 'move_text_boxes', ids, dx: Math.round((ev.clientX - d.cx) * k), dy: Math.round((ev.clientY - d.cy) * k) });
 });
 
 // ----- dragging notes ------------------------------------------------------------
@@ -1315,6 +1498,163 @@ $('score').addEventListener('mouseleave', () => {
   markCursor.style.display = 'none';
   highlightMarkable();
 });
+
+// ----- moving staves ------------------------------------------------------------
+//
+// The grip at a staff's start (render.js) drags it up or down, with the
+// staves joined to it; a line shows where it will land, between two other
+// blocks. Dropping it inside a group is refused with the core's message.
+
+let staffDrag = null; // { staff, cy, line } while a grip is held
+$('score').addEventListener('mousedown', (ev) => {
+  const grip = ev.button === 0 && ev.target.closest?.('.staff-grip');
+  if (!grip) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  const line = Object.assign(document.createElement('div'), { className: 'staff-drop' });
+  document.body.append(line);
+  staffDrag = { staff: Number(grip.dataset.staff), cy: ev.clientY, line };
+}, true);
+
+/** The block gap nearest to y on screen: { at (block index), y }. */
+function staffGapAt(clientY) {
+  const doc = active();
+  const grips = [...$('score').querySelectorAll('.staff-grip')].map((g) => ({ staff: Number(g.dataset.staff), r: g.getBoundingClientRect() }));
+  if (!doc || !grips.length) return null;
+  const blocks = staffBlocks(doc.score);
+  const rectOf = (i) => grips.find((g) => g.staff === i)?.r;
+  const gaps = [];
+  blocks.forEach((b, k) => {
+    const r = rectOf(b[0]);
+    if (r) gaps.push({ at: k, y: r.top - 4 });
+  });
+  const last = rectOf(blocks[blocks.length - 1].at(-1));
+  if (last) gaps.push({ at: blocks.length, y: last.bottom + 4 });
+  return gaps.reduce((best, g) => (!best || Math.abs(g.y - clientY) < Math.abs(best.y - clientY) ? g : best), null);
+}
+
+window.addEventListener('mousemove', (ev) => {
+  if (!staffDrag) return;
+  const gap = staffGapAt(ev.clientY);
+  const score = $('score').getBoundingClientRect();
+  if (gap) Object.assign(staffDrag.line.style, { display: 'block', top: `${gap.y}px`, left: `${score.left}px`, width: `${score.width}px` });
+});
+window.addEventListener('mouseup', (ev) => {
+  const d = staffDrag;
+  if (!d) return;
+  staffDrag = null;
+  d.line.remove();
+  const doc = active();
+  const gap = staffGapAt(ev.clientY);
+  if (!doc || !gap) return;
+  const blocks = staffBlocks(doc.score);
+  const from = blocks.findIndex((b) => b.includes(d.staff));
+  if (gap.at === from || gap.at === from + 1) return; // where it was
+  const moving = blocks[from];
+  const rest = blocks.filter((_, k) => k !== from);
+  rest.splice(gap.at > from ? gap.at - 1 : gap.at, 0, moving);
+  act({ type: 'reorder_staves', order: rest.flat() });
+});
+
+// ----- box selection ------------------------------------------------------------
+//
+// In select mode a drag from anywhere but a notehead or a text box draws a
+// rectangle. It works in layers: when it takes in notes, the selection is
+// the range of staves and time they cover (as the selection always is);
+// when it takes in no notes but text boxes, those boxes are chosen. Never
+// both.
+
+const rubber = {
+  start: null, // { cx, cy, x, y, page, dragged } while the button is down
+  box: Object.assign(document.createElement('div'), { className: 'select-box' }),
+};
+document.body.append(rubber.box);
+
+window.addEventListener('mousemove', (ev) => {
+  const s = rubber.start;
+  if (!s) return;
+  if (!s.dragged && Math.hypot(ev.clientX - s.cx, ev.clientY - s.cy) < 5) return;
+  s.dragged = true;
+  Object.assign(rubber.box.style, {
+    display: 'block',
+    left: `${Math.min(s.cx, ev.clientX)}px`,
+    top: `${Math.min(s.cy, ev.clientY)}px`,
+    width: `${Math.abs(ev.clientX - s.cx)}px`,
+    height: `${Math.abs(ev.clientY - s.cy)}px`,
+  });
+});
+window.addEventListener('mouseup', (ev) => {
+  const s = rubber.start;
+  if (!s || ev.button !== 0) return;
+  rubber.start = null;
+  rubber.box.style.display = 'none';
+  if (!s.dragged) {
+    if (s.caret) act({ type: 'set_caret', caret: s.caret, extend: false });
+    return;
+  }
+  const p = pointerInLayout(ev.clientX, ev.clientY);
+  const doc = active();
+  if (!p || !doc) return;
+  const ids = eventsInBox((state.hits || []).filter((h) => (h.page || 0) === (s.page || 0)), s.x, s.y, p.x, p.y);
+  if (ids.length) { selectRange(doc, ids); return; }
+  // No notes: the text boxes inside the rectangle.
+  const r = { left: Math.min(s.cx, ev.clientX), right: Math.max(s.cx, ev.clientX), top: Math.min(s.cy, ev.clientY), bottom: Math.max(s.cy, ev.clientY) };
+  for (const el of $('score').querySelectorAll('[data-box]:not(.placeholder)')) {
+    const b = el.getBoundingClientRect();
+    if (b.left >= r.left && b.right <= r.right && b.top >= r.top && b.bottom <= r.bottom) state.boxes.add(Number(el.dataset.box));
+  }
+  markBoxes();
+});
+
+/**
+ * Selects the range of staves and time the events `ids` cover: from the
+ * earliest one's start on the top staff to the latest one's end on the
+ * bottom staff, in the caret's voice.
+ */
+function selectRange(doc, ids) {
+  const places = ids.map((id) => locateEvent(doc, id)).filter(Boolean);
+  if (!places.length) return;
+  const startOf = (pl) => {
+    const v = doc.score.staves[pl.staff].measures[pl.measure].voices[pl.voice];
+    return v.slice(0, pl.index).reduce((t, e) => t + eventTicks(e), 0);
+  };
+  const spans = places.map((pl) => {
+    const e = doc.score.staves[pl.staff].measures[pl.measure].voices[pl.voice][pl.index];
+    const from = startOf(pl);
+    return { ...pl, from, to: from + eventTicks(e) };
+  });
+  const order = (a, b) => a.measure - b.measure || a.from - b.from;
+  const first = [...spans].sort(order)[0];
+  const last = [...spans].sort((a, b) => b.measure - a.measure || b.to - a.to)[0];
+  const top = Math.min(...spans.map((sp) => sp.staff));
+  const bottom = Math.max(...spans.map((sp) => sp.staff));
+  const voice = doc.caret.voice;
+  // The place in a staff's voice at a time of a measure: before the first
+  // event starting there or later.
+  const indexAt = (staff, measure, tick, after) => {
+    const v = doc.score.staves[staff].measures[measure].voices[voice];
+    let t = 0;
+    let i = 0;
+    for (; i < v.length; i++) {
+      const end = t + eventTicks(v[i]);
+      if (after ? end > tick : t >= tick) break;
+      t = end;
+    }
+    return after ? Math.min(i + 1, v.length) : i;
+  };
+  act({ type: 'set_caret', caret: { staff: top, measure: first.measure, voice, index: indexAt(top, first.measure, first.from, false) }, extend: false });
+  act({ type: 'set_caret', caret: { staff: bottom, measure: last.measure, voice, index: indexAt(bottom, last.measure, last.to - 1, true) }, extend: true });
+}
+
+/** Shows which text boxes are chosen. */
+function markBoxes() {
+  for (const el of $('score').querySelectorAll('[data-box]')) el.classList.toggle('chosen', state.boxes.has(Number(el.dataset.box)));
+}
+function clearBoxes() {
+  if (!state.boxes.size) return;
+  state.boxes.clear();
+  markBoxes();
+}
 
 // ----- eraser ------------------------------------------------------------------
 
@@ -1678,7 +2018,8 @@ async function startPlayback(fromStart = false) {
   const doc = active();
   if (!doc || playback.playing) return;
   if (!(await ensureSound())) return;
-  await invoke('play', { id: doc.id, fromStart });
+  const solo = isolatedIndex(doc);
+  await invoke('play', { id: doc.id, fromStart, solo: solo < 0 ? null : solo });
   playback.playing = true;
   syncTransport();
   pollPlayback();
@@ -2658,6 +2999,7 @@ const SHORTCUTS = [
     ['+ / −', 'entry.accidental'],
     ['J', 'entry.respell'],
     ['Alt + ↑ / ↓', 'entry.move'],
+    ['Insert', 'entry.overwrite'],
     ['T', 'entry.tie'],
     ['S', 'entry.slur'],
     ['Ctrl + E', 'entry.expression'],
@@ -2992,6 +3334,9 @@ commands['tremolo-between'] = () => act({ type: 'set_tremolo', strokes: 3, betwe
 const DYNAMICS = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'sfz', 'fp'];
 for (const [name, alter] of ACCIDENTALS) commands[`alter:${name}`] = () => act({ type: 'set_accidental', alter });
 commands.respell = () => act({ type: 'respell' });
+commands.overwrite = () => toggleOverwrite();
+commands['staff-order'] = () => staffOrderDialog();
+commands.isolate = () => toggleIsolate();
 for (const a of ARTICULATIONS) commands[`artic:${a}`] = () => act({ type: 'toggle_articulation', articulation: a });
 for (const d of DYNAMICS) commands[`dyn:${d}`] = () => act({ type: 'set_dynamic', dynamic: d });
 commands['page-texts'] = () => pageTextsDialog();
@@ -3037,6 +3382,7 @@ for (const { ids } of barZones()) for (const id of ids) commands[`toolbar:${id}`
 commands['toolbars-reset'] = () => resetBars();
 commands['layout-save'] = () => serial(saveLayoutDialog);
 commands['layout-delete'] = () => serial(deleteLayoutDialog);
+commands['layout-rename'] = () => serial(renameLayoutDialog);
 
 /** Asks for a name and keeps the bars as they are now as one of the person's layouts. */
 async function saveLayoutDialog() {
@@ -3057,6 +3403,31 @@ async function saveLayoutDialog() {
     if (ev.key === 'Enter') { ev.preventDefault(); $('dialog').querySelector('[data-answer="save"]').click(); }
   });
   if (await pending === 'save' && input.value.trim()) saveLayoutAs(input.value);
+  page.focus();
+}
+
+/** Another name for the person's layout on screen. */
+async function renameLayoutDialog() {
+  const mine = layoutList().find((l) => l.id === activeLayout() && !l.builtIn);
+  if (!mine) return;
+  const body = `<div class="staff-form"><label>${esc(t('layout.save.name'))}
+    <input id="layout-name" type="text" maxlength="40" value="${esc(mine.name)}" autocomplete="off"></label>
+    <p class="muted hint" id="layout-taken" hidden>${esc(t('layout.rename.taken'))}</p></div>`;
+  const pending = choiceDialog(t('layout.rename.title', { name: mine.name }), body, [
+    { spacer: true },
+    { label: t('button.cancel'), value: 'cancel' },
+    { label: t('button.ok'), value: 'ok', primary: true },
+  ]);
+  const input = $('layout-name');
+  input.focus();
+  input.select();
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); $('dialog').querySelector('[data-answer="ok"]').click(); }
+  });
+  if (await pending === 'ok' && !renameLayout(mine.id, input.value) && input.value.trim() && input.value.trim() !== mine.name) {
+    state.error = t('layout.rename.taken'); // shown in the status bar
+  }
+  render();
   page.focus();
 }
 
@@ -3109,6 +3480,8 @@ const MENUS = [
     { label: t('menu.edit.delete'), cmd: 'delete', key: 'Del', enabled: hasDoc },
     { sep: true },
     { label: t('menu.edit.selectall'), cmd: 'selectall', key: 'Ctrl+A', enabled: hasDoc },
+    { sep: true },
+    { label: t('menu.edit.overwrite'), cmd: 'overwrite', key: 'Insert', checked: () => state.overwrite, desc: t('status.overwrite.desc') },
   ] },
   { label: t('menu.view'), items: [
     { label: t('menu.view.layout'), value: () => t(`menu.view.layout.${state.view}`), items: [
@@ -3133,6 +3506,7 @@ const MENUS = [
       ...layoutList().map((l) => ({ label: l.name, cmd: `layout:${l.id}`, checked: () => activeLayout() === l.id })),
       { sep: true },
       { label: t('menu.view.toolbars.save'), cmd: 'layout-save', desc: t('menu.view.toolbars.save.desc') },
+      { label: t('menu.view.toolbars.rename'), cmd: 'layout-rename', enabled: () => !layoutList().find((l) => l.id === activeLayout())?.builtIn, desc: t('menu.view.toolbars.rename.desc') },
       { label: t('menu.view.toolbars.delete'), cmd: 'layout-delete', enabled: () => !layoutList().find((l) => l.id === activeLayout())?.builtIn, desc: t('menu.view.toolbars.delete.desc') },
       { sep: true },
       // One group per zone: the rows on top, then the columns left and right.
@@ -3144,6 +3518,7 @@ const MENUS = [
     ] },
     { sep: true },
     { label: t('menu.view.multirest'), cmd: 'multirest', checked: () => state.multiRest, desc: t('toolbar.multirest.desc') },
+    { label: t('isolate'), cmd: 'isolate', enabled: hasDoc, checked: () => state.isolate !== null, desc: t('isolate.desc') },
     { label: t('menu.view.extended'), cmd: 'extended-values', checked: () => state.extendedValues, desc: t('menu.view.extended.desc') },
     { sep: true },
     { label: t('menu.view.theme'), value: () => t(`menu.view.theme.${state.theme}`), items: [
@@ -3199,6 +3574,7 @@ const MENUS = [
     { label: t('menu.score.staff'), enabled: hasDoc, items: [
       { label: t('menu.score.staff.add'), cmd: 'add-staff', desc: t('toolbar.addstaff.desc') },
       { label: t('menu.score.staff.props'), cmd: 'staff-properties', desc: t('menu.score.staff.props.desc') },
+      { label: t('menu.score.staff.order'), cmd: 'staff-order', enabled: () => (active()?.score.staves.length || 0) > 1, desc: t('menu.score.staff.order.desc') },
       // Brackets and braces belong to the staves they join.
       { label: t('menu.score.group'), items: [
         { label: t('menu.score.group.bracket'), cmd: 'group-bracket', desc: t('menu.score.group.bracket.desc') },

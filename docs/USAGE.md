@@ -212,6 +212,7 @@ A measure that holds more beats than its time signature allows is outlined in re
 | `8` / `9` | Breve / 128th, when **View → Breve and 128th Notes** is on. |
 | `.` | Toggle a dot. |
 | `J` | Respell: the same note written another way (F♯ → G♭ → E𝄪). |
+| `Insert` | Overwrite on / off: typing replaces what follows, so the measure keeps its length. |
 | `Ctrl+G` | Grace notes (acciaccaturas) on / off; `Ctrl+Shift+G`: appoggiaturas. |
 | `Ctrl+3` | Triplet on / off (`Ctrl+5`, `Ctrl+6`, `Ctrl+2`, `Ctrl+4`: quintuplet, sextuplet, duplet, quadruplet). |
 | `+` / `-` | Raise or lower the accidental of the previous note (or the selection). |
@@ -258,7 +259,9 @@ A text field opens under the note. Type the syllable, then:
 | `Ctrl` + `Home` / `End` | Start or end of the score. |
 | `Shift` + any of the above | Extend the selection. |
 | Click | Place the caret. |
-| Shift+click or drag | Select. Dragging across staves selects the same beats on all of them. |
+| Shift+click or drag | Select. Dragging draws a rectangle: every note in it is selected, the same beats on every staff it reaches. A rectangle around text boxes (with no notes) chooses those boxes, to move or delete them together; Shift+click adds or removes a box. |
+| Drag a staff's grip | The grip at the start of each staff moves it up or down, with the staves joined to it (**Score → Staff → Order…** does the same with arrows). |
+| View → This Staff Alone | Only the caret's staff, to work on it by itself; playback plays only it. Esc brings back the full score. |
 | `Ctrl` + `A` | Select everything. |
 
 ## Editing

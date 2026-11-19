@@ -24,10 +24,13 @@ export const DEFAULT_LAYOUT = {
     // Tools first, right above the entry bars: next to the score and the figures.
     ['tools', 'measure', 'staves', 'indications'],
   ],
-  // Left of the score: what you write with.
-  left: [['figures', 'accidentals', 'voice']],
-  // Right of the score: what goes on the notes.
-  right: [['lines', 'beams', 'articulations', 'ornaments', 'dynamics', 'expressions']],
+  // Left of the score: what you write with, in the order it is used: the
+  // figure (with its dot, grace notes, tuplets), its accidental, how it is
+  // beamed, and the voice.
+  left: [['figures', 'accidentals', 'beams', 'voice']],
+  // Right of the score: what goes on the notes, from what joins them to
+  // what is written over or under them.
+  right: [['lines', 'articulations', 'ornaments', 'dynamics', 'expressions']],
 };
 
 /**
@@ -111,6 +114,17 @@ export function saveLayoutAs(name) {
   active = mine.id;
   save(); // fills in its arrangement
   return mine.id;
+}
+
+/** Gives one of the person's layouts another name (not one another of theirs has). */
+export function renameLayout(id, name) {
+  const mine = own.find((l) => l.id === id);
+  const clean = String(name).trim().slice(0, 40);
+  if (!mine || !clean) return false;
+  if (own.some((l) => l !== mine && l.name.toLowerCase() === clean.toLowerCase())) return false;
+  mine.name = clean;
+  store(LAYOUTS, own);
+  return true;
 }
 
 /** Removes one of the person's layouts; if it was on screen, its built-in layout takes over. */

@@ -5,6 +5,11 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 ## [Unreleased]
 
 ### Added
+- **Overwrite mode**: the **Insert** key (or **Edit → Overwrite Mode**) makes typing put the note in place of what follows, so the measure keeps its length; a note cut in the middle leaves rests, and in an empty measure the rest of it fills with rests. Insert is still the default; the status bar shows **Overwrite** while it is on.
+- **Box selection**: in select mode, drag a rectangle over the music to select every note in it, across staves and measures. It works in layers: a rectangle over text boxes (with no notes in it) chooses those boxes instead, and Shift+click adds or removes one; chosen boxes move together and **Del** deletes them, each in one undo step.
+- **Reordering staves**: drag a staff by the grip at its start (only up or down), or use **Score → Staff → Order…** with ↑ ↓. Staves joined by a bracket or brace (a piano's two hands) move together; moving one of them alone asks to ungroup it first. One undo step, and MusicXML keeps the order.
+- **One staff alone**: **View → This Staff Alone** (or the button in the **Staves** bar) shows only the caret's staff; everything done there is in the full score, and playback plays only that staff. The bar over the score, or **Esc**, brings back the full score.
+- **Rename Layout…** in **View → Toolbars**.
 - **Ornaments and other marks**, in the new **Ornaments** bar (a drop-down that shows the last one chosen) and **Notes → Ornaments**, on the selected notes or the note before the caret, or placed with the mouse like the articulations. MusicXML import and export keep all of them.
   - **Mordent**, **lower mordent** and **turn**, played as their little figures.
   - **Tremolo** with 1, 2 or 3 strokes on a note, played as repeated eighths, sixteenths or thirty-seconds; and a **tremolo between two notes**, in standard notation: two quarters become two halves that alternate over a half note, and the measure keeps its time.
@@ -22,6 +27,8 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 - **Tuplets**: triplets, quintuplets, sextuplets, duplets and quadruplets. The **Tuplet** button of the **Figures** bar (or **Notes → Tuplet**, or **Ctrl+3**, **Ctrl+5**, **Ctrl+6**, **Ctrl+2**, **Ctrl+4**) writes the next notes and rests in the group until it is turned off; the value in use when it is turned on is what the group counts in, so a quarter and an eighth can share a triplet of eighths. On a selection it changes the selected notes. A beamed group shows its number; any other gets a bracket. Playback, the error check and MusicXML import and export follow them (septuplets and other groups that do not divide evenly still import with their written values).
 
 ### Changed
+- **A new staff goes below the caret's staff** (and the staves joined to it), not always at the bottom.
+- **Default toolbar layout**: the **Beams** bar is in the left column, after the accidentals, with what you write with.
 - Scores with tuplets, grace notes, beams set by hand, clef changes, lines between notes, ornaments or tremolos are saved as file format 8, which Partita 0.3.14 can't open; other scores are saved as before.
 
 ## [0.3.14] - 2026-11-18

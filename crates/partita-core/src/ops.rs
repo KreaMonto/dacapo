@@ -118,6 +118,11 @@ pub enum Op {
         measure: usize,
         clef: Option<Clef>,
     },
+    /// Puts the staves in a new order: the new staff `i` is the old staff
+    /// `order[i]`. The music goes with its staff.
+    ReorderStaves {
+        order: Vec<usize>,
+    },
     /// Adds, replaces (same `id`) or removes (`None`) an octave line.
     SetLine {
         id: u64,
@@ -445,6 +450,31 @@ impl Op {
                 }
                 let old = std::mem::replace(&mut score.tempo, *bpm);
                 Ok(Op::SetTempo { bpm: old })
+            }
+            Op::ReorderStaves { order } => {
+                let n = score.staves.len();
+                let mut seen = vec![false; n];
+                if order.len() != n
+                    || order
+                        .iter()
+                        .any(|&i| i >= n || std::mem::replace(&mut seen[i], true))
+                {
+                    return Err(OpError::Shape("staff order must name every staff once"));
+                }
+                let mut old: Vec<Option<Staff>> = std::mem::take(&mut score.staves)
+                    .into_iter()
+                    .map(Some)
+                    .collect();
+                score.staves = order
+                    .iter()
+                    .map(|&i| old[i].take().expect("checked above"))
+                    .collect();
+                // Undo: where each old staff went.
+                let mut inverse = vec![0; n];
+                for (new, &old) in order.iter().enumerate() {
+                    inverse[old] = new;
+                }
+                Ok(Op::ReorderStaves { order: inverse })
             }
             Op::SetLine { id, line } => {
                 let at = score.lines.iter().position(|l| l.id == *id);

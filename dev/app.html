@@ -282,6 +282,21 @@
         snapshot();
         view.score.text_boxes = (view.score.text_boxes || []).filter((b) => b.id !== id);
       },
+      // As Document::reorder_staves (the fake does not check groups).
+      reorder_staves({ order }) {
+        snapshot();
+        const old = view.score.staves;
+        view.score.staves = order.map((i) => old[i]);
+        view.caret = { ...view.caret, staff: Math.max(0, order.indexOf(view.caret.staff)) };
+      },
+      move_text_boxes({ ids, dx, dy }) {
+        snapshot();
+        view.score.text_boxes = (view.score.text_boxes || []).map((b) => (ids.includes(b.id) ? { ...b, x: b.x + dx, y: b.y + dy } : b));
+      },
+      remove_text_boxes({ ids }) {
+        snapshot();
+        view.score.text_boxes = (view.score.text_boxes || []).filter((b) => !ids.includes(b.id));
+      },
       // As Document::set_note_text: one text per kind ('' removes it).
       set_note_text({ id, kind, text }) {
         for (const st of view.score.staves) for (const cell of st.measures) for (const v of cell.voices) for (const e of v) {
