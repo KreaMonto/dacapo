@@ -18,9 +18,9 @@ use crate::model::{
     is_measure_rest, Articulation, Barline, Beam, Clef, Duration, Dynamic, Event, EventId,
     EventKind, GroupKind, Jump, KeySignature, LayoutBreak, Line, LineKind, LyricJoin, MeasureAttrs,
     Metadata, NoteText, NoteTextKind, Pitch, Score, Slur, StaffGroup, Step, Syllable, TempoMark,
-    TextBox, TextKind, TextStyle, TimeSignature, Transposition, MAX_ENDING, MAX_NOTE_TEXT_CHARS,
-    MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS, MAX_TEXT_BOX_CHARS, MAX_VERSES, REPEAT_TIMES,
-    TEXT_SIZE_RANGE,
+    TextBox, TextKind, TextStyle, TimeSignature, Transposition, Tremolo, MAX_ENDING,
+    MAX_NOTE_TEXT_CHARS, MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS, MAX_TEXT_BOX_CHARS, MAX_VERSES,
+    REPEAT_TIMES, TEXT_SIZE_RANGE,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
 
@@ -947,6 +947,67 @@ impl Document {
         self.repitch(now_ms, |p| Pitch {
             alter: (p.alter + delta).clamp(-2, 2),
             ..p
+        })
+    }
+
+    /// Tremolo strokes (1 to 3) on the target notes; the same again takes
+    /// them away. `between`: a tremolo between two notes, on each pair of
+    /// selected notes (or the note before the caret and the one before it):
+    /// each is written twice as long, so the time stays the same.
+    pub fn set_tremolo(
+        &mut self,
+        strokes: u8,
+        between: bool,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let strokes = strokes.clamp(1, 3);
+        let mut targets: Vec<_> = self
+            .target_events()
+            .into_iter()
+            .filter(|(_, _, e)| !e.is_rest() && e.duration.grace.is_none())
+            .collect();
+        let want = Tremolo { strokes, between };
+        if between && targets.len() == 1 {
+            // The note before the caret and the one before it.
+            let (at, index, _) = targets[0].clone();
+            let Some(prev) = index
+                .checked_sub(1)
+                .and_then(|i| self.score.voice(at.staff, at.measure, at.voice)?.get(i))
+                .filter(|e| !e.is_rest() && e.duration.grace.is_none())
+                .cloned()
+            else {
+                return Ok(());
+            };
+            targets.insert(0, (at, index - 1, prev));
+        }
+        let off = targets
+            .iter()
+            .all(|(_, _, e)| e.duration.tremolo == Some(want));
+        if between {
+            targets.truncate(targets.len() / 2 * 2);
+        }
+        self.rewrite_targets(targets, now_ms, |e| {
+            let mut d = e.duration;
+            let was_between = d.tremolo.is_some_and(|t| t.between);
+            // Into or out of a tremolo between two notes: written twice (or
+            // half) as long, so the time stays the same.
+            let base = match (was_between, between && !off) {
+                (false, true) => d.base.doubled(),
+                (true, false) => d.base.halved(),
+                _ => Some(d.base),
+            };
+            let Some(base) = base else {
+                return e.clone();
+            };
+            d.base = base;
+            d.tremolo = (!off).then_some(want);
+            if d.tremolo.is_some_and(|t| t.between) {
+                d.tuplet = None;
+            }
+            Event {
+                duration: d,
+                ..e.clone()
+            }
         })
     }
 
@@ -2224,6 +2285,7 @@ mod tests {
         dots: 0,
         tuplet: None,
         grace: None,
+        tremolo: None,
     };
 
     fn steps(doc: &Document, staff: usize, measure: usize) -> Vec<Option<Step>> {
@@ -2253,6 +2315,43 @@ mod tests {
         doc.set_line(LineKind::Diminuendo, 4_000).unwrap();
         let kinds: Vec<_> = doc.score.lines.iter().map(|l| l.kind).collect();
         assert_eq!(kinds, [LineKind::Glissando, LineKind::Diminuendo]);
+    }
+
+    #[test]
+    fn a_tremolo_between_two_notes_keeps_their_time() {
+        let mut doc = Document::new(Score::new("t", 1));
+        doc.insert_note(C, Q, 1_000).unwrap();
+        doc.insert_note(E, Q, 1_000).unwrap();
+        let ticks = |doc: &Document| -> Vec<(DurationBase, u32)> {
+            doc.score.voice(0, 0, 0).unwrap()[..2]
+                .iter()
+                .map(|e| (e.duration.base, e.ticks()))
+                .collect()
+        };
+        // On the note before the caret and the one before it.
+        doc.set_tremolo(3, true, 60_000).unwrap();
+        assert_eq!(
+            ticks(&doc),
+            [(DurationBase::Half, 960), (DurationBase::Half, 960)]
+        );
+        assert!(doc.score.validate().is_empty());
+        // Again: back to two quarters.
+        doc.set_tremolo(3, true, 120_000).unwrap();
+        assert_eq!(
+            ticks(&doc),
+            [(DurationBase::Quarter, 960), (DurationBase::Quarter, 960)]
+        );
+        // On one note: only marked.
+        doc.set_tremolo(2, false, 180_000).unwrap();
+        let e = &doc.score.voice(0, 0, 0).unwrap()[1];
+        assert_eq!(
+            e.duration.tremolo,
+            Some(Tremolo {
+                strokes: 2,
+                between: false
+            })
+        );
+        assert_eq!(e.ticks(), 960);
     }
 
     #[test]

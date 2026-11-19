@@ -35,6 +35,12 @@
 //!   in 32nds.
 //! - **rit.** and **accel.** take the tempo to 75 % or 125 % over their
 //!   length; it stays there until the next tempo marking (the *a tempo*).
+//! - **Ornaments** are played as little figures: a mordent is the note,
+//!   its neighbour and the note again, fast; a turn its four notes; a
+//!   tremolo repeats the note (or alternates two notes) in eighths,
+//!   sixteenths or thirty-seconds, by its strokes; an arpeggio rolls the
+//!   chord upwards. A breath mark shortens the note a little, a caesura to
+//!   half.
 //! - Fermatas do not change timing yet.
 
 use std::collections::{HashMap, HashSet};
@@ -42,9 +48,108 @@ use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 
 use crate::model::{
-    Articulation, Dynamic, Event, EventId, Grace, Jump, LineFamily, LineKind, Score, MAX_VOICES,
-    TICKS_PER_QUARTER,
+    Articulation, Dynamic, Event, EventId, Grace, Jump, KeySignature, LineFamily, LineKind, Pitch,
+    Score, MAX_VOICES, TICKS_PER_QUARTER,
 };
+
+/// The fastest notes of a figure (trill, mordent): a 32nd.
+const FIGURE_STEP: u64 = TICKS_PER_QUARTER as u64 / 8;
+/// How far apart the notes of a rolled chord start.
+const ARPEGGIO_STEP: u64 = TICKS_PER_QUARTER as u64 / 24;
+
+/// The neighbour of a note a step above (`dir` 1) or below (-1), in the key.
+fn neighbour(p: Pitch, dir: i32, key: KeySignature) -> Pitch {
+    let mut q = p.shifted(dir);
+    q.alter = crate::document::key_alter(key, q.step);
+    q
+}
+
+/// The notes a note is played as when it is not played plainly: under a
+/// trill, with a mordent or a turn, with a tremolo (with `partner`, the
+/// second note of a tremolo between two notes). Each is (offset from the
+/// note's start, length, pitches), within `sounding` ticks.
+fn figure(
+    e: &Event,
+    partner: Option<&Event>,
+    trilled: bool,
+    sounding: u64,
+    key: KeySignature,
+) -> Option<Vec<(u64, u64, Vec<Pitch>)>> {
+    let main = e.pitches().to_vec();
+    let around = |dir: i32| {
+        main.iter()
+            .map(|p| neighbour(*p, dir, key))
+            .collect::<Vec<_>>()
+    };
+    let sounding = sounding.max(1);
+    // Alternating `a` and `b` every `step` until the end.
+    let alternate = |a: Vec<Pitch>, b: Vec<Pitch>, step: u64| {
+        let step = step.max(1);
+        (0..sounding.div_ceil(step))
+            .map(|k| {
+                let t = k * step;
+                (
+                    t,
+                    step.min(sounding - t),
+                    if k % 2 == 0 { a.clone() } else { b.clone() },
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    // Notes one after another, the last one lasting until the end.
+    let run = |parts: Vec<Vec<Pitch>>, step: u64| {
+        let n = parts.len() as u64;
+        parts
+            .into_iter()
+            .enumerate()
+            .map(|(k, ps)| {
+                let t = k as u64 * step;
+                let len = if k as u64 + 1 == n {
+                    sounding.saturating_sub(t).max(1)
+                } else {
+                    step
+                };
+                (t, len, ps)
+            })
+            .collect::<Vec<_>>()
+    };
+    if let Some(t) = e.duration.tremolo {
+        // 1 stroke: eighths, 2: sixteenths, 3: thirty-seconds.
+        let step = (TICKS_PER_QUARTER as u64 / 2) >> (t.strokes.clamp(1, 3) - 1);
+        if let (true, Some(b)) = (t.between, partner) {
+            return Some(alternate(main.clone(), b.pitches().to_vec(), step));
+        }
+        if step < sounding {
+            return Some(alternate(main.clone(), main.clone(), step));
+        }
+    }
+    if trilled {
+        return Some(alternate(
+            main.clone(),
+            around(1),
+            FIGURE_STEP.min(sounding / 2),
+        ));
+    }
+    let arts = &e.articulations;
+    if arts.contains(&Articulation::Turn) {
+        let q = (sounding / 4).max(1);
+        return Some(run(
+            vec![around(1), main.clone(), around(-1), main.clone()],
+            q,
+        ));
+    }
+    let mordent = if arts.contains(&Articulation::Mordent) {
+        Some(1)
+    } else if arts.contains(&Articulation::MordentLower) {
+        Some(-1)
+    } else {
+        None
+    };
+    mordent.map(|dir| {
+        let g = FIGURE_STEP.min(sounding / 4).max(1);
+        run(vec![main.clone(), around(dir), main.clone()], g)
+    })
+}
 
 /// How much louder a crescendo ends (and softer a diminuendo): about two
 /// dynamic levels.
@@ -498,7 +603,14 @@ pub fn build(score: &Score) -> Timeline {
                 let mut at = play_start;
                 // Grace notes waiting for the note they ornament.
                 let mut graces: Vec<&Event> = Vec::new();
-                for e in events {
+                // The second note of a tremolo between two notes: played
+                // with the first one.
+                let mut skip_partner = false;
+                for (i, e) in events.iter().enumerate() {
+                    if std::mem::take(&mut skip_partner) {
+                        at += e.ticks() as u64;
+                        continue;
+                    }
                     if e.duration.grace.is_some() {
                         graces.push(e);
                         continue;
@@ -573,36 +685,59 @@ pub fn build(score: &Score) -> Timeline {
                         open_ties.clear();
                         continue;
                     }
-                    let sounding = written * sounding_permille(e, slurred.contains(&e.id)) / 1000;
-                    // A trill: the note and the step above it, in 32nds.
-                    if spans.covering(Some(s), pos, LineFamily::Trill).is_some() {
-                        let key = score.written_key(s, m);
-                        let step_len = (TICKS_PER_QUARTER as u64 / 8).min((written / 2).max(1));
-                        for p in e.pitches() {
-                            let mut upper = p.shifted(1);
-                            upper.alter = crate::document::key_alter(key, upper.step);
-                            let keys = [*p, upper]
-                                .map(|q| staff.transposition.sounding_midi(q).clamp(0, 127) as u8);
-                            let mut t = start;
-                            let mut k = 0;
-                            while t < start + sounding.max(1) {
-                                let end = (t + step_len).min(start + sounding.max(1));
+                    let mut sounding =
+                        written * sounding_permille(e, slurred.contains(&e.id)) / 1000;
+                    if e.articulations.contains(&Articulation::Caesura) {
+                        sounding = sounding.min(written / 2);
+                    } else if e.articulations.contains(&Articulation::BreathMark) {
+                        sounding = sounding.min(written - written / 4);
+                    }
+                    // A tremolo between two notes: both played over their
+                    // time together.
+                    let partner = events
+                        .get(i + 1)
+                        .filter(|_| e.duration.tremolo.is_some_and(|t| t.between))
+                        .filter(|b| b.duration.tremolo.is_some_and(|t| t.between));
+                    let span_len = written + partner.map_or(0, |b| b.ticks() as u64);
+                    let figure_len = if partner.is_some() {
+                        span_len * sounding / written.max(1)
+                    } else {
+                        sounding
+                    };
+                    let trilled = spans.covering(Some(s), pos, LineFamily::Trill).is_some();
+                    if let Some(parts) =
+                        figure(e, partner, trilled, figure_len, score.written_key(s, m))
+                    {
+                        for (offset, len, pitches) in parts {
+                            for p in pitches {
                                 notes.push(Note {
-                                    start: t,
-                                    end,
-                                    key: keys[k % 2],
+                                    start: start + offset,
+                                    end: start + offset + len.max(1),
+                                    key: staff.transposition.sounding_midi(p).clamp(0, 127) as u8,
                                     velocity: note_velocity,
                                     staff: s,
                                 });
-                                t = end;
-                                k += 1;
                             }
                         }
+                        skip_partner = partner.is_some();
                         open_ties.clear();
                         continue;
                     }
+                    // An arpeggio: the chord rolled upwards.
+                    let mut order: Vec<i32> = e.pitches().iter().map(|p| p.midi()).collect();
+                    order.sort_unstable();
+                    let roll = |p: &Pitch| -> u64 {
+                        if e.articulations.contains(&Articulation::Arpeggio) {
+                            let rank =
+                                order.iter().position(|&k| k == p.midi()).unwrap_or(0) as u64;
+                            (rank * ARPEGGIO_STEP).min(sounding / 2)
+                        } else {
+                            0
+                        }
+                    };
                     let mut next_open = HashMap::new();
                     for p in e.pitches() {
+                        let start = start + roll(p);
                         // Transposing instruments sound away from the written note.
                         let key = staff.transposition.sounding_midi(*p).clamp(0, 127) as u8;
                         let index = match open_ties.get(&key) {
@@ -769,6 +904,39 @@ mod tests {
         s.staves[0].measures[1].voices[0][0].dynamic = Some(Dynamic::P);
         let v: Vec<u8> = build(&s).notes.iter().map(|n| n.velocity).collect();
         assert_eq!(v[4], dynamic_velocity(Dynamic::P));
+    }
+
+    #[test]
+    fn ornaments_and_tremolos_are_played_as_figures() {
+        let with = |arts: Vec<Articulation>| {
+            let mut e = note(1, Step::C, DurationBase::Quarter);
+            e.articulations = arts;
+            let s = score_with(vec![e], vec![]);
+            build(&s).notes.iter().map(|n| n.key).collect::<Vec<u8>>()
+        };
+        assert_eq!(with(vec![Articulation::Mordent]), [60, 62, 60]);
+        assert_eq!(with(vec![Articulation::MordentLower]), [60, 59, 60]);
+        assert_eq!(with(vec![Articulation::Turn]), [62, 60, 59, 60]);
+        // A tremolo of two strokes on a quarter: four sixteenths.
+        let mut e = note(1, Step::C, DurationBase::Quarter);
+        e.duration.tremolo = Some(Tremolo {
+            strokes: 2,
+            between: false,
+        });
+        let s = score_with(vec![e], vec![]);
+        assert_eq!(build(&s).notes.len(), 4);
+        // Between two notes written as halves: a half note of eighths, C E C E.
+        let both = |id, step| {
+            let mut e = note(id, step, DurationBase::Half);
+            e.duration.tremolo = Some(Tremolo {
+                strokes: 1,
+                between: true,
+            });
+            e
+        };
+        let s = score_with(vec![both(1, Step::C), both(2, Step::E)], vec![]);
+        let keys: Vec<u8> = build(&s).notes.iter().map(|n| n.key).collect();
+        assert_eq!(keys, [60, 64, 60, 64]);
     }
 
     #[test]

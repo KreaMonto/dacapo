@@ -557,6 +557,20 @@ export default {
   'line.15ma': '15ma', 'line.15ma.desc': 'Se escriben dos octavas más abajo de como suenan.',
   'line.15mb': '15mb', 'line.15mb.desc': 'Se escriben dos octavas más arriba de como suenan.',
 
+  // Ornamentos y otras marcas: la barra Ornamentos y Notas → Ornamentos.
+  'bar.ornaments': 'Ornamentos',
+  'bar.ornaments.desc': 'Mordentes, grupeto, trémolos, arpegio, respiración y cesura, en las notas seleccionadas o la nota anterior al cursor (o haz clic en una nota después de elegirlo). El botón muestra el último elegido.',
+  'palette.mordent': 'Mordente', 'palette.mordent.desc': 'La nota, la de arriba y la nota otra vez, rápido.',
+  'palette.mordent_lower': 'Mordente inferior', 'palette.mordent_lower.desc': 'La nota, la de abajo y la nota otra vez, rápido.',
+  'palette.turn': 'Grupeto', 'palette.turn.desc': 'La nota de arriba, la nota, la de abajo y la nota.',
+  'palette.arpeggio': 'Arpegio', 'palette.arpeggio.desc': 'El acorde desplegado desde su nota más grave.',
+  'palette.breath_mark': 'Respiración', 'palette.breath_mark.desc': 'Una respiración después de la nota: suena un poco más corta.',
+  'palette.caesura': 'Cesura', 'palette.caesura.desc': 'Un corte claro después de la nota: suena la mitad de su valor.',
+  'tremolo.1': 'Trémolo, 1 raya', 'tremolo.2': 'Trémolo, 2 rayas', 'tremolo.3': 'Trémolo, 3 rayas',
+  'tremolo.desc': 'Rayas sobre la plica: la nota repetida en corcheas, semicorcheas o fusas. Lo mismo otra vez las quita.',
+  'tremolo.between': 'Trémolo entre dos notas',
+  'tremolo.between.desc': 'Alterna el par de notas seleccionado (o la nota anterior al cursor y la de antes). Se escriben con el doble de valor y conservan su tiempo: dos negras pasan a dos blancas.',
+
   // Barras de corchea a mano: la barra Barras y Notas → Barras.
   'bar.beams': 'Barras de corchea',
   'beam.break': 'Cortar barra', 'beam.break.desc': 'Empieza una barra nueva en la nota (o en cada nota seleccionada), o la deja con su corchete.',

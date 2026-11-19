@@ -90,10 +90,12 @@ Every mode needs these. The order inside each group is the planned order of work
 
 ### Ornaments and other marks *(new)*
 
-- [ ] Mordent, turn and trill sign.
-- [ ] Tremolo (on one note and between two notes).
-- [ ] Arpeggio.
-- [ ] Breath mark and caesura.
+*One pull request for the group, on `feature/ornaments`. The marks are articulations in the core (added at the end of the list); the tremolo is part of the duration, like tuplets and grace notes.*
+
+- [x] Mordent, turn and trill sign (the trill sign is a trill line on one note), played as figures.
+- [x] Tremolo on one note and between two notes, in standard notation: the two notes are written twice as long and count half (MusicXML's time-modification 2:1).
+- [x] Arpeggio, played rolled upwards.
+- [x] Breath mark and caesura (they shorten the note; a caesura does not add a pause yet).
 
 ### Editing
 

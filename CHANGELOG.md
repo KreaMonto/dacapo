@@ -5,6 +5,10 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 ## [Unreleased]
 
 ### Added
+- **Ornaments and other marks**, in the new **Ornaments** bar (a drop-down that shows the last one chosen) and **Notes → Ornaments**, on the selected notes or the note before the caret, or placed with the mouse like the articulations. MusicXML import and export keep all of them.
+  - **Mordent**, **lower mordent** and **turn**, played as their little figures.
+  - **Tremolo** with 1, 2 or 3 strokes on a note, played as repeated eighths, sixteenths or thirty-seconds; and a **tremolo between two notes**, in standard notation: two quarters become two halves that alternate over a half note, and the measure keeps its time.
+  - **Arpeggio**, the chord rolled upwards; **breath mark** and **caesura**, which shorten the note (a caesura to half).
 - **Lines between notes**, over the selected notes (or the note before the caret), each also in **Notes → Lines**; the same line again takes it away, and deleting its notes deletes it. MusicXML import and export keep all of them.
   - **Hairpins**: crescendo and diminuendo buttons in the **Dynamics** bar. Playback gets about two dynamic levels louder or softer along them, and stays there unless a dynamic comes inside.
   - **Trill**: *tr* and a wavy line, from the **Ties & slurs** bar. Playback alternates the note with the step above, in the key.
@@ -18,7 +22,7 @@ All notable changes to Partita (called Da Capo up to 0.2.2) are documented here.
 - **Tuplets**: triplets, quintuplets, sextuplets, duplets and quadruplets. The **Tuplet** button of the **Figures** bar (or **Notes → Tuplet**, or **Ctrl+3**, **Ctrl+5**, **Ctrl+6**, **Ctrl+2**, **Ctrl+4**) writes the next notes and rests in the group until it is turned off; the value in use when it is turned on is what the group counts in, so a quarter and an eighth can share a triplet of eighths. On a selection it changes the selected notes. A beamed group shows its number; any other gets a bracket. Playback, the error check and MusicXML import and export follow them (septuplets and other groups that do not divide evenly still import with their written values).
 
 ### Changed
-- Scores with tuplets, grace notes, beams set by hand, clef changes or lines between notes are saved as file format 8, which Partita 0.3.14 can't open; other scores are saved as before.
+- Scores with tuplets, grace notes, beams set by hand, clef changes, lines between notes, ornaments or tremolos are saved as file format 8, which Partita 0.3.14 can't open; other scores are saved as before.
 
 ## [0.3.14] - 2026-11-18
 

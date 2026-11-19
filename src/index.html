@@ -285,6 +285,26 @@
           <button data-artic="marcato" class="glyph" data-i18n-aria="palette.marcato" data-i18n-tip="palette.marcato" data-i18n-desc="palette.marcato.desc">&#xE4AC;</button>
           <button data-artic="fermata" class="glyph" data-i18n-aria="palette.fermata" data-i18n-tip="palette.fermata" data-i18n-desc="palette.fermata.desc">&#xE4C0;</button>
         </div>
+        <!-- Ornaments and other marks on the note before the caret (or the
+             selection, or placed with the mouse): the button shows the last
+             one chosen. -->
+        <div class="tbar" role="group" data-bar-id="ornaments" data-i18n-bar="bar.ornaments" data-i18n-aria="bar.ornaments">
+          <div class="drop" data-drop="ornaments">
+            <button class="glyph drop-btn" aria-haspopup="true" aria-expanded="false" data-i18n-tip="bar.ornaments" data-i18n-desc="bar.ornaments.desc" data-i18n-aria="bar.ornaments">&#xE56C;</button>
+            <div class="drop-pop" role="group" data-i18n-aria="bar.ornaments" hidden>
+              <button data-artic="mordent" class="glyph" data-i18n-aria="palette.mordent" data-i18n-tip="palette.mordent" data-i18n-desc="palette.mordent.desc">&#xE56C;</button>
+              <button data-artic="mordent_lower" class="glyph" data-i18n-aria="palette.mordent_lower" data-i18n-tip="palette.mordent_lower" data-i18n-desc="palette.mordent_lower.desc">&#xE56D;</button>
+              <button data-artic="turn" class="glyph" data-i18n-aria="palette.turn" data-i18n-tip="palette.turn" data-i18n-desc="palette.turn.desc">&#xE567;</button>
+              <button data-cmd="tremolo:1" class="glyph" data-i18n-aria="tremolo.1" data-i18n-tip="tremolo.1" data-i18n-desc="tremolo.desc">&#xE220;</button>
+              <button data-cmd="tremolo:2" class="glyph" data-i18n-aria="tremolo.2" data-i18n-tip="tremolo.2" data-i18n-desc="tremolo.desc">&#xE221;</button>
+              <button data-cmd="tremolo:3" class="glyph" data-i18n-aria="tremolo.3" data-i18n-tip="tremolo.3" data-i18n-desc="tremolo.desc">&#xE222;</button>
+              <button data-cmd="tremolo-between" class="icon-btn" data-i18n-aria="tremolo.between" data-i18n-tip="tremolo.between" data-i18n-desc="tremolo.between.desc"><svg viewBox="0 0 40 24" aria-hidden="true"><ellipse cx="8" cy="19" rx="4.2" ry="3" transform="rotate(-20 8 19)" fill="none" stroke="currentColor" stroke-width="1.4"/><ellipse cx="32" cy="19" rx="4.2" ry="3" transform="rotate(-20 32 19)" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="11.3" y="3" width="1.3" height="16"/><rect x="35.3" y="3" width="1.3" height="16"/><path d="M15 8 L32 5 L32 7.5 L15 10.5Z M15 12.5 L32 9.5 L32 12 L15 15Z"/></svg></button>
+              <button data-artic="arpeggio" class="glyph" data-i18n-aria="palette.arpeggio" data-i18n-tip="palette.arpeggio" data-i18n-desc="palette.arpeggio.desc">&#xE63C;</button>
+              <button data-artic="breath_mark" class="glyph" data-i18n-aria="palette.breath_mark" data-i18n-tip="palette.breath_mark" data-i18n-desc="palette.breath_mark.desc">&#xE4CE;</button>
+              <button data-artic="caesura" class="glyph" data-i18n-aria="palette.caesura" data-i18n-tip="palette.caesura" data-i18n-desc="palette.caesura.desc">&#xE4D1;</button>
+            </div>
+          </div>
+        </div>
         <div class="tbar" role="group" data-bar-id="dynamics" data-i18n-bar="palette.dynamics" data-i18n-aria="palette.dynamics">
           <!-- A drop-down: the button shows the last dynamic chosen; a click
                opens all of them (toolbars.js, installDrops). -->
