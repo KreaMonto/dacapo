@@ -93,6 +93,7 @@ const SHORTCUTS = {
   'entry.value': 'Figura: semifusa … redonda',
   'entry.extended': 'Cuadrada / garrapatea (Ver → Cuadrada y garrapatea)',
   'entry.dot': 'Puntillo',
+  'entry.respell': 'Escribir la misma nota de otra forma (F♯ ↔ G♭)',
   'entry.tuplet': 'Tresillo sí / no (Ctrl+5, 6, 2, 4: otros grupos)',
   'entry.grace': 'Notas de adorno sí / no (Ctrl+Mayús+G: apoyaturas)',
   'entry.accidental': 'Subir / bajar la alteración',
@@ -466,6 +467,8 @@ export default {
   'palette.figures': 'Figuras',
   'palette.value': 'Figura',
   'palette.figure.desc': 'Elígela y haz clic en un pentagrama para colocarla. Con una selección, cambia sus figuras.',
+  'palette.respell': 'Enarmonía',
+  'palette.respell.desc': 'Escribe la nota (o las notas seleccionadas) de otra forma que suena igual: Fa♯ pasa a Sol♭, luego a Mi𝄪. Otra vez pasa a la siguiente.',
   'palette.dot': 'Puntillo',
   'palette.dot.desc': 'Alarga la figura la mitad de su valor.',
   'palette.accidentals': 'Alteraciones',
@@ -536,6 +539,14 @@ export default {
   'value.dotted': '{value} con puntillo',
   'value.tuplet': '{value} ({name})',
   'value.grace': '{value}, {name}',
+
+  // Líneas de octava: el desplegable de la barra Ligaduras y Notas → Líneas de octava.
+  'toolbar.ottava': 'Líneas de octava',
+  'toolbar.ottava.desc': 'Escribe las notas seleccionadas (o la nota anterior al cursor) una o dos octavas lejos de como suenan, bajo una línea discontinua. Siguen sonando igual. La misma línea otra vez la quita.',
+  'ottava.8va': '8va', 'ottava.8va.desc': 'Se escriben una octava más abajo de como suenan.',
+  'ottava.8vb': '8vb', 'ottava.8vb.desc': 'Se escriben una octava más arriba de como suenan.',
+  'ottava.15ma': '15ma', 'ottava.15ma.desc': 'Se escriben dos octavas más abajo de como suenan.',
+  'ottava.15mb': '15mb', 'ottava.15mb.desc': 'Se escriben dos octavas más arriba de como suenan.',
 
   // Barras de corchea a mano: la barra Barras y Notas → Barras.
   'bar.beams': 'Barras de corchea',

@@ -179,6 +179,38 @@
         for (let k = m - 1; k >= 1; k--) if (st.measures[k].clef) { before = st.measures[k].clef; break; }
         st.measures[m].clef = before === clef ? null : clef;
       },
+      // Octave lines from the first note of the caret's measure to the note
+      // before the caret (the fake has no selections).
+      set_octave_line({ kind }) {
+        const v = voiceOf(view.caret);
+        const e = v[view.caret.index - 1];
+        if (!e) return;
+        snapshot();
+        view.score.octave_lines = view.score.octave_lines || [];
+        const i = view.score.octave_lines.findIndex((l) => l.start === v[0].id);
+        const same = i >= 0 && view.score.octave_lines[i].kind === kind && view.score.octave_lines[i].end === e.id;
+        if (i >= 0) view.score.octave_lines.splice(i, 1);
+        if (!same) view.score.octave_lines.push({ id: nextId++, start: v[0].id, end: e.id, kind });
+      },
+      // The note before the caret, the same sound written another way.
+      respell() {
+        const e = voiceOf(view.caret)[view.caret.index - 1];
+        const ps = e?.kind.chord?.pitches;
+        if (!ps) return;
+        snapshot();
+        const SEMI = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+        e.kind.chord.pitches = ps.map((p) => {
+          const midi = (p.octave + 1) * 12 + SEMI[p.step] + p.alter;
+          const options = [];
+          for (const step of STEPS) for (let alter = -2; alter <= 2; alter++) {
+            if (((midi - SEMI[step] - alter) % 12 + 12) % 12 === 0) options.push({ step, alter, octave: (midi - SEMI[step] - alter) / 12 - 1 });
+          }
+          const rank = (a) => (Math.abs(a) === 1 ? 0 : a === 0 ? 2 : 1);
+          options.sort((a, b) => rank(a.alter) - rank(b.alter) || b.alter - a.alter);
+          const i = options.findIndex((o) => o.step === p.step && o.alter === p.alter && o.octave === p.octave);
+          return options[(i + 1) % options.length];
+        });
+      },
       set_beam({ beam }) {
         const e = voiceOf(view.caret)[view.caret.index - 1];
         if (!e || e.kind === 'rest') return;

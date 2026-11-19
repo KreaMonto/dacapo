@@ -207,6 +207,7 @@
           <button data-alter="1" class="glyph" data-i18n-aria="palette.sharp" data-i18n-tip="palette.sharp" data-i18n-desc="palette.sharp.desc" data-key="+">&#xE262;</button>
           <button data-alter="-1" class="glyph" data-i18n-aria="palette.flat" data-i18n-tip="palette.flat" data-i18n-desc="palette.flat.desc" data-key="-">&#xE260;</button>
           <button data-alter="0" class="glyph" data-i18n-aria="palette.natural" data-i18n-tip="palette.natural" data-i18n-desc="palette.natural.desc">&#xE261;</button>
+          <button data-cmd="respell" class="text-btn respell-btn" data-i18n-aria="palette.respell" data-i18n-tip="palette.respell" data-i18n-desc="palette.respell.desc" data-key="J">♯⇄♭</button>
         </div>
         <div class="tbar" role="group" data-bar-id="voice" data-i18n-bar="bar.voice" data-i18n-aria="bar.voice">
           <div class="voices" id="voices"></div>
@@ -244,6 +245,17 @@
           <button data-cmd="slur" class="icon-btn" data-i18n-aria="palette.slur" data-i18n-tip="palette.slur" data-i18n-desc="palette.slur.desc" data-key="S">
             <svg viewBox="0 0 40 24" aria-hidden="true"><path d="M5 18 Q20 0 35 18 Q20 5 5 18Z"/></svg>
           </button>
+          <!-- Octave lines over the selection (or the note before the caret):
+               the button shows the last one chosen. -->
+          <div class="drop" data-drop="ottava">
+            <button class="text-btn drop-btn ottava-btn" aria-haspopup="true" aria-expanded="false" data-i18n-tip="toolbar.ottava" data-i18n-desc="toolbar.ottava.desc" data-i18n-aria="toolbar.ottava">8va</button>
+            <div class="drop-pop" role="group" data-i18n-aria="toolbar.ottava" hidden>
+              <button data-cmd="ottava:8va" class="text-btn ottava-btn" data-i18n-tip="ottava.8va" data-i18n-desc="ottava.8va.desc" data-i18n-aria="ottava.8va">8va</button>
+              <button data-cmd="ottava:8vb" class="text-btn ottava-btn" data-i18n-tip="ottava.8vb" data-i18n-desc="ottava.8vb.desc" data-i18n-aria="ottava.8vb">8vb</button>
+              <button data-cmd="ottava:15ma" class="text-btn ottava-btn" data-i18n-tip="ottava.15ma" data-i18n-desc="ottava.15ma.desc" data-i18n-aria="ottava.15ma">15ma</button>
+              <button data-cmd="ottava:15mb" class="text-btn ottava-btn" data-i18n-tip="ottava.15mb" data-i18n-desc="ottava.15mb.desc" data-i18n-aria="ottava.15mb">15mb</button>
+            </div>
+          </div>
         </div>
         <!-- Beams set by hand on the note before the caret (or the
              selection): a new beam, joined across the beat, or automatic. -->

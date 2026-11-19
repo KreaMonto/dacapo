@@ -17,10 +17,10 @@ use crate::history::{History, Transaction, TxKind};
 use crate::model::{
     is_measure_rest, Articulation, Barline, Beam, Clef, Duration, Dynamic, Event, EventId,
     EventKind, GroupKind, Jump, KeySignature, LayoutBreak, LyricJoin, MeasureAttrs, Metadata,
-    NoteText, NoteTextKind, Pitch, Score, Slur, StaffGroup, Step, Syllable, TempoMark, TextBox,
-    TextKind, TextStyle, TimeSignature, Transposition, MAX_ENDING, MAX_NOTE_TEXT_CHARS,
-    MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS, MAX_TEXT_BOX_CHARS, MAX_VERSES, REPEAT_TIMES,
-    TEXT_SIZE_RANGE,
+    NoteText, NoteTextKind, OctaveLine, Ottava, Pitch, Score, Slur, StaffGroup, Step, Syllable,
+    TempoMark, TextBox, TextKind, TextStyle, TimeSignature, Transposition, MAX_ENDING,
+    MAX_NOTE_TEXT_CHARS, MAX_STAFF_NAME_CHARS, MAX_SYLLABLE_CHARS, MAX_TEXT_BOX_CHARS, MAX_VERSES,
+    REPEAT_TIMES, TEXT_SIZE_RANGE,
 };
 use crate::ops::{apply_all, Op, OpError, VoiceLoc};
 
@@ -224,8 +224,8 @@ impl Document {
         let merge = self.history.would_merge(kind, &caret_before, time_ms);
         let mut ops = ops;
         let mut inverse = apply_all(&mut self.score, &ops)?;
-        // Slurs whose start or end event was just deleted disappear in the
-        // same step, so undo brings back both the notes and their slurs.
+        // Slurs and octave lines whose start or end event was just deleted
+        // disappear in the same step, so undo brings them back too.
         let cleanup = self.dangling_slur_ops();
         if !cleanup.is_empty() {
             let mut undo_cleanup = apply_all(&mut self.score, &cleanup)?;
@@ -280,18 +280,30 @@ impl Document {
     /// RemoveSlur ops for slurs that point to events no longer in the score,
     /// highest index first so the indices stay valid.
     fn dangling_slur_ops(&self) -> Vec<Op> {
-        if self.score.slurs.is_empty() {
+        if self.score.slurs.is_empty() && self.score.octave_lines.is_empty() {
             return Vec::new();
         }
         let ids = self.score.event_ids();
-        self.score
+        let mut ops: Vec<Op> = self
+            .score
             .slurs
             .iter()
             .enumerate()
             .rev()
             .filter(|(_, s)| !ids.contains(&s.start) || !ids.contains(&s.end))
             .map(|(index, _)| Op::RemoveSlur { index })
-            .collect()
+            .collect();
+        ops.extend(
+            self.score
+                .octave_lines
+                .iter()
+                .filter(|l| !ids.contains(&l.start) || !ids.contains(&l.end))
+                .map(|l| Op::SetOctaveLine {
+                    id: l.id,
+                    line: None,
+                }),
+        );
+        ops
     }
 
     /// Stores an applied step in the history and moves the caret.
@@ -938,6 +950,12 @@ impl Document {
         })
     }
 
+    /// Writes the selected notes (or the previous event) the next way that
+    /// sounds the same: F♯ ↔ G♭ (see [`Pitch::respelled`]).
+    pub fn respell(&mut self, now_ms: u64) -> Result<(), EditError> {
+        self.repitch(now_ms, Pitch::respelled)
+    }
+
     /// Sets an explicit accidental (palette ♯ ♭ ♮ buttons) on the
     /// selection or the previous event.
     pub fn set_accidental(&mut self, alter: i8, now_ms: u64) -> Result<(), EditError> {
@@ -1194,6 +1212,76 @@ impl Document {
         };
         let caret = self.caret;
         self.commit(TxKind::Edit, vec![op], caret, now_ms, true)
+    }
+
+    /// Puts an octave line over the selected notes of the top selected
+    /// staff (or over the note before the caret). The same line again takes
+    /// it away; other octave lines it overlaps on that staff are replaced.
+    pub fn set_octave_line(&mut self, kind: Ottava, now_ms: u64) -> Result<(), EditError> {
+        let (staff, ids): (usize, Vec<u64>) = match self.selection() {
+            Some(range) => (
+                range.staff_lo,
+                cursor::events_in_range(&self.score, &range)
+                    .into_iter()
+                    .filter(|(at, _)| at.staff == range.staff_lo)
+                    .filter_map(|(at, i)| {
+                        Some(self.score.voice(at.staff, at.measure, at.voice)?.get(i)?.id)
+                    })
+                    .collect(),
+            ),
+            None => {
+                let c = self.caret;
+                let prev = c.index.checked_sub(1).and_then(|i| {
+                    self.score
+                        .voice(c.staff, c.measure, c.voice)
+                        .and_then(|v| v.get(i))
+                        .map(|e| e.id)
+                });
+                (c.staff, prev.into_iter().collect())
+            }
+        };
+        let (Some(&start), Some(&end)) = (ids.first(), ids.last()) else {
+            return Ok(());
+        };
+        let span = |a: EventId, b: EventId| -> Option<(u64, u64)> {
+            Some((self.score.event_start(a)?, self.score.event_end(b)?))
+        };
+        let Some((from, to)) = span(start, end) else {
+            return Ok(());
+        };
+        let mut ops = Vec::new();
+        let mut same = false;
+        for l in &self.score.octave_lines {
+            if self.score.locate(l.start).map(|p| p.0) != Some(staff) {
+                continue;
+            }
+            let Some((a, b)) = span(l.start, l.end) else {
+                continue;
+            };
+            if a < to && from < b {
+                same |= l.start == start && l.end == end && l.kind == kind;
+                ops.push(Op::SetOctaveLine {
+                    id: l.id,
+                    line: None,
+                });
+            }
+        }
+        if !same {
+            ops.push(Op::SetOctaveLine {
+                id: self.score.alloc_id(),
+                line: Some(OctaveLine {
+                    id: 0,
+                    start,
+                    end,
+                    kind,
+                }),
+            });
+            if let Some(Op::SetOctaveLine { id, line: Some(l) }) = ops.last_mut() {
+                l.id = *id;
+            }
+        }
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, true)
     }
 
     /// Playback tempo in quarter notes per minute (20–400).
@@ -2124,6 +2212,53 @@ mod tests {
             .iter()
             .map(|e| e.pitches().first().map(|p| p.step))
             .collect()
+    }
+
+    #[test]
+    fn respelling_keeps_the_sound_and_is_one_step() {
+        let mut doc = Document::new(Score::new("t", 1));
+        doc.insert_note(F, Q, 1_000).unwrap();
+        doc.set_accidental(1, 2_000).unwrap();
+        let before = doc.score.voice(0, 0, 0).unwrap()[0].pitches()[0];
+        // (Later than the accidental, so it is an undo step of its own.)
+        doc.respell(60_000).unwrap();
+        let after = doc.score.voice(0, 0, 0).unwrap()[0].pitches()[0];
+        assert_eq!((after.step, after.alter), (G, -1));
+        assert_eq!(after.midi(), before.midi());
+        doc.undo().unwrap();
+        assert_eq!(doc.score.voice(0, 0, 0).unwrap()[0].pitches()[0], before);
+    }
+
+    #[test]
+    fn octave_lines_go_on_the_selection_and_follow_their_notes() {
+        let mut doc = Document::new(Score::new("t", 2));
+        for s in [C, D, E, F] {
+            doc.insert_note(s, Q, 1_000).unwrap();
+        }
+        // On the note before the caret.
+        doc.set_octave_line(Ottava::Alta, 2_000).unwrap();
+        assert_eq!(doc.score.octave_lines.len(), 1);
+        // 8vb over the same note replaces it; the same again takes it away.
+        doc.set_octave_line(Ottava::Bassa, 3_000).unwrap();
+        assert_eq!(doc.score.octave_lines.len(), 1);
+        assert_eq!(doc.score.octave_lines[0].kind, Ottava::Bassa);
+        doc.set_octave_line(Ottava::Bassa, 4_000).unwrap();
+        assert!(doc.score.octave_lines.is_empty());
+        // Over a selection: from its first note to its last.
+        doc.select_all();
+        doc.set_octave_line(Ottava::QuindicesimaAlta, 5_000)
+            .unwrap();
+        let voice = doc.score.voice(0, 0, 0).unwrap().clone();
+        let line = doc.score.octave_lines[0];
+        assert_eq!((line.start, line.end), (voice[0].id, voice[3].id));
+        // Pitches are kept as they sound.
+        assert_eq!(voice[0].pitches()[0], Pitch::new(Step::C, 5));
+        // Deleting its last note takes the line away, and undo brings both.
+        doc.set_caret(at(0, 0, 4), false);
+        doc.delete_backward(6_000).unwrap();
+        assert!(doc.score.octave_lines.is_empty());
+        doc.undo().unwrap();
+        assert_eq!(doc.score.octave_lines.len(), 1);
     }
 
     #[test]

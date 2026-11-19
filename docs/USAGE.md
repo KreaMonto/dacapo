@@ -140,8 +140,8 @@ Left of the score, one column of buttons: the **Figures**, **Accidentals** and *
 | **↖ Select** (Tools bar) | Back to normal editing: click to place the caret, drag to select. **Esc**, a right-click or `N` leave entry mode. |
 | **Eraser** (Tools bar, next to Select, `X`) | The pointer becomes a crosshair. Aim at a note and click to erase just that note; in a chord, only the tone you aim at goes. Drag a box to erase every note and rest inside it. The note under the crosshair turns red before you click. One Ctrl+Z brings back everything erased in one go. **Esc**, a right-click or `X` leave the eraser. |
 | **Figures** (left) | Two columns: the notes, and beside each one its rest. Click either to place it. The **dot** below them makes the figure dotted. The **Grace Note** button below it writes the next notes as acciaccaturas or appoggiaturas, small and before the note they ornament, until you choose the same kind again. The **Tuplet** button (it shows the last one chosen) writes the next notes as a triplet, quintuplet, sextuplet, duplet or quadruplet until you choose it again; the figure in use when you turn it on is what the group counts in. **View → Breve and 128th Notes** adds the breve (double whole note), the 64th and the 128th. |
-| **Accidentals** (left) | ♯ ♭ ♮. The key signature's sharps and flats are applied automatically when you place a note. |
-| **Ties & slurs** (right) | **Tie** (`T`) joins a note to the next one of the same pitch. **Slur** (`S`) draws a phrase mark over the selected notes, and needs a selection. Deleting a slurred note removes its slur; undo restores both. |
+| **Accidentals** (left) | ♯ ♭ ♮. The key signature's sharps and flats are applied automatically when you place a note. **♯⇄♭** (`J`) writes the note another way that sounds the same (F♯ → G♭ → E𝄪). |
+| **Ties & slurs** (right) | **Tie** (`T`) joins a note to the next one of the same pitch. **Slur** (`S`) draws a phrase mark over the selected notes, and needs a selection. Deleting a slurred note removes its slur; undo restores both. The **8va** button beside them puts an octave line (8va, 8vb, 15ma or 15mb) over the selected notes, or the note before the caret: they are drawn an octave or two away and sound as before. The same line again takes it away. |
 | **Beams** (right) | Beam the note before the caret (or the selected notes) by hand: start a new beam there, join it to the note before across the beat, or go back to automatic (**auto**). |
 | **Articulations** (right) | Staccato, staccatissimo, tenuto, accent, marcato, fermata. They are placed on the notehead side; the fermata goes above and also works on rests. |
 | **Dynamics** (right) | ppp … fff, sfz, fp, behind one button that shows the last one chosen. Printed below the staff. Choosing the dynamic a note already has removes it. |
@@ -210,6 +210,7 @@ A measure that holds more beats than its time signature allows is outlined in re
 | `1`…`7` | Choose the note value: 64th, 32nd, 16th, eighth, quarter, half, whole. With a selection, change its note values. |
 | `8` / `9` | Breve / 128th, when **View → Breve and 128th Notes** is on. |
 | `.` | Toggle a dot. |
+| `J` | Respell: the same note written another way (F♯ → G♭ → E𝄪). |
 | `Ctrl+G` | Grace notes (acciaccaturas) on / off; `Ctrl+Shift+G`: appoggiaturas. |
 | `Ctrl+3` | Triplet on / off (`Ctrl+5`, `Ctrl+6`, `Ctrl+2`, `Ctrl+4`: quintuplet, sextuplet, duplet, quadruplet). |
 | `+` / `-` | Raise or lower the accidental of the previous note (or the selection). |

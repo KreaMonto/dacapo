@@ -89,6 +89,7 @@ const SHORTCUTS = {
   'entry.value': 'Note value: 64th … whole',
   'entry.extended': 'Breve / 128th (View → Breve and 128th Notes)',
   'entry.dot': 'Dot',
+  'entry.respell': 'Write the same note another way (F♯ ↔ G♭)',
   'entry.tuplet': 'Triplet on / off (Ctrl+5, 6, 2, 4: other tuplets)',
   'entry.grace': 'Grace notes on / off (Ctrl+Shift+G: appoggiaturas)',
   'entry.accidental': 'Raise / lower the accidental',
@@ -463,6 +464,8 @@ export default {
   'palette.figures': 'Figures',
   'palette.value': 'Note value',
   'palette.figure.desc': 'Choose it, then click on a staff to place it. With a selection, changes its note values.',
+  'palette.respell': 'Respell',
+  'palette.respell.desc': 'Writes the note (or the selected notes) another way that sounds the same: F♯ becomes G♭, then E𝄪. Again goes on to the next way.',
   'palette.dot': 'Dot',
   'palette.dot.desc': 'Makes the figure half as long again.',
   'palette.accidentals': 'Accidentals',
@@ -535,6 +538,14 @@ export default {
   'value.dotted': 'dotted {value}',
   'value.tuplet': '{value} ({name})',
   'value.grace': '{value} {name}',
+
+  // Octave lines: the drop-down in the Ties & slurs bar and Notes → Octave Lines.
+  'toolbar.ottava': 'Octave Lines',
+  'toolbar.ottava.desc': 'Writes the selected notes (or the note before the caret) an octave or two away from how they sound, under a dashed line. They keep sounding as they did. The same line again takes it away.',
+  'ottava.8va': '8va', 'ottava.8va.desc': 'Drawn an octave lower than they sound.',
+  'ottava.8vb': '8vb', 'ottava.8vb.desc': 'Drawn an octave higher than they sound.',
+  'ottava.15ma': '15ma', 'ottava.15ma.desc': 'Drawn two octaves lower than they sound.',
+  'ottava.15mb': '15mb', 'ottava.15mb.desc': 'Drawn two octaves higher than they sound.',
 
   // Beams set by hand: the Beams bar and Notes → Beams.
   'bar.beams': 'Beams',

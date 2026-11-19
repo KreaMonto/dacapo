@@ -343,6 +343,113 @@ export function durationTicks(d) {
   return tp && tp.actual > 0 ? (t * tp.normal) / tp.actual : t;
 }
 
+// ----- octave lines ----------------------------------------------------------------
+
+/** Octaves the notes under each kind of line sound above where they are drawn. */
+const OTTAVA_OCTAVES = { '8va': 1, '8vb': -1, '15ma': 2, '15mb': -2 };
+
+/**
+ * Where the octave lines are: `byId` gives each event under a line its
+ * shift in octaves and `lineOf` the index of its line; `at(staff, measure,
+ * tick)` the shift at a place (for the mouse). Positions are absolute ticks,
+ * measures one after another at their length, as in the core.
+ */
+const shiftsCache = new WeakMap();
+export function octaveShifts(score) {
+  // (Asked for on every mouse move: worked out once per score received.)
+  if (shiftsCache.has(score)) return shiftsCache.get(score);
+  const result = computeShifts(score);
+  shiftsCache.set(score, result);
+  return result;
+}
+
+function computeShifts(score) {
+  const lines = score.octave_lines || [];
+  const byId = new Map();
+  const lineOf = new Map();
+  const spans = [];
+  if (!lines.length) return { byId, lineOf, at: () => 0, spans };
+  const mStart = [];
+  let t = 0;
+  for (const attrs of score.measures) { mStart.push(t); t += capacity(attrs); }
+  const where = new Map(); // id -> { staff, from, to }
+  score.staves.forEach((staff, s) => staff.measures.forEach((cell, m) => cell.voices.forEach((voice) => {
+    let tick = mStart[m];
+    for (const e of voice) {
+      const len = durationTicks(e.duration);
+      where.set(e.id, { staff: s, from: tick, to: tick + Math.max(len, 1) });
+      tick += len;
+    }
+  })));
+  lines.forEach((l, i) => {
+    const a = where.get(l.start);
+    const b = where.get(l.end);
+    if (!a || !b || a.staff !== b.staff) return;
+    spans.push({ index: i, staff: a.staff, from: a.from, to: b.to, k: OTTAVA_OCTAVES[l.kind] || 0, line: l });
+  });
+  for (const [id, w] of where) {
+    const span = spans.find((sp) => sp.staff === w.staff && w.from >= sp.from && w.from < sp.to);
+    if (span) { byId.set(id, span.k); lineOf.set(id, span.index); }
+  }
+  const at = (staff, measure, tick) => {
+    const abs = (mStart[measure] ?? 0) + tick;
+    return spans.find((sp) => sp.staff === staff && abs >= sp.from && abs < sp.to)?.k ?? 0;
+  };
+  return { byId, lineOf, at, spans };
+}
+
+/**
+ * Draws the octave lines: "8va" (or 8vb, 15ma, 15mb) and a dashed line over
+ * (or under) the notes it covers, with a hook at its end. A line that goes
+ * on to the next system starts there again with the number in brackets.
+ */
+function drawOctaveLines(push, shifts, seqs, onPage) {
+  for (const span of shifts.spans) {
+    const covered = [];
+    for (const [key, seq] of seqs) {
+      if (Number(key.split(':')[0]) !== span.staff) continue;
+      for (const n of seq) if (shifts.lineOf.get(n.e.id) === span.index) covered.push(n);
+    }
+    if (!covered.length) continue;
+    const bySystem = new Map();
+    for (const n of covered) {
+      const sys = n.ms.system;
+      if (!bySystem.has(sys)) bySystem.set(sys, []);
+      bySystem.get(sys).push(n);
+    }
+    const systems = [...bySystem.keys()].sort((a, b) => a.index - b.index);
+    const above = span.k > 0;
+    const label = span.line.kind;
+    systems.forEach((sys, i) => {
+      const part = bySystem.get(sys);
+      const first = i === 0;
+      const last = i === systems.length - 1;
+      const top = part[0].top;
+      const x1 = first ? Math.min(...part.map((n) => n.left)) : part[0].ms.contentX - 1.2 * SP;
+      const x2 = last ? Math.max(...part.map((n) => n.left + n.w)) + 0.3 * SP : systemEnd(part[0].ms) - 0.3 * SP;
+      const y = above
+        ? Math.min(top - 1.2 * SP, ...part.map((n) => n.hi)) - 0.9 * SP
+        : Math.max(top + 5.2 * SP, ...part.map((n) => n.lo)) + 1.6 * SP;
+      const text = first ? label : `(${label})`;
+      const textW = (text.length * 0.62 + 0.5) * SP;
+      onPage(sys.page);
+      push(`<g class="${part[0].cls} ottava">`);
+      push(`<text class="ottava-text" x="${x1}" y="${y + 0.35 * SP}">${text}</text>`);
+      if (x2 > x1 + textW) {
+        const hookTo = above ? y + 0.8 * SP : y - 0.8 * SP;
+        const end = last ? ` ${x2},${hookTo}` : '';
+        push(`<polyline class="ottava-line" points="${x1 + textW},${y} ${x2},${y}${end}"/>`);
+      }
+      push('</g>');
+      // Room for what is drawn around the notes (lyrics, other marks).
+      for (const n of part) {
+        if (above) n.hi = Math.min(n.hi, y - 1.2 * SP);
+        else n.lo = Math.max(n.lo, y + 0.5 * SP);
+      }
+    });
+  }
+}
+
 /** Whether an event is a grace note (it takes no time). */
 const isGrace = (e) => !!e.duration.grace;
 
@@ -1086,6 +1193,7 @@ export function renderScore(view, width, opts = {}) {
   // Drawn events, for ties and slurs: per staff+voice in score order, and by id.
   const seqs = new Map();
   const byId = new Map();
+  const shifts = octaveShifts(score);
 
   for (const ms of lay.measures) {
     onPage(ms.system.page);
@@ -1187,7 +1295,10 @@ export function renderScore(view, width, opts = {}) {
         continue;
       }
 
-      // Events.
+      // Events. Under an octave line a note is drawn an octave (or two)
+      // away from its pitch: draw it against a moved middle line.
+      const shiftedMid = (e) => mid + 7 * (shifts.byId.get(e.id) || 0);
+      const yOfMid = (m) => (d) => top + 2 * SP - (d - m) * (SP / 2);
       const voices = staff.measures[ms.m].voices;
       const multi = voices.filter((v) => v.length).length > 1;
       voices.forEach((events, v) => {
@@ -1198,7 +1309,7 @@ export function renderScore(view, width, opts = {}) {
         const groupOf = new Map();
         const groupUp = groups.map((g, gi) => {
           g.forEach((i) => groupOf.set(i, gi));
-          return multi ? v % 2 === 0 : groupStemsUp(g.map((i) => events[i]), mid);
+          return multi ? v % 2 === 0 : groupStemsUp(g.map((i) => events[i]), shiftedMid(events[g[0]]));
         });
         const graceBeams = isMeasureRest(events, capacity(ms.attrs)) ? [] : graceGroups(events);
         const graceBeamed = new Set(graceBeams.flat());
@@ -1206,9 +1317,11 @@ export function renderScore(view, width, opts = {}) {
           const gi = groupOf.get(i);
           const opts = gi === undefined ? {} : { up: groupUp[gi], beamed: true };
           const fifths = writtenFifths(staff, ms.attrs.key.fifths);
+          const eMid = shiftedMid(e);
+          const eYOf = eMid === mid ? yOf : yOfMid(eMid);
           const info = isGrace(e) && e.kind !== 'rest'
-            ? drawGrace(push, e, xs[i], yOf, mid, v, multi, fifths, cls, { beamed: graceBeamed.has(i) })
-            : drawEvent(push, e, xs[i], top, yOf, mid, v, multi, fifths, cls, opts);
+            ? drawGrace(push, e, xs[i], eYOf, eMid, v, multi, fifths, cls, { beamed: graceBeamed.has(i) })
+            : drawEvent(push, e, xs[i], top, eYOf, eMid, v, multi, fifths, cls, opts);
           return Object.assign(info, { e, ms, top, staff: st, voice: v, cls, sung: lay.verses[st] > 0 });
         });
         const starts = eventStarts(events);
@@ -1241,6 +1354,7 @@ export function renderScore(view, width, opts = {}) {
 
   drawTies(push, seqs, onPage);
   drawSlurs(push, score.slurs || [], byId, seqs, onPage);
+  drawOctaveLines(push, shifts, seqs, onPage);
   drawLyrics(push, lay, seqs, onPage, opts.lyricEdit);
 
   // Where lyrics can be typed: every drawn note, in score order per staff
@@ -1997,13 +2111,18 @@ export function pointerTarget(lay, view, x, y, voice) {
   }
 
   const step = STEPS[((d % 7) + 7) % 7];
+  // Under an octave line the note sounds an octave (or two) away from
+  // where it is drawn, and is kept as it sounds.
+  let tick = 0;
+  if (!restMeasure) for (let i = 0; i < (onEvent ?? index) && i < events.length; i++) tick += durationTicks(events[i].duration);
+  const k = octaveShifts(view.score).at(staff, ms.m, tick);
   return {
     staff, measure: ms.m, voice, index, onEvent, page: s.page || 0,
     step,
-    octave: Math.floor(d / 7),
+    octave: Math.floor(d / 7) + k,
     alter: keyAlter(writtenFifths(view.score.staves[staff], ms.attrs.key.fifths), step),
     fifths: writtenFifths(view.score.staves[staff], ms.attrs.key.fifths),
-    d, mid, top,
+    d: d + 7 * k, mid: mid + 7 * k, top,
     x: onEvent !== null ? eventX : x,
     y: top + 2 * SP - (d - mid) * (SP / 2),
     gapX: gapX(lay, ms, events, index),

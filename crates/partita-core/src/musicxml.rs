@@ -282,6 +282,14 @@ pub fn export(score: &Score) -> String {
         slur_marks.entry(slur.end).or_default().push(("stop", n));
     }
 
+    // Octave lines: (kind, number) where they start and where they stop.
+    let mut octave_starts: HashMap<EventId, (Ottava, usize)> = HashMap::new();
+    let mut octave_stops: HashMap<EventId, (Ottava, usize)> = HashMap::new();
+    for (i, l) in score.octave_lines.iter().enumerate() {
+        octave_starts.insert(l.start, (l.kind, i % 16 + 1));
+        octave_stops.insert(l.end, (l.kind, i % 16 + 1));
+    }
+
     for (s, staff) in score.staves.iter().enumerate() {
         let _ = writeln!(x, "  <part id=\"P{}\">", s + 1);
         // Last event of each voice in the previous measure, for tie stops.
@@ -456,6 +464,17 @@ pub fn export(score: &Score) -> String {
                                 v + 1
                             );
                         }
+                        // An octave line: MusicXML says which way the notes
+                        // are drawn from their (sounding) pitch.
+                        if let Some(&(kind, n)) = octave_starts.get(&e.id) {
+                            let (way, size) = octave_shift(kind);
+                            let placement = if kind.octaves() > 0 { "above" } else { "below" };
+                            let _ = writeln!(
+                                x,
+                                "      <direction placement=\"{placement}\"><direction-type><octave-shift type=\"{way}\" size=\"{size}\" number=\"{n}\"/></direction-type><voice>{}</voice></direction>",
+                                v + 1
+                            );
+                        }
                         write_event(
                             &mut x,
                             e,
@@ -468,6 +487,14 @@ pub fn export(score: &Score) -> String {
                         );
                         written += e.ticks();
                         prev_in_voice[v] = Some(e);
+                        if let Some(&(kind, n)) = octave_stops.get(&e.id) {
+                            let (_, size) = octave_shift(kind);
+                            let _ = writeln!(
+                                x,
+                                "      <direction><direction-type><octave-shift type=\"stop\" size=\"{size}\" number=\"{n}\"/></direction-type><voice>{}</voice></direction>",
+                                v + 1
+                            );
+                        }
                     }
                 }
                 if k + 1 < voices.len() && written > 0 {
@@ -732,6 +759,17 @@ fn esc(s: &str) -> String {
         }
     }
     out
+}
+
+/// MusicXML's octave-shift: an 8va line draws the notes an octave *down*
+/// from their pitch.
+fn octave_shift(kind: Ottava) -> (&'static str, u8) {
+    match kind {
+        Ottava::Alta => ("down", 8),
+        Ottava::Bassa => ("up", 8),
+        Ottava::QuindicesimaAlta => ("down", 15),
+        Ottava::QuindicesimaBassa => ("up", 15),
+    }
 }
 
 fn clef_sign(clef: Clef) -> (&'static str, u8) {
@@ -1079,6 +1117,7 @@ struct Importer {
     tempo: Option<u16>,
     next_id: u64,
     tuplets: usize,
+    octave_lines: Vec<OctaveLine>,
     dropped_voices: usize,
     extra_clefs: usize,
     /// Clef changes found: (staff, measure, clef), applied at the end.
@@ -1340,7 +1379,13 @@ impl Importer {
                 .unwrap_or(DEFAULT_TEMPO),
             text_styles: Default::default(),
             text_boxes: Vec::new(),
+            octave_lines: Vec::new(),
         };
+        // Octave lines get ids after every event.
+        for mut l in std::mem::take(&mut self.octave_lines) {
+            l.id = score.alloc_id();
+            score.octave_lines.push(l);
+        }
         let mut unnamed_staves = self.unnamed;
         if score.staves.is_empty() {
             let staff = score.blank_staff("Staff 1", Clef::Treble);
@@ -1413,6 +1458,11 @@ impl Importer {
         let mut divisions = 1.0f64;
         let mut open_slurs: HashMap<String, EventId> = HashMap::new();
         let mut pending_dynamic: HashMap<u32, Dynamic> = HashMap::new();
+        // Octave lines: waiting for their first note, and open ones (kind,
+        // first note) by staff; the last note of each staff, for the stop.
+        let mut pending_octave: HashMap<u32, Ottava> = HashMap::new();
+        let mut open_octave: HashMap<u32, (Ottava, EventId)> = HashMap::new();
+        let mut last_on_staff: HashMap<u32, EventId> = HashMap::new();
         // Words waiting for the next note of their staff.
         let mut pending_texts: HashMap<u32, Vec<NoteText>> = HashMap::new();
         let mut capacity = MeasureAttrs::default().time.measure_ticks();
@@ -1591,6 +1641,38 @@ impl Importer {
                     }
                     "direction" => {
                         let staff_no = number_of(el, "staff").map(|n| n as u32).unwrap_or(1);
+                        if let Some(o) = el.descendants().find(|n| n.has_tag_name("octave-shift")) {
+                            let size = o
+                                .attribute("size")
+                                .and_then(|s| s.parse::<u32>().ok())
+                                .unwrap_or(8);
+                            match o.attribute("type") {
+                                Some("stop") => {
+                                    if let (Some((kind, start)), Some(&end)) = (
+                                        open_octave.remove(&staff_no),
+                                        last_on_staff.get(&staff_no),
+                                    ) {
+                                        self.octave_lines.push(OctaveLine {
+                                            id: 0,
+                                            start,
+                                            end,
+                                            kind,
+                                        });
+                                    }
+                                }
+                                Some(way @ ("up" | "down")) => {
+                                    let kind = match (way, size >= 15) {
+                                        ("down", false) => Ottava::Alta,
+                                        ("up", false) => Ottava::Bassa,
+                                        ("down", true) => Ottava::QuindicesimaAlta,
+                                        _ => Ottava::QuindicesimaBassa,
+                                    };
+                                    pending_octave.insert(staff_no, kind);
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
                         for d in el.descendants().filter(|n| n.has_tag_name("dynamics")) {
                             if let Some(dynamic) =
                                 d.children().filter(|c| c.is_element()).find_map(|c| {
@@ -1943,6 +2025,10 @@ impl Importer {
                             e.lyrics[verse] = Syllable { text, join };
                         }
 
+                        if let Some(kind) = pending_octave.remove(&staff_no) {
+                            open_octave.insert(staff_no, (kind, e.id));
+                        }
+                        last_on_staff.insert(staff_no, e.id);
                         let voice = &mut self.score_staves[slot.index].measures[m].voices[v];
                         voice.push(e);
                         last_event.insert((staff_no, voice_name), (m, voice.len() - 1));
@@ -2315,6 +2401,31 @@ mod tests {
         assert_eq!(voice[0].duration, eighth);
         assert_eq!(voice[3].duration, quarter);
         assert_eq!(tuplet_groups(voice), vec![(0, 2), (3, 4)]);
+    }
+
+    #[test]
+    fn octave_lines_round_trip() {
+        let mut score = sample();
+        let voice = score.staves[0].measures[0].voices[0].clone();
+        assert!(voice.len() >= 2);
+        let pitches: Vec<_> = voice.iter().map(|e| e.pitches().to_vec()).collect();
+        score.octave_lines.push(OctaveLine {
+            id: 990,
+            start: voice[0].id,
+            end: voice[1].id,
+            kind: Ottava::Alta,
+        });
+        let xml = export(&score);
+        assert!(xml.contains("<octave-shift type=\"down\" size=\"8\""));
+        assert!(xml.contains("<octave-shift type=\"stop\" size=\"8\""));
+        let back = import(&xml, "x").unwrap();
+        let v = &back.score.staves[0].measures[0].voices[0];
+        assert_eq!(back.score.octave_lines.len(), 1);
+        let l = back.score.octave_lines[0];
+        assert_eq!((l.start, l.end, l.kind), (v[0].id, v[1].id, Ottava::Alta));
+        // Pitches are as they sound, in Partita and in MusicXML.
+        let back_pitches: Vec<_> = v.iter().map(|e| e.pitches().to_vec()).collect();
+        assert_eq!(back_pitches, pitches);
     }
 
     #[test]

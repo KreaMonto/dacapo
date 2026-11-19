@@ -84,7 +84,7 @@ fn required_version(score: &Score) -> u32 {
                 .any(|m| m.voices.iter().any(|v| v.iter().any(test)))
         })
     };
-    if score.has_rhythm_marks() || score.has_clef_changes() {
+    if score.has_rhythm_marks() || score.has_clef_changes() || !score.octave_lines.is_empty() {
         8
     } else if score.metadata.uses_page_texts() || score.has_markings() {
         7
@@ -427,6 +427,21 @@ mod tests {
         )];
         let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
         assert_eq!(v["format_version"], 8);
+        assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
+    }
+
+    #[test]
+    fn octave_lines_need_format_8() {
+        let mut score = Score::new("Etude", 2);
+        score.octave_lines.push(crate::model::OctaveLine {
+            id: 900,
+            start: 1,
+            end: 2,
+            kind: crate::model::Ottava::Alta,
+        });
+        let v: serde_json::Value = serde_json::from_slice(&to_bytes(&score).unwrap()).unwrap();
+        assert_eq!(v["format_version"], 8);
+        assert_eq!(v["score"]["octave_lines"][0]["kind"], "8va");
         assert_eq!(from_bytes(&to_bytes(&score).unwrap()).unwrap(), score);
     }
 
