@@ -327,6 +327,36 @@ impl Duration {
         }
     }
 
+    /// Splits a length in ticks into note values, longest first (dotted
+    /// where that fits): the rests that fill a gap.
+    pub fn split(mut ticks: u32) -> Vec<Duration> {
+        let mut out = Vec::new();
+        let bases = [
+            DurationBase::Whole,
+            DurationBase::Half,
+            DurationBase::Quarter,
+            DurationBase::Eighth,
+            DurationBase::Sixteenth,
+            DurationBase::ThirtySecond,
+            DurationBase::SixtyFourth,
+            DurationBase::HundredTwentyEighth,
+        ];
+        while ticks >= DurationBase::HundredTwentyEighth.ticks() {
+            let Some(&base) = bases.iter().find(|b| b.ticks() <= ticks) else {
+                break;
+            };
+            let dotted = Duration::dotted(base, 1);
+            let d = if dotted.ticks() <= ticks {
+                dotted
+            } else {
+                Duration::new(base)
+            };
+            ticks -= d.ticks();
+            out.push(d);
+        }
+        out
+    }
+
     /// The same value as a grace note.
     pub fn as_grace(self, grace: Grace) -> Self {
         Duration {

@@ -125,6 +125,7 @@ impl From<EditError> for UiError {
             EditError::InvalidTime => Self::new("edit.invalid_time", e.to_string()),
             EditError::SlurNeedsSelection => Self::new("edit.slur_needs_selection", e.to_string()),
             EditError::SlurTooShort => Self::new("edit.slur_too_short", e.to_string()),
+            EditError::GroupSplit => Self::new("edit.group_split", e.to_string()),
         }
     }
 }

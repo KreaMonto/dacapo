@@ -2108,7 +2108,7 @@ impl Importer {
                         let fill = filled.entry((staff_no, v)).or_insert(0);
                         if start > *fill {
                             // A gap in this voice (e.g. after <forward>): rests.
-                            for d in durations_for((start - *fill) as u32) {
+                            for d in Duration::split((start - *fill) as u32) {
                                 let id = self.next_id + 1;
                                 self.next_id = id;
                                 self.score_staves[slot.index].measures[m].voices[v]
@@ -2131,7 +2131,7 @@ impl Importer {
                         {
                             Duration::dotted(base, children(el, "dot").count().min(3) as u8)
                         } else {
-                            durations_for(dur.max(1) as u32)
+                            Duration::split(dur.max(1) as u32)
                                 .into_iter()
                                 .next()
                                 .unwrap_or(Duration::new(DurationBase::Quarter))
@@ -2359,36 +2359,6 @@ impl Importer {
             }
         }
     }
-}
-
-/// Splits a length in ticks into note values, longest first (dotted
-/// where that fits), for rests that fill gaps.
-fn durations_for(mut ticks: u32) -> Vec<Duration> {
-    let mut out = Vec::new();
-    let bases = [
-        DurationBase::Whole,
-        DurationBase::Half,
-        DurationBase::Quarter,
-        DurationBase::Eighth,
-        DurationBase::Sixteenth,
-        DurationBase::ThirtySecond,
-        DurationBase::SixtyFourth,
-        DurationBase::HundredTwentyEighth,
-    ];
-    while ticks >= DurationBase::HundredTwentyEighth.ticks() {
-        let Some(&base) = bases.iter().find(|b| b.ticks() <= ticks) else {
-            break;
-        };
-        let dotted = Duration::dotted(base, 1);
-        let d = if dotted.ticks() <= ticks {
-            dotted
-        } else {
-            Duration::new(base)
-        };
-        ticks -= d.ticks();
-        out.push(d);
-    }
-    out
 }
 
 #[cfg(test)]
@@ -3173,9 +3143,15 @@ mod tests {
 
     #[test]
     fn gaps_become_rests() {
-        let d: Vec<u32> = durations_for(960 * 3).iter().map(Duration::ticks).collect();
+        let d: Vec<u32> = Duration::split(960 * 3)
+            .iter()
+            .map(Duration::ticks)
+            .collect();
         assert_eq!(d, vec![2880]); // dotted half
-        let d: Vec<u32> = durations_for(960 * 5).iter().map(Duration::ticks).collect();
+        let d: Vec<u32> = Duration::split(960 * 5)
+            .iter()
+            .map(Duration::ticks)
+            .collect();
         assert_eq!(d, vec![3840, 960]);
     }
 }

@@ -51,6 +51,8 @@ pub enum EditError {
     SlurNeedsSelection,
     #[error("A slur needs at least two notes")]
     SlurTooShort,
+    #[error("Staves joined by a bracket or brace move together: ungroup them first")]
+    GroupSplit,
 }
 
 /// Music copied with Ctrl+C: one list of events per selected staff.
@@ -72,6 +74,10 @@ pub struct Document {
     caret: Caret,
     /// Selection anchor; the caret is the other end.
     anchor: Option<Caret>,
+    /// Typing overwrites instead of inserting (see [`Document::set_overwrite`]).
+    /// Not part of the document: never saved nor recovered.
+    #[serde(skip)]
+    overwrite: bool,
     history: History,
     /// Bumped on every change (edit, undo, redo).
     revision: u64,
@@ -140,6 +146,7 @@ impl Document {
             saved_revision: 0,
             path: None,
             pending: Vec::new(),
+            overwrite: false,
         }
     }
 
@@ -512,6 +519,13 @@ impl Document {
         self.score.clef_at(c.staff, c.measure).middle_line()
     }
 
+    /// Whether typing (and placing with the mouse) overwrites what follows
+    /// instead of inserting before it. Set by the app with each entry
+    /// action; not part of the document.
+    pub fn set_overwrite(&mut self, on: bool) {
+        self.overwrite = on;
+    }
+
     fn insert_event(
         &mut self,
         kind: EventKind,
@@ -523,6 +537,15 @@ impl Document {
             Some((ops, caret)) => (ops, caret, TxKind::Edit),
             None => (Vec::new(), self.caret, TxKind::Typing),
         };
+        if self.overwrite && ops.is_empty() {
+            let event = Event::new(self.score.alloc_id(), duration, kind);
+            let ops = self.overwrite_ops(caret, event);
+            let after = Caret {
+                index: caret.index + 1,
+                ..caret
+            };
+            return self.commit(tx, ops, after, now_ms, false);
+        }
         // Writing into a measure that only holds a measure rest replaces the
         // rest, as in any notation program.
         if ops.is_empty() {
@@ -551,6 +574,76 @@ impl Document {
             ..caret
         };
         self.commit(tx, ops, after, now_ms, false)
+    }
+
+    /// Puts `new` at the caret in place of what follows, as far as it lasts:
+    /// whole events go, one cut in the middle leaves rests for the rest of
+    /// its time. In a measure that only holds a measure rest, rests fill
+    /// the measure after the new event. What follows keeps its place.
+    fn overwrite_ops(&self, caret: Caret, new: Event) -> Vec<Op> {
+        let at = caret.loc();
+        let events = self
+            .score
+            .voice(caret.staff, caret.measure, caret.voice)
+            .cloned()
+            .unwrap_or_default();
+        let capacity = self.score.measures[caret.measure].capacity();
+        let len = new.ticks();
+        let mut tail = vec![new];
+        let mut covered = 0u32;
+        // An empty measure, or one with only a measure rest: a gap of the
+        // whole measure.
+        let empty = events.is_empty() || is_measure_rest(&events, capacity);
+        let old_tail = if empty {
+            let rest = Duration::split(capacity.saturating_sub(len));
+            tail.extend(rest.into_iter().map(|d| Event::new(0, d, EventKind::Rest)));
+            &events[..]
+        } else {
+            let from = caret.index.min(events.len());
+            for e in &events[from..] {
+                if covered >= len {
+                    tail.push(e.clone());
+                    continue;
+                }
+                let t = e.ticks();
+                if covered + t <= len {
+                    covered += t;
+                } else {
+                    // Cut in the middle: rests for the time left.
+                    let left = covered + t - len;
+                    covered = len;
+                    tail.extend(
+                        Duration::split(left)
+                            .into_iter()
+                            .map(|d| Event::new(0, d, EventKind::Rest)),
+                    );
+                }
+            }
+            &events[from..]
+        };
+        let start = if empty {
+            0
+        } else {
+            caret.index.min(events.len())
+        };
+        let mut ops: Vec<Op> = old_tail
+            .iter()
+            .map(|_| Op::RemoveEvent { at, index: start })
+            .collect();
+        // New rests take the next free ids (InsertEvent reserves them).
+        let mut next_id = self.score.next_id;
+        for (k, mut e) in tail.into_iter().enumerate() {
+            if e.id == 0 {
+                e.id = next_id;
+                next_id += 1;
+            }
+            ops.push(Op::InsertEvent {
+                at,
+                index: start + k,
+                event: e,
+            });
+        }
+        ops
     }
 
     /// Types a note (letter key). Octave follows the previous note and the
@@ -1551,6 +1644,49 @@ impl Document {
         self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
     }
 
+    /// Moves several text boxes by the same amount (tenths of a millimetre),
+    /// in one undo step.
+    pub fn move_text_boxes(
+        &mut self,
+        ids: &[u64],
+        dx: i32,
+        dy: i32,
+        now_ms: u64,
+    ) -> Result<(), EditError> {
+        let ops: Vec<Op> = self
+            .score
+            .text_boxes
+            .iter()
+            .filter(|b| ids.contains(&b.id) && (dx, dy) != (0, 0))
+            .map(|b| Op::SetTextBox {
+                id: b.id,
+                text_box: Some(TextBox {
+                    x: b.x + dx,
+                    y: b.y + dy,
+                    ..b.clone()
+                }),
+            })
+            .collect();
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
+    }
+
+    /// Removes several text boxes in one undo step.
+    pub fn remove_text_boxes(&mut self, ids: &[u64], now_ms: u64) -> Result<(), EditError> {
+        let ops: Vec<Op> = self
+            .score
+            .text_boxes
+            .iter()
+            .filter(|b| ids.contains(&b.id))
+            .map(|b| Op::SetTextBox {
+                id: b.id,
+                text_box: None,
+            })
+            .collect();
+        let caret = self.caret;
+        self.commit(TxKind::Edit, ops, caret, now_ms, false)
+    }
+
     /// A rehearsal mark ("A", "B"…) at the start of `measure`, or none.
     pub fn set_rehearsal(
         &mut self,
@@ -1904,14 +2040,14 @@ impl Document {
     ) -> Result<(), EditError> {
         let staff = self.score.blank_staff(name, clef);
         let op = Op::InsertStaff {
-            index: self.score.staves.len(),
+            index: self.new_staff_index(),
             staff,
         };
         let caret = self.caret;
         self.commit(TxKind::Edit, vec![op], caret, now_ms, false)
     }
 
-    /// Adds a staff at the bottom with the given name, sound, clef and
+    /// Adds a staff below the caret's with the given name, sound, clef and
     /// transposition.
     pub fn add_instrument_staff(
         &mut self,
@@ -1921,7 +2057,8 @@ impl Document {
         self.add_instrument(props, 1, now_ms)
     }
 
-    /// Adds an instrument at the bottom on `staves` staves (1-4) in one
+    /// Adds an instrument below the caret's staff (and the staves joined to
+    /// it) on `staves` staves (1-4) in one
     /// undo step. Several staves (a piano, a harp, an organ) share the
     /// name, sound and transposition and are joined by a brace; the first
     /// uses `props.clef`, the others the bass clef.
@@ -1937,7 +2074,7 @@ impl Document {
             id: self.score.alloc_id(),
             kind: GroupKind::Brace,
         });
-        let first = self.score.staves.len();
+        let first = self.new_staff_index();
         let mut ops = Vec::with_capacity(staves);
         for k in 0..staves {
             let clef = if k == 0 { props.clef } else { Clef::Bass };
@@ -1985,6 +2122,102 @@ impl Document {
         }
         let caret = self.caret;
         self.commit(TxKind::Edit, ops, caret, now_ms, false)
+    }
+
+    /// The staves moving together with `staff`: those joined to it by a
+    /// bracket or brace (a piano's two staves), else just itself.
+    pub fn staff_block(&self, staff: usize) -> std::ops::RangeInclusive<usize> {
+        let staves = &self.score.staves;
+        let Some(group) = staves.get(staff).and_then(|s| s.group) else {
+            return staff..=staff;
+        };
+        let same = |i: usize| staves[i].group.is_some_and(|g| g.id == group.id);
+        let mut first = staff;
+        while first > 0 && same(first - 1) {
+            first -= 1;
+        }
+        let mut last = staff;
+        while last + 1 < staves.len() && same(last + 1) {
+            last += 1;
+        }
+        first..=last
+    }
+
+    /// Puts the staves in a new order (the new staff `i` is the old staff
+    /// `order[i]`), with their music, in one undo step. Staves joined by a
+    /// bracket or brace must stay together and in their order.
+    pub fn reorder_staves(&mut self, order: Vec<usize>, now_ms: u64) -> Result<(), EditError> {
+        let n = self.score.staves.len();
+        if order.len() != n || order.iter().copied().eq(0..n) {
+            return Ok(());
+        }
+        // Every group: its staves one after another, in the same order.
+        for (k, &old) in order.iter().enumerate() {
+            let block = self.staff_block(old);
+            if old == *block.start() {
+                let fits = block
+                    .clone()
+                    .enumerate()
+                    .all(|(j, s)| order.get(k + j) == Some(&s));
+                if !fits {
+                    return Err(EditError::GroupSplit);
+                }
+            }
+        }
+        // The caret stays on its staff, wherever it goes.
+        let mut caret = self.caret;
+        caret.staff = order.iter().position(|&o| o == caret.staff).unwrap_or(0);
+        self.commit(
+            TxKind::Edit,
+            vec![Op::ReorderStaves { order }],
+            caret,
+            now_ms,
+            false,
+        )
+    }
+
+    /// Moves the staff's block (it and the staves joined to it) one block up
+    /// (`delta` -1) or down (1).
+    pub fn move_staff(&mut self, staff: usize, delta: i32, now_ms: u64) -> Result<(), EditError> {
+        let n = self.score.staves.len();
+        if staff >= n {
+            return Err(OpError::StaffIndex(staff).into());
+        }
+        let block = self.staff_block(staff);
+        let order: Vec<usize> = if delta < 0 {
+            let Some(before) = block.start().checked_sub(1) else {
+                return Ok(());
+            };
+            let other = self.staff_block(before);
+            (0..*other.start())
+                .chain(block.clone())
+                .chain(other)
+                .chain(block.end() + 1..n)
+                .collect()
+        } else {
+            if block.end() + 1 >= n {
+                return Ok(());
+            }
+            let other = self.staff_block(block.end() + 1);
+            (0..*block.start())
+                .chain(other.clone())
+                .chain(block)
+                .chain(other.end() + 1..n)
+                .collect()
+        };
+        self.reorder_staves(order, now_ms)
+    }
+
+    /// Where a new staff goes: below the caret's staff and the staves joined
+    /// to it.
+    fn new_staff_index(&self) -> usize {
+        if self.score.staves.is_empty() {
+            return 0;
+        }
+        *self
+            .staff_block(self.caret.staff.min(self.score.staves.len() - 1))
+            .end()
+            + 1
     }
 
     pub fn remove_staff(&mut self, index: usize, now_ms: u64) -> Result<(), EditError> {
@@ -2315,6 +2548,123 @@ mod tests {
         doc.set_line(LineKind::Diminuendo, 4_000).unwrap();
         let kinds: Vec<_> = doc.score.lines.iter().map(|l| l.kind).collect();
         assert_eq!(kinds, [LineKind::Glissando, LineKind::Diminuendo]);
+    }
+
+    #[test]
+    fn staves_reorder_with_their_groups() {
+        let mut doc = Document::new(Score::new("t", 1));
+        // Violin, piano (two braced staves), cello.
+        let names = |doc: &Document| -> Vec<String> {
+            doc.score.staves.iter().map(|s| s.name.clone()).collect()
+        };
+        doc.score.staves[0].name = "Vln".into();
+        doc.set_caret(at(0, 0, 0), false);
+        doc.add_instrument(
+            StaffProps {
+                name: "Pno".into(),
+                short_name: String::new(),
+                instrument: 0,
+                clef: Clef::Treble,
+                transposition: Transposition::default(),
+            },
+            2,
+            1_000,
+        )
+        .unwrap();
+        doc.set_caret(at(2, 0, 0), false);
+        doc.add_staff("Vc", Clef::Bass, 2_000).unwrap();
+        assert_eq!(names(&doc), ["Vln", "Pno", "Pno", "Vc"]);
+        // A new staff goes below the caret's block: after the piano.
+        doc.set_caret(at(1, 0, 0), false);
+        doc.add_staff("Vla", Clef::Alto, 3_000).unwrap();
+        assert_eq!(names(&doc), ["Vln", "Pno", "Pno", "Vla", "Vc"]);
+        // The piano moves up as a whole.
+        doc.move_staff(2, -1, 4_000).unwrap();
+        assert_eq!(names(&doc), ["Pno", "Pno", "Vln", "Vla", "Vc"]);
+        // Splitting it is refused.
+        assert_eq!(
+            doc.reorder_staves(vec![0, 2, 1, 3, 4], 5_000),
+            Err(EditError::GroupSplit)
+        );
+        // Any other order goes, in one undo step, music and all.
+        doc.reorder_staves(vec![4, 3, 2, 0, 1], 6_000).unwrap();
+        assert_eq!(names(&doc), ["Vc", "Vla", "Vln", "Pno", "Pno"]);
+        doc.undo().unwrap();
+        assert_eq!(names(&doc), ["Pno", "Pno", "Vln", "Vla", "Vc"]);
+    }
+
+    #[test]
+    fn text_boxes_move_and_go_together() {
+        let mut doc = Document::new(Score::new("t", 1));
+        for (x, text) in [(100, "a"), (300, "b"), (500, "c")] {
+            doc.set_text_box(
+                TextBox {
+                    id: 0,
+                    page: 0,
+                    x,
+                    y: 200,
+                    text: text.into(),
+                    style: TextStyle::default(),
+                    align: Default::default(),
+                    frame: false,
+                },
+                x as u64,
+            )
+            .unwrap();
+        }
+        let ids: Vec<u64> = doc.score.text_boxes.iter().map(|b| b.id).collect();
+        doc.move_text_boxes(&ids[..2], 50, -20, 10_000).unwrap();
+        let xy: Vec<(i32, i32)> = doc.score.text_boxes.iter().map(|b| (b.x, b.y)).collect();
+        assert_eq!(xy, [(150, 180), (350, 180), (500, 200)]);
+        doc.undo().unwrap();
+        assert_eq!(doc.score.text_boxes[0].x, 100, "one undo step");
+        doc.remove_text_boxes(&ids[1..], 20_000).unwrap();
+        assert_eq!(doc.score.text_boxes.len(), 1);
+        doc.undo().unwrap();
+        assert_eq!(doc.score.text_boxes.len(), 3);
+    }
+
+    #[test]
+    fn overwriting_keeps_the_measure_length() {
+        let mut doc = Document::new(Score::new("t", 2));
+        for s in [C, D, E, F] {
+            doc.insert_note(s, Q, 1_000).unwrap();
+        }
+        let steps = |doc: &Document| -> Vec<Option<Step>> { steps(doc, 0, 0) };
+        // Caret before D: a G in its place.
+        doc.set_caret(at(0, 0, 1), false);
+        doc.set_overwrite(true);
+        doc.insert_note(G, Q, 2_000).unwrap();
+        assert_eq!(steps(&doc), [Some(C), Some(G), Some(E), Some(F)]);
+        // A half note over E and F.
+        doc.insert_note(A, Duration::new(DurationBase::Half), 3_000)
+            .unwrap();
+        assert_eq!(steps(&doc), [Some(C), Some(G), Some(A)]);
+        assert!(doc.score.validate().is_empty());
+        // An eighth over a quarter: a rest for the other eighth.
+        doc.set_caret(at(0, 0, 0), false);
+        doc.insert_note(B, Duration::new(DurationBase::Eighth), 4_000)
+            .unwrap();
+        assert_eq!(steps(&doc), [Some(B), None, Some(G), Some(A)]);
+        assert!(doc.score.validate().is_empty());
+        // In an empty measure: the note, then rests to fill it.
+        doc.set_caret(at(0, 1, 0), false);
+        doc.insert_note(C, Q, 5_000).unwrap();
+        let ticks: u32 = doc
+            .score
+            .voice(0, 1, 0)
+            .unwrap()
+            .iter()
+            .map(Event::ticks)
+            .sum();
+        assert_eq!(ticks, 3840);
+        // Inserting again: the measure grows (and is marked too full).
+        doc.set_overwrite(false);
+        doc.insert_note(D, Q, 6_000).unwrap();
+        assert_eq!(doc.score.validate().len(), 1);
+        // Typing on is one undo step, the rests filled in included.
+        doc.undo().unwrap();
+        assert!(doc.score.voice(0, 1, 0).unwrap().is_empty());
     }
 
     #[test]

@@ -61,6 +61,17 @@ Written for 0.4 (sections 0 and 1 of [NOTATION_PLAN.md](NOTATION_PLAN.md)); add 
 - [ ] **O5** Breath mark and caesura after a note: the comma and the // ; play: the note shorter.
 - [ ] **O6** Choose an ornament with no selection, then click a note: it goes there (as with articulations).
 
+## D. Editing
+
+- [ ] **D1** Four quarters C D E F, caret before D, **Insert** (the status bar says Overwrite), type G: C G E F. A half note there replaces two quarters; an eighth over a quarter leaves an eighth rest. **Insert** again: back to inserting (the measure grows, marked too full).
+- [ ] **D2** In an empty measure with Overwrite on, type one quarter: the measure is filled with rests after it.
+- [ ] **D3** Drag a rectangle over notes of two staves and three measures: exactly that range is selected (Delete, transpose, tie work on it).
+- [ ] **D4** Two text boxes: a rectangle around them (with no notes inside) chooses both (highlighted); drag one, both move; Del deletes both; undo brings them back. Shift+click adds or removes one. A rectangle over notes and boxes takes only the notes.
+- [ ] **D5** Three staves, the middle a piano (two braced staves): drag the piano's grip to the top: both hands go. **Score → Staff → Order…**: move staves with ↑ ↓; OK reorders, music and all; undo brings the old order back. Trying to put a staff between the two hands is refused with a message about ungrouping.
+- [ ] **D6** Add a staff with the caret on the first one: it goes right below it (below the piano if the caret is on a hand).
+- [ ] **D7** **View → This Staff Alone** on the second staff: only it is shown, with "Only …" and a way back over the score; typing goes into that staff of the full score; playback plays only it. **Esc** brings back the full score.
+- [ ] **D8** **View → Toolbars**: save a layout, **Rename Layout…** it (a name already used is refused), delete it.
+
 ## T. Texts (from 0.3.14, quick check)
 
 - [ ] **T1** Titles, header and footer: click and change them on the page.

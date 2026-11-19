@@ -19,6 +19,7 @@
       <symbol id="i-measure-remove" viewBox="0 0 24 24"><path d="M3 7h11M3 12h11M3 17h11"/><path d="M3 5v14M14 5v14"/><path d="M16 12h6"/></symbol>
       <symbol id="i-staff-add" viewBox="0 0 24 24"><path d="M2 5h12M2 8.5h12M2 12h12"/><path d="M2 16h12M2 19.5h12" opacity=".45"/><path d="M19 13v6M16 16h6"/></symbol>
       <symbol id="i-staff-remove" viewBox="0 0 24 24"><path d="M2 5h12M2 8.5h12M2 12h12"/><path d="M2 16h12M2 19.5h12" opacity=".45"/><path d="M16 16h6"/></symbol>
+      <symbol id="i-isolate" viewBox="0 0 24 24"><path d="M2 3.5h20M2 20.5h20" opacity=".35"/><path d="M4 9h16M4 12h16M4 15h16"/><path d="M1.5 6.5h21v11h-21z" stroke-width="1.4"/></symbol>
       <symbol id="i-multirest" viewBox="0 0 24 24"><path d="M4 8v8M20 8v8"/><path d="M4 12h16" stroke-width="4"/><path d="M10 3.5h4" opacity=".7"/></symbol>
       <symbol id="i-select" viewBox="0 0 24 24"><path d="M5 3l14 8-6.5 1.8L10 19z"/></symbol>
       <symbol id="i-erase" viewBox="0 0 24 24"><path d="M15.5 3.5l5 5-10 10H6l-3-3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 10l5 5" stroke="currentColor" stroke-width="2"/><path d="M11 20.5h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
@@ -136,6 +137,7 @@
         </div>
         <div class="tbar" role="group" data-bar-id="staves" data-i18n-bar="bar.staves" data-i18n-aria="bar.staves">
           <button data-cmd="add-staff" class="ibtn" data-i18n-aria="toolbar.addstaff" data-i18n-tip="toolbar.addstaff" data-i18n-desc="toolbar.addstaff.desc"><svg class="icon"><use href="#i-staff-add"/></svg></button>
+          <button data-cmd="isolate" class="ibtn" aria-pressed="false" data-i18n-aria="isolate" data-i18n-tip="isolate" data-i18n-desc="isolate.desc"><svg class="icon"><use href="#i-isolate"/></svg></button>
           <button data-cmd="remove-staff" class="ibtn" data-i18n-aria="toolbar.removestaff" data-i18n-tip="toolbar.removestaff" data-i18n-desc="toolbar.removestaff.desc"><svg class="icon"><use href="#i-staff-remove"/></svg></button>
           <button data-cmd="group-bracket" class="ibtn" data-i18n-aria="menu.score.group.bracket" data-i18n-tip="menu.score.group.bracket" data-i18n-desc="menu.score.group.bracket.desc"><svg class="icon"><use href="#i-bracket"/></svg></button>
           <button data-cmd="group-brace" class="ibtn" data-i18n-aria="menu.score.group.brace" data-i18n-tip="menu.score.group.brace" data-i18n-desc="menu.score.group.brace.desc"><svg class="icon"><use href="#i-brace"/></svg></button>
@@ -233,6 +235,8 @@
     <div id="recovery" class="recovery" hidden></div>
 
     <main id="page" class="page" tabindex="0" data-i18n-aria="score.label">
+      <!-- While one staff is shown alone: which, and the way back (app.js). -->
+      <div id="isolate-bar" class="isolate-bar" hidden></div>
       <div class="sheet">
         <div id="score" class="score"></div>
       </div>

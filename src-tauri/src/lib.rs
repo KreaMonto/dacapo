@@ -178,9 +178,14 @@ enum Action {
     InsertNote {
         step: Step,
         duration: Duration,
+        /// Overwrite what follows instead of inserting (the Insert key).
+        #[serde(default)]
+        overwrite: bool,
     },
     InsertRest {
         duration: Duration,
+        #[serde(default)]
+        overwrite: bool,
     },
     AddToChord {
         step: Step,
@@ -191,11 +196,15 @@ enum Action {
         step: Step,
         octave: i8,
         duration: Duration,
+        #[serde(default)]
+        overwrite: bool,
     },
     /// Mouse entry: rest at an insertion point.
     PlaceRest {
         at: Caret,
         duration: Duration,
+        #[serde(default)]
+        overwrite: bool,
     },
     /// Mouse entry on an existing event (`at.index` = event index).
     AddPitch {
@@ -310,6 +319,24 @@ enum Action {
     },
     RemoveTextBox {
         id: u64,
+    },
+    /// Several text boxes moved together (tenths of a millimetre).
+    MoveTextBoxes {
+        ids: Vec<u64>,
+        dx: i32,
+        dy: i32,
+    },
+    RemoveTextBoxes {
+        ids: Vec<u64>,
+    },
+    /// The staves in a new order: the new staff `i` is the old `order[i]`.
+    ReorderStaves {
+        order: Vec<usize>,
+    },
+    /// A staff (with the staves joined to it) one place up (-1) or down (1).
+    MoveStaff {
+        staff: usize,
+        delta: i32,
     },
     /// Words on a note: an expression or a technique ("" removes it).
     SetNoteText {
@@ -508,16 +535,40 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
     );
     let result = session.edit(|d| -> Result<(), UiError> {
         let r = match action {
-            Action::InsertNote { step, duration } => d.insert_note(step, duration, now),
-            Action::InsertRest { duration } => d.insert_rest(duration, now),
+            Action::InsertNote {
+                step,
+                duration,
+                overwrite,
+            } => {
+                d.set_overwrite(overwrite);
+                d.insert_note(step, duration, now)
+            }
+            Action::InsertRest {
+                duration,
+                overwrite,
+            } => {
+                d.set_overwrite(overwrite);
+                d.insert_rest(duration, now)
+            }
             Action::AddToChord { step } => d.add_to_chord(step, now),
             Action::PlaceNote {
                 at,
                 step,
                 octave,
                 duration,
-            } => d.place_note(at, step, octave, duration, now),
-            Action::PlaceRest { at, duration } => d.place_rest(at, duration, now),
+                overwrite,
+            } => {
+                d.set_overwrite(overwrite);
+                d.place_note(at, step, octave, duration, now)
+            }
+            Action::PlaceRest {
+                at,
+                duration,
+                overwrite,
+            } => {
+                d.set_overwrite(overwrite);
+                d.place_rest(at, duration, now)
+            }
             Action::AddPitch { at, step, octave } => d.add_pitch(at, step, octave, now),
             Action::DeleteBackward => d.delete_backward(now),
             Action::DeleteForward => d.delete_forward(now),
@@ -611,6 +662,10 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::SetTextStyles { styles } => d.set_text_styles(styles, now),
             Action::SetTextBox { text_box } => d.set_text_box(text_box, now),
             Action::RemoveTextBox { id } => d.remove_text_box(id, now),
+            Action::MoveTextBoxes { ids, dx, dy } => d.move_text_boxes(&ids, dx, dy, now),
+            Action::RemoveTextBoxes { ids } => d.remove_text_boxes(&ids, now),
+            Action::ReorderStaves { order } => d.reorder_staves(order, now),
+            Action::MoveStaff { staff, delta } => d.move_staff(staff, delta, now),
             Action::SetRehearsal { measure, text } => d.set_rehearsal(measure, text, now),
             Action::SetRepeat {
                 first,
@@ -692,12 +747,21 @@ fn download_soundfont(state: State<AppState>) {
     state.audio.download_soundfont();
 }
 
-/// Plays the document from the caret (or from the beginning).
+/// Plays the document from the caret (or from the beginning); with `solo`,
+/// only that staff (the staff shown alone).
 #[tauri::command]
-fn play(state: State<AppState>, id: String, from_start: bool) -> Result<(), UiError> {
+fn play(
+    state: State<AppState>,
+    id: String,
+    from_start: bool,
+    solo: Option<usize>,
+) -> Result<(), UiError> {
     let mut inner = state.inner.lock().unwrap();
     let doc = inner.find(&id)?.doc();
-    let timeline = partita_core::playback::build(&doc.score);
+    let mut timeline = partita_core::playback::build(&doc.score);
+    if let Some(staff) = solo {
+        timeline.notes.retain(|n| n.staff == staff);
+    }
     let from = if from_start {
         0
     } else {
