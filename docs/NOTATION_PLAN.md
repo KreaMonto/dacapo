@@ -77,7 +77,7 @@ Every mode needs these. The order inside each group is the planned order of work
 
 - [x] Clef changes mid-staff, at the start of a measure (from the Clef selector), with MusicXML import and export. Changes inside a measure are not supported yet.
 - [x] 8va / 8vb and 15ma / 15mb lines *(new)*: notes keep their sound, only the drawing moves (as in MusicXML).
-- [ ] Enharmonic respelling (F♯ ↔ G♭) *(new)*.
+- [x] Enharmonic respelling (F♯ ↔ G♭) *(new)*: J, or the ♯⇄♭ button of the Accidentals bar.
 
 ### Lines
 

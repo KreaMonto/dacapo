@@ -108,6 +108,33 @@ impl Pitch {
         (self.octave as i32 + 1) * 12 + self.step.semitones() + self.alter as i32
     }
 
+    /// The next way of writing the same sound: those with one accidental
+    /// first, then double sharps and flats, then the natural one, and round
+    /// again (F♯ → G♭ → E𝄪 → F♯; C → B♯ → D𝄫 → C).
+    pub fn respelled(self) -> Self {
+        let midi = self.midi();
+        let mut options: Vec<Pitch> = Step::ALL
+            .iter()
+            .flat_map(|&step| (-2i8..=2).map(move |alter| (step, alter)))
+            .filter(|&(step, alter)| (midi - step.semitones() - alter as i32).rem_euclid(12) == 0)
+            .map(|(step, alter)| Pitch {
+                step,
+                alter,
+                octave: ((midi - step.semitones() - alter as i32) / 12 - 1) as i8,
+            })
+            .collect();
+        let rank = |a: i8| match a.abs() {
+            1 => 0,
+            2 => 1,
+            _ => 2,
+        };
+        options.sort_by_key(|p| (rank(p.alter), -p.alter));
+        match options.iter().position(|p| *p == self) {
+            Some(i) => options[(i + 1) % options.len()],
+            None => options.first().copied().unwrap_or(self),
+        }
+    }
+
     /// Moves the pitch by diatonic steps, keeping its alteration.
     pub fn shifted(self, steps: i32) -> Self {
         let mut p = Pitch::from_diatonic_index(self.diatonic_index() + steps);
@@ -2225,6 +2252,23 @@ mod tests {
     #[test]
     fn time_signature_capacity() {
         assert_eq!(TimeSignature::COMMON.measure_ticks(), 3840);
+        // Respelling keeps the sound: F♯ → G♭ → E𝄪 → F♯, B♯3 is C4.
+        let fs = Pitch {
+            step: Step::F,
+            alter: 1,
+            octave: 4,
+        };
+        let gb = fs.respelled();
+        assert_eq!((gb.step, gb.alter, gb.octave), (Step::G, -1, 4));
+        let ess = gb.respelled();
+        assert_eq!((ess.step, ess.alter), (Step::E, 2));
+        assert_eq!(ess.respelled(), fs);
+        let c = Pitch::new(Step::C, 4);
+        let bs = c.respelled();
+        assert_eq!(
+            (bs.step, bs.alter, bs.octave, bs.midi()),
+            (Step::B, 1, 3, 60)
+        );
         // Tuplets: three eighths of a triplet make a quarter.
         let triplet = Tuplet {
             actual: 3,

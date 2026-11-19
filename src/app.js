@@ -1092,6 +1092,7 @@ document.addEventListener('keydown', (ev) => {
     case 'Backspace': return run({ type: 'delete_backward' });
     case 'Delete': return run({ type: 'delete_forward' });
     case '+': return run({ type: 'accidental', delta: 1 });
+    case 'j': case 'J': return run({ type: 'respell' });
     case '-': return run({ type: 'accidental', delta: -1 });
     case '.':
       ev.preventDefault();
@@ -2654,6 +2655,7 @@ const SHORTCUTS = [
     ['Ctrl + 3', 'entry.tuplet'],
     ['Ctrl + G', 'entry.grace'],
     ['+ / −', 'entry.accidental'],
+    ['J', 'entry.respell'],
     ['Alt + ↑ / ↓', 'entry.move'],
     ['T', 'entry.tie'],
     ['S', 'entry.slur'],
@@ -2983,6 +2985,7 @@ const ACCIDENTALS = [['sharp', 1], ['flat', -1], ['natural', 0]];
 const ARTICULATIONS = ['staccato', 'staccatissimo', 'tenuto', 'accent', 'marcato', 'fermata'];
 const DYNAMICS = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'sfz', 'fp'];
 for (const [name, alter] of ACCIDENTALS) commands[`alter:${name}`] = () => act({ type: 'set_accidental', alter });
+commands.respell = () => act({ type: 'respell' });
 for (const a of ARTICULATIONS) commands[`artic:${a}`] = () => act({ type: 'toggle_articulation', articulation: a });
 for (const d of DYNAMICS) commands[`dyn:${d}`] = () => act({ type: 'set_dynamic', dynamic: d });
 commands['page-texts'] = () => pageTextsDialog();
@@ -3213,8 +3216,10 @@ const MENUS = [
     { label: t('toolbar.tuplet'), enabled: hasDoc, items: [3, 5, 6, 2, 4].map((n) =>
       ({ label: t(`tuplet.${n}`), cmd: `tuplet:${n}`, key: `Ctrl+${n}`, checked: () => state.duration.tuplet?.actual === n, desc: t(`tuplet.${n}.desc`) })) },
     { sep: true },
-    { label: t('palette.accidentals'), enabled: hasDoc, items: ACCIDENTALS.map(([name]) =>
-      ({ label: t(`palette.${name}`), cmd: `alter:${name}`, desc: t(`palette.${name}.desc`) })) },
+    { label: t('palette.accidentals'), enabled: hasDoc, items: [...ACCIDENTALS.map(([name]) =>
+      ({ label: t(`palette.${name}`), cmd: `alter:${name}`, desc: t(`palette.${name}.desc`) })),
+    { sep: true },
+    { label: t('palette.respell'), cmd: 'respell', key: 'J', desc: t('palette.respell.desc') }] },
     { label: t('palette.articulations'), enabled: hasDoc, items: ARTICULATIONS.map((a) =>
       ({ label: t(`palette.${a}`), cmd: `artic:${a}`, desc: t(`palette.${a}.desc`) })) },
     { label: t('palette.dynamics'), enabled: hasDoc, items: DYNAMICS.map((d) =>

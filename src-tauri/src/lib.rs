@@ -223,6 +223,8 @@ enum Action {
     SetAccidental {
         alter: i8,
     },
+    /// The same sound written another way (F♯ ↔ G♭).
+    Respell,
     ToggleTie,
     ToggleSlur,
     ToggleArticulation {
@@ -536,6 +538,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::Transpose { steps } => d.transpose(steps, now),
             Action::Accidental { delta } => d.change_accidental(delta, now),
             Action::SetAccidental { alter } => d.set_accidental(alter, now),
+            Action::Respell => d.respell(now),
             Action::ToggleTie => d.toggle_tie(now),
             Action::ToggleSlur => d.toggle_slur(now),
             Action::ToggleArticulation { articulation } => d.toggle_articulation(articulation, now),

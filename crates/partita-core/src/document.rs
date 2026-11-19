@@ -950,6 +950,12 @@ impl Document {
         })
     }
 
+    /// Writes the selected notes (or the previous event) the next way that
+    /// sounds the same: F♯ ↔ G♭ (see [`Pitch::respelled`]).
+    pub fn respell(&mut self, now_ms: u64) -> Result<(), EditError> {
+        self.repitch(now_ms, Pitch::respelled)
+    }
+
     /// Sets an explicit accidental (palette ♯ ♭ ♮ buttons) on the
     /// selection or the previous event.
     pub fn set_accidental(&mut self, alter: i8, now_ms: u64) -> Result<(), EditError> {
@@ -2206,6 +2212,21 @@ mod tests {
             .iter()
             .map(|e| e.pitches().first().map(|p| p.step))
             .collect()
+    }
+
+    #[test]
+    fn respelling_keeps_the_sound_and_is_one_step() {
+        let mut doc = Document::new(Score::new("t", 1));
+        doc.insert_note(F, Q, 1_000).unwrap();
+        doc.set_accidental(1, 2_000).unwrap();
+        let before = doc.score.voice(0, 0, 0).unwrap()[0].pitches()[0];
+        // (Later than the accidental, so it is an undo step of its own.)
+        doc.respell(60_000).unwrap();
+        let after = doc.score.voice(0, 0, 0).unwrap()[0].pitches()[0];
+        assert_eq!((after.step, after.alter), (G, -1));
+        assert_eq!(after.midi(), before.midi());
+        doc.undo().unwrap();
+        assert_eq!(doc.score.voice(0, 0, 0).unwrap()[0].pitches()[0], before);
     }
 
     #[test]
