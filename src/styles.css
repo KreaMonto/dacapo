@@ -502,6 +502,11 @@ button.on { background: var(--button-active); border-color: var(--accent); color
 .score .tuplet-num { text-anchor: middle; }
 /* A clef change inside a system: smaller than the clef at the start. */
 .score .clef-change { font-size: 30px; }
+/* Octave lines: 8va and a dashed line with its hook. */
+/* The octave line buttons: "8va" in the score's italic. */
+.ottava-btn { font: italic 600 12px Georgia, serif; }
+.score .ottava-text { font: italic 600 13px Georgia, serif; }
+.score .ottava-line { fill: none; stroke: currentColor; stroke-width: 1; stroke-dasharray: 5 4; }
 /* Grace notes: 65 % of the size (GRACE_K in render.js). */
 .score .m.small { font-size: 26px; }
 .score .grace .stem, .score .grace-stem { stroke-width: 1; }

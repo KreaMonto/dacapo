@@ -615,6 +615,47 @@ impl<'de> Deserialize<'de> for Event {
     }
 }
 
+/// Which octave line: the notes under it sound one or two octaves away from
+/// where they are drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Ottava {
+    /// 8va: drawn an octave lower than they sound.
+    #[serde(rename = "8va")]
+    Alta,
+    /// 8vb: drawn an octave higher than they sound.
+    #[serde(rename = "8vb")]
+    Bassa,
+    /// 15ma: drawn two octaves lower.
+    #[serde(rename = "15ma")]
+    QuindicesimaAlta,
+    /// 15mb: drawn two octaves higher.
+    #[serde(rename = "15mb")]
+    QuindicesimaBassa,
+}
+
+impl Ottava {
+    /// Octaves the notes sound above where they are drawn.
+    pub fn octaves(self) -> i8 {
+        match self {
+            Ottava::Alta => 1,
+            Ottava::Bassa => -1,
+            Ottava::QuindicesimaAlta => 2,
+            Ottava::QuindicesimaBassa => -2,
+        }
+    }
+}
+
+/// An octave line over the notes of a staff (every voice) from the event
+/// `start` to the event `end`, both in that staff. Pitches are kept as they
+/// sound; only the drawing moves. Since file format 8 (recovery format 16).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OctaveLine {
+    pub id: u64,
+    pub start: EventId,
+    pub end: EventId,
+    pub kind: Ottava,
+}
+
 /// A phrase mark from one event to a later one in the same staff and voice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Slur {
@@ -1719,6 +1760,9 @@ pub struct Score {
     /// Texts placed freely on the pages. Since file format 7 (recovery
     /// format 9).
     pub text_boxes: Vec<TextBox>,
+    /// 8va, 8vb, 15ma and 15mb lines. Since file format 8 (recovery format
+    /// 16).
+    pub octave_lines: Vec<OctaveLine>,
 }
 
 #[derive(Deserialize)]
@@ -1734,6 +1778,22 @@ struct ScoreFields {
     #[serde(default)]
     text_styles: std::collections::BTreeMap<TextKind, TextStyle>,
     #[serde(default)]
+    text_boxes: Vec<TextBox>,
+    #[serde(default)]
+    octave_lines: Vec<OctaveLine>,
+}
+
+/// [`Score`] as written to recovery data before octave lines (formats 9 to
+/// 15).
+#[derive(Deserialize)]
+struct ScorePreOctaves {
+    metadata: Metadata,
+    measures: Vec<MeasureAttrs>,
+    staves: Vec<Staff>,
+    next_id: u64,
+    slurs: Vec<Slur>,
+    tempo: u16,
+    text_styles: std::collections::BTreeMap<TextKind, TextStyle>,
     text_boxes: Vec<TextBox>,
 }
 
@@ -1762,6 +1822,21 @@ impl<'de> Deserialize<'de> for Score {
                 tempo: s.tempo,
                 text_styles: Default::default(),
                 text_boxes: Vec::new(),
+                octave_lines: Vec::new(),
+            });
+        }
+        if matches!(legacy_format(), 9..=15) {
+            let s = ScorePreOctaves::deserialize(deserializer)?;
+            return Ok(Score {
+                metadata: s.metadata,
+                measures: s.measures,
+                staves: s.staves,
+                next_id: s.next_id,
+                slurs: s.slurs,
+                tempo: s.tempo,
+                text_styles: s.text_styles,
+                text_boxes: s.text_boxes,
+                octave_lines: Vec::new(),
             });
         }
         let s = ScoreFields::deserialize(deserializer)?;
@@ -1774,6 +1849,7 @@ impl<'de> Deserialize<'de> for Score {
             tempo: s.tempo,
             text_styles: s.text_styles,
             text_boxes: s.text_boxes,
+            octave_lines: s.octave_lines,
         })
     }
 }
@@ -1796,6 +1872,25 @@ impl Score {
             .flatten()
             .map(|e| e.id)
             .collect()
+    }
+
+    /// Absolute tick where an event starts (measures one after another, at
+    /// their length), for comparing positions across measures and voices.
+    pub fn event_start(&self, id: EventId) -> Option<u64> {
+        let (s, m, v, i) = self.locate(id)?;
+        let before: u64 = self.measures[..m].iter().map(|a| a.capacity() as u64).sum();
+        let within: u64 = self.staves[s].measures[m].voices[v][..i]
+            .iter()
+            .map(|e| e.ticks() as u64)
+            .sum();
+        Some(before + within)
+    }
+
+    /// Absolute tick where an event ends (see [`Score::event_start`]).
+    pub fn event_end(&self, id: EventId) -> Option<u64> {
+        let (s, m, v, i) = self.locate(id)?;
+        let e = &self.staves[s].measures[m].voices[v][i];
+        Some(self.event_start(id)? + (e.ticks() as u64).max(1))
     }
 
     /// Where an event lives: (staff, measure, voice, index).
@@ -1892,6 +1987,7 @@ impl Score {
             tempo: DEFAULT_TEMPO,
             text_styles: Default::default(),
             text_boxes: Vec::new(),
+            octave_lines: Vec::new(),
         };
         let staff = score.blank_staff("Staff 1", Clef::Treble);
         score.staves.push(staff);

@@ -17,8 +17,8 @@ use partita_core::document::{Clipboard, Document};
 use partita_core::file;
 use partita_core::model::{
     Articulation, Barline, Beam, Clef, Duration, Dynamic, GroupKind, Issue, Jump, KeySignature,
-    LayoutBreak, LyricJoin, Metadata, NoteTextKind, Score, Step, TempoMark, TextBox, TextKind,
-    TextStyle, TimeSignature, Transposition,
+    LayoutBreak, LyricJoin, Metadata, NoteTextKind, Ottava, Score, Step, TempoMark, TextBox,
+    TextKind, TextStyle, TimeSignature, Transposition,
 };
 use partita_core::musicxml;
 use partita_core::recovery::{Recoverable, RecoveryStore};
@@ -234,6 +234,10 @@ enum Action {
     /// How the target notes are beamed (`null`: automatically).
     SetBeam {
         beam: Option<Beam>,
+    },
+    /// An 8va, 8vb, 15ma or 15mb line over the selection (again: removed).
+    SetOctaveLine {
+        kind: Ottava,
     },
     /// The syllable event `id` sings in `verse` (0 = first); empty text
     /// removes it.
@@ -537,6 +541,7 @@ fn edit(state: State<AppState>, id: String, action: Action) -> Result<serde_json
             Action::ToggleArticulation { articulation } => d.toggle_articulation(articulation, now),
             Action::SetDynamic { dynamic } => d.set_dynamic(dynamic, now),
             Action::SetBeam { beam } => d.set_beam(beam, now),
+            Action::SetOctaveLine { kind } => d.set_octave_line(kind, now),
             Action::SetLyric {
                 id,
                 verse,

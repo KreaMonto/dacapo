@@ -537,6 +537,14 @@ export default {
   'value.tuplet': '{value} ({name})',
   'value.grace': '{value}, {name}',
 
+  // Líneas de octava: el desplegable de la barra Ligaduras y Notas → Líneas de octava.
+  'toolbar.ottava': 'Líneas de octava',
+  'toolbar.ottava.desc': 'Escribe las notas seleccionadas (o la nota anterior al cursor) una o dos octavas lejos de como suenan, bajo una línea discontinua. Siguen sonando igual. La misma línea otra vez la quita.',
+  'ottava.8va': '8va', 'ottava.8va.desc': 'Se escriben una octava más abajo de como suenan.',
+  'ottava.8vb': '8vb', 'ottava.8vb.desc': 'Se escriben una octava más arriba de como suenan.',
+  'ottava.15ma': '15ma', 'ottava.15ma.desc': 'Se escriben dos octavas más abajo de como suenan.',
+  'ottava.15mb': '15mb', 'ottava.15mb.desc': 'Se escriben dos octavas más arriba de como suenan.',
+
   // Barras de corchea a mano: la barra Barras y Notas → Barras.
   'bar.beams': 'Barras de corchea',
   'beam.break': 'Cortar barra', 'beam.break.desc': 'Empieza una barra nueva en la nota (o en cada nota seleccionada), o la deja con su corchete.',

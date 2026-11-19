@@ -536,6 +536,14 @@ export default {
   'value.tuplet': '{value} ({name})',
   'value.grace': '{value} {name}',
 
+  // Octave lines: the drop-down in the Ties & slurs bar and Notes → Octave Lines.
+  'toolbar.ottava': 'Octave Lines',
+  'toolbar.ottava.desc': 'Writes the selected notes (or the note before the caret) an octave or two away from how they sound, under a dashed line. They keep sounding as they did. The same line again takes it away.',
+  'ottava.8va': '8va', 'ottava.8va.desc': 'Drawn an octave lower than they sound.',
+  'ottava.8vb': '8vb', 'ottava.8vb.desc': 'Drawn an octave higher than they sound.',
+  'ottava.15ma': '15ma', 'ottava.15ma.desc': 'Drawn two octaves lower than they sound.',
+  'ottava.15mb': '15mb', 'ottava.15mb.desc': 'Drawn two octaves higher than they sound.',
+
   // Beams set by hand: the Beams bar and Notes → Beams.
   'bar.beams': 'Beams',
   'beam.break': 'Break Beam', 'beam.break.desc': 'Starts a new beam at the note (or at each selected note), or leaves it with its flag.',

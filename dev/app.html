@@ -179,6 +179,19 @@
         for (let k = m - 1; k >= 1; k--) if (st.measures[k].clef) { before = st.measures[k].clef; break; }
         st.measures[m].clef = before === clef ? null : clef;
       },
+      // Octave lines from the first note of the caret's measure to the note
+      // before the caret (the fake has no selections).
+      set_octave_line({ kind }) {
+        const v = voiceOf(view.caret);
+        const e = v[view.caret.index - 1];
+        if (!e) return;
+        snapshot();
+        view.score.octave_lines = view.score.octave_lines || [];
+        const i = view.score.octave_lines.findIndex((l) => l.start === v[0].id);
+        const same = i >= 0 && view.score.octave_lines[i].kind === kind && view.score.octave_lines[i].end === e.id;
+        if (i >= 0) view.score.octave_lines.splice(i, 1);
+        if (!same) view.score.octave_lines.push({ id: nextId++, start: v[0].id, end: e.id, kind });
+      },
       set_beam({ beam }) {
         const e = voiceOf(view.caret)[view.caret.index - 1];
         if (!e || e.kind === 'rest') return;
