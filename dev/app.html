@@ -179,18 +179,21 @@
         for (let k = m - 1; k >= 1; k--) if (st.measures[k].clef) { before = st.measures[k].clef; break; }
         st.measures[m].clef = before === clef ? null : clef;
       },
-      // Octave lines from the first note of the caret's measure to the note
-      // before the caret (the fake has no selections).
-      set_octave_line({ kind }) {
+      // Lines from the first note of the caret's measure to the note before
+      // the caret (the fake has no selections); a glissando to the next note.
+      set_line({ kind }) {
         const v = voiceOf(view.caret);
         const e = v[view.caret.index - 1];
         if (!e) return;
         snapshot();
-        view.score.octave_lines = view.score.octave_lines || [];
-        const i = view.score.octave_lines.findIndex((l) => l.start === v[0].id);
-        const same = i >= 0 && view.score.octave_lines[i].kind === kind && view.score.octave_lines[i].end === e.id;
-        if (i >= 0) view.score.octave_lines.splice(i, 1);
-        if (!same) view.score.octave_lines.push({ id: nextId++, start: v[0].id, end: e.id, kind });
+        const lines = (view.score.lines = view.score.lines || []);
+        const start = kind === 'glissando' ? e : v[0];
+        const end = kind === 'glissando' ? v[view.caret.index] : e;
+        if (!end) return;
+        const i = lines.findIndex((l) => l.start === start.id && l.kind === kind);
+        const same = i >= 0 && lines[i].end === end.id;
+        if (i >= 0) lines.splice(i, 1);
+        if (!same) lines.push({ id: nextId++, start: start.id, end: end.id, kind });
       },
       // The note before the caret, the same sound written another way.
       respell() {

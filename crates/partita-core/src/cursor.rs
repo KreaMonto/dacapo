@@ -70,7 +70,7 @@ pub struct SelectionRange {
     pub end: TimePos,
 }
 
-fn events<'a>(score: &'a Score, staff: usize, measure: usize, voice: usize) -> &'a [Event] {
+fn events(score: &Score, staff: usize, measure: usize, voice: usize) -> &[Event] {
     score
         .voice(staff, measure, voice)
         .map(Vec::as_slice)

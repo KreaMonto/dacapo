@@ -317,12 +317,25 @@ const CHANGE_COL = 2.8 * SP; // room for a clef change: the clef drawn smaller
  * it (never in the first measure), else the staff's own clef.
  */
 export function clefAt(score, staff, measure) {
-  const s = score.staves[staff];
-  if (!s) return 'treble';
-  for (let m = Math.min(measure, s.measures.length - 1); m >= 1; m--) {
-    if (s.measures[m].clef) return s.measures[m].clef;
+  const clefs = clefTable(score)[staff];
+  if (!clefs) return 'treble';
+  return clefs[Math.max(0, Math.min(measure, clefs.length - 1))];
+}
+
+// The clef of every measure of every staff, worked out once per score
+// received (clefAt is asked for each staff of each measure on every draw).
+const clefCache = new WeakMap();
+function clefTable(score) {
+  if (!clefCache.has(score)) {
+    clefCache.set(score, score.staves.map((s) => {
+      let clef = s.clef;
+      return s.measures.map((cell, m) => {
+        if (m > 0 && cell.clef) clef = cell.clef;
+        return clef;
+      });
+    }));
   }
-  return s.clef;
+  return clefCache.get(score);
 }
 
 /** A music glyph: baseline at (x, y). */
@@ -343,36 +356,42 @@ export function durationTicks(d) {
   return tp && tp.actual > 0 ? (t * tp.normal) / tp.actual : t;
 }
 
-// ----- octave lines ----------------------------------------------------------------
+// ----- lines between notes ------------------------------------------------------------
+//
+// Octave lines, hairpins, trills, glissandos, rit. and accel. all go from
+// one note of a staff to another (score.lines). Where each one is, and the
+// notes it covers, is worked out once per score received (lineLayout);
+// drawLines splits each line into one part per system and draws its kind.
 
-/** Octaves the notes under each kind of line sound above where they are drawn. */
+/** Octaves the notes under an octave line sound above where they are drawn. */
 const OTTAVA_OCTAVES = { '8va': 1, '8vb': -1, '15ma': 2, '15mb': -2 };
+const isOctaveLine = (kind) => kind in OTTAVA_OCTAVES;
+
+const layoutCache = new WeakMap();
 
 /**
- * Where the octave lines are: `byId` gives each event under a line its
- * shift in octaves and `lineOf` the index of its line; `at(staff, measure,
- * tick)` the shift at a place (for the mouse). Positions are absolute ticks,
- * measures one after another at their length, as in the core.
+ * Where the lines are, in absolute ticks (measures one after another at
+ * their length, as in the core): `spans` (index, staff, from, to, kind),
+ * `where` each event's place, `byId` each event's octave shift under an
+ * octave line, and `at(staff, measure, tick)` the shift at a place (for the
+ * mouse).
  */
-const shiftsCache = new WeakMap();
-export function octaveShifts(score) {
-  // (Asked for on every mouse move: worked out once per score received.)
-  if (shiftsCache.has(score)) return shiftsCache.get(score);
-  const result = computeShifts(score);
-  shiftsCache.set(score, result);
+export function lineLayout(score) {
+  if (layoutCache.has(score)) return layoutCache.get(score);
+  const result = computeLineLayout(score);
+  layoutCache.set(score, result);
   return result;
 }
 
-function computeShifts(score) {
-  const lines = score.octave_lines || [];
+function computeLineLayout(score) {
+  const lines = score.lines || [];
   const byId = new Map();
-  const lineOf = new Map();
+  const where = new Map(); // id -> { staff, from, to }
   const spans = [];
-  if (!lines.length) return { byId, lineOf, at: () => 0, spans };
+  if (!lines.length) return { byId, where, spans, at: () => 0 };
   const mStart = [];
   let t = 0;
   for (const attrs of score.measures) { mStart.push(t); t += capacity(attrs); }
-  const where = new Map(); // id -> { staff, from, to }
   score.staves.forEach((staff, s) => staff.measures.forEach((cell, m) => cell.voices.forEach((voice) => {
     let tick = mStart[m];
     for (const e of voice) {
@@ -381,73 +400,137 @@ function computeShifts(score) {
       tick += len;
     }
   })));
-  lines.forEach((l, i) => {
+  lines.forEach((l, index) => {
     const a = where.get(l.start);
     const b = where.get(l.end);
     if (!a || !b || a.staff !== b.staff) return;
-    spans.push({ index: i, staff: a.staff, from: a.from, to: b.to, k: OTTAVA_OCTAVES[l.kind] || 0, line: l });
+    spans.push({ index, staff: a.staff, from: a.from, to: b.to, kind: l.kind, line: l });
   });
+  const octaves = spans.filter((sp) => isOctaveLine(sp.kind));
   for (const [id, w] of where) {
-    const span = spans.find((sp) => sp.staff === w.staff && w.from >= sp.from && w.from < sp.to);
-    if (span) { byId.set(id, span.k); lineOf.set(id, span.index); }
+    const span = octaves.find((sp) => sp.staff === w.staff && w.from >= sp.from && w.from < sp.to);
+    if (span) byId.set(id, OTTAVA_OCTAVES[span.kind]);
   }
   const at = (staff, measure, tick) => {
     const abs = (mStart[measure] ?? 0) + tick;
-    return spans.find((sp) => sp.staff === staff && abs >= sp.from && abs < sp.to)?.k ?? 0;
+    const span = octaves.find((sp) => sp.staff === staff && abs >= sp.from && abs < sp.to);
+    return span ? OTTAVA_OCTAVES[span.kind] : 0;
   };
-  return { byId, lineOf, at, spans };
+  return { byId, where, spans, at };
 }
 
 /**
- * Draws the octave lines: "8va" (or 8vb, 15ma, 15mb) and a dashed line over
- * (or under) the notes it covers, with a hook at its end. A line that goes
- * on to the next system starts there again with the number in brackets.
+ * Draws every line, one part per system it reaches: `part` is the drawn
+ * notes it covers there, `x1`/`x2` where it starts and ends on that system
+ * (a part going on to the next system runs to the system's end, one coming
+ * from the last starts at the music). Each kind's drawing is below.
  */
-function drawOctaveLines(push, shifts, seqs, onPage) {
-  for (const span of shifts.spans) {
+function drawLines(push, lines, seqs, onPage) {
+  for (const span of lines.spans) {
     const covered = [];
     for (const [key, seq] of seqs) {
       if (Number(key.split(':')[0]) !== span.staff) continue;
-      for (const n of seq) if (shifts.lineOf.get(n.e.id) === span.index) covered.push(n);
+      for (const n of seq) {
+        const w = lines.where.get(n.e.id);
+        if (w && w.from >= span.from && w.from < span.to) covered.push(n);
+      }
     }
     if (!covered.length) continue;
     const bySystem = new Map();
     for (const n of covered) {
-      const sys = n.ms.system;
-      if (!bySystem.has(sys)) bySystem.set(sys, []);
-      bySystem.get(sys).push(n);
+      if (!bySystem.has(n.ms.system)) bySystem.set(n.ms.system, []);
+      bySystem.get(n.ms.system).push(n);
     }
     const systems = [...bySystem.keys()].sort((a, b) => a.index - b.index);
-    const above = span.k > 0;
-    const label = span.line.kind;
+    const draw = LINE_DRAW[span.kind];
     systems.forEach((sys, i) => {
-      const part = bySystem.get(sys);
+      const part = bySystem.get(sys).sort((a, b) => a.x - b.x);
       const first = i === 0;
       const last = i === systems.length - 1;
-      const top = part[0].top;
       const x1 = first ? Math.min(...part.map((n) => n.left)) : part[0].ms.contentX - 1.2 * SP;
       const x2 = last ? Math.max(...part.map((n) => n.left + n.w)) + 0.3 * SP : systemEnd(part[0].ms) - 0.3 * SP;
-      const y = above
-        ? Math.min(top - 1.2 * SP, ...part.map((n) => n.hi)) - 0.9 * SP
-        : Math.max(top + 5.2 * SP, ...part.map((n) => n.lo)) + 1.6 * SP;
-      const text = first ? label : `(${label})`;
-      const textW = (text.length * 0.62 + 0.5) * SP;
       onPage(sys.page);
-      push(`<g class="${part[0].cls} ottava">`);
-      push(`<text class="ottava-text" x="${x1}" y="${y + 0.35 * SP}">${text}</text>`);
-      if (x2 > x1 + textW) {
-        const hookTo = above ? y + 0.8 * SP : y - 0.8 * SP;
-        const end = last ? ` ${x2},${hookTo}` : '';
-        push(`<polyline class="ottava-line" points="${x1 + textW},${y} ${x2},${y}${end}"/>`);
-      }
+      push(`<g class="${part[0].cls} line ${span.kind}">`);
+      draw(push, { span, part, first, last, x1, x2, top: part[0].top, index: i, parts: systems.length });
       push('</g>');
-      // Room for what is drawn around the notes (lyrics, other marks).
-      for (const n of part) {
-        if (above) n.hi = Math.min(n.hi, y - 1.2 * SP);
-        else n.lo = Math.max(n.lo, y + 0.5 * SP);
-      }
     });
   }
+}
+
+/** Above the notes (and the staff): the y of a line, and room kept for it. */
+function lineAbove(part, top, room = 0.9 * SP) {
+  const y = Math.min(top - 1.2 * SP, ...part.map((n) => n.hi)) - room;
+  for (const n of part) n.hi = Math.min(n.hi, y - 1.2 * SP);
+  return y;
+}
+/** Below the notes (and the staff). */
+function lineBelow(part, top, room = 1.6 * SP) {
+  const y = Math.max(top + 5.2 * SP, ...part.map((n) => n.lo)) + room;
+  for (const n of part) n.lo = Math.max(n.lo, y + 0.5 * SP);
+  return y;
+}
+
+/** A word ("8va", "rit.") and a dashed line after it, with a hook at its end. */
+function wordAndDashes(push, { x1, x2, first, last }, y, text, hook) {
+  const shown = first ? text : `(${text})`;
+  const textW = (shown.length * 0.62 + 0.5) * SP;
+  push(`<text class="line-text" x="${x1}" y="${y + 0.35 * SP}">${shown}</text>`);
+  if (x2 > x1 + textW) {
+    const end = last && hook ? ` ${x2},${y + hook}` : '';
+    push(`<polyline class="line-dashes" points="${x1 + textW},${y} ${x2},${y}${end}"/>`);
+  }
+}
+
+/** A wavy line from x1 to x2 at y (a trill's). */
+function wavy(x1, x2, y) {
+  const period = 0.75 * SP;
+  const amp = 0.22 * SP;
+  let d = `M${x1},${y}`;
+  for (let x = x1; x + period <= x2; x += period) {
+    d += ` q${period / 4},${-amp} ${period / 2},0 q${period / 4},${amp} ${period / 2},0`;
+  }
+  return `<path class="line-wavy" d="${d}"/>`;
+}
+
+const LINE_DRAW = {
+  ...Object.fromEntries(Object.keys(OTTAVA_OCTAVES).map((k) => [k, (push, p) => {
+    const above = OTTAVA_OCTAVES[k] > 0;
+    const y = above ? lineAbove(p.part, p.top) : lineBelow(p.part, p.top);
+    wordAndDashes(push, p, y, k, above ? 0.8 * SP : -0.8 * SP);
+  }])),
+  // Hairpins: below the staff; over several systems each part opens (or
+  // closes) its share of the whole.
+  crescendo: (push, p) => hairpin(push, p, true),
+  diminuendo: (push, p) => hairpin(push, p, false),
+  // tr, and a wavy line when it lasts beyond its first note.
+  trill: (push, p) => {
+    const y = lineAbove(p.part, p.top, 1.1 * SP);
+    if (p.first) push(glyph('', p.x1, y + 0.45 * SP, 'trill-sign'));
+    const from = p.first ? p.x1 + 1.7 * SP : p.x1;
+    if (p.x2 > from + SP) push(wavy(from, p.x2, y));
+  },
+  // From the first note's head to the last one's.
+  glissando: (push, p) => {
+    const a = p.part[0];
+    const b = p.part[p.part.length - 1];
+    const ya = a.heads[0]?.y ?? a.top + 2 * SP;
+    const yb = p.last ? (b.heads[0]?.y ?? ya) : ya;
+    const xa = p.first ? a.left + a.w + 0.3 * SP : p.x1;
+    const xb = p.last ? b.left - 0.5 * SP : p.x2;
+    if (xb > xa) push(`<line class="line-gliss" x1="${xa}" y1="${ya}" x2="${xb}" y2="${yb}"/>`);
+  },
+  rit: (push, p) => wordAndDashes(push, p, lineAbove(p.part, p.top), 'rit.', 0),
+  accel: (push, p) => wordAndDashes(push, p, lineAbove(p.part, p.top), 'accel.', 0),
+};
+
+function hairpin(push, p, opens) {
+  const y = lineBelow(p.part, p.top, 1.2 * SP);
+  const full = 0.6 * SP; // half the opening at its widest
+  const a = (p.index / p.parts) * full;
+  const b = ((p.index + 1) / p.parts) * full;
+  const [h1, h2] = opens ? [a, b] : [full - a, full - b];
+  push(`<polyline class="line-hairpin" points="${p.x1},${y - h1} ${p.x2},${y - h2}"/>`);
+  push(`<polyline class="line-hairpin" points="${p.x1},${y + h1} ${p.x2},${y + h2}"/>`);
 }
 
 /** Whether an event is a grace note (it takes no time). */
@@ -1193,7 +1276,7 @@ export function renderScore(view, width, opts = {}) {
   // Drawn events, for ties and slurs: per staff+voice in score order, and by id.
   const seqs = new Map();
   const byId = new Map();
-  const shifts = octaveShifts(score);
+  const lines = lineLayout(score);
 
   for (const ms of lay.measures) {
     onPage(ms.system.page);
@@ -1297,7 +1380,7 @@ export function renderScore(view, width, opts = {}) {
 
       // Events. Under an octave line a note is drawn an octave (or two)
       // away from its pitch: draw it against a moved middle line.
-      const shiftedMid = (e) => mid + 7 * (shifts.byId.get(e.id) || 0);
+      const shiftedMid = (e) => mid + 7 * (lines.byId.get(e.id) || 0);
       const yOfMid = (m) => (d) => top + 2 * SP - (d - m) * (SP / 2);
       const voices = staff.measures[ms.m].voices;
       const multi = voices.filter((v) => v.length).length > 1;
@@ -1354,7 +1437,7 @@ export function renderScore(view, width, opts = {}) {
 
   drawTies(push, seqs, onPage);
   drawSlurs(push, score.slurs || [], byId, seqs, onPage);
-  drawOctaveLines(push, shifts, seqs, onPage);
+  drawLines(push, lines, seqs, onPage);
   drawLyrics(push, lay, seqs, onPage, opts.lyricEdit);
 
   // Where lyrics can be typed: every drawn note, in score order per staff
@@ -2115,7 +2198,7 @@ export function pointerTarget(lay, view, x, y, voice) {
   // where it is drawn, and is kept as it sounds.
   let tick = 0;
   if (!restMeasure) for (let i = 0; i < (onEvent ?? index) && i < events.length; i++) tick += durationTicks(events[i].duration);
-  const k = octaveShifts(view.score).at(staff, ms.m, tick);
+  const k = lineLayout(view.score).at(staff, ms.m, tick);
   return {
     staff, measure: ms.m, voice, index, onEvent, page: s.page || 0,
     step,

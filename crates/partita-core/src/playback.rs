@@ -29,6 +29,12 @@
 //! - **Grace notes** take their time from the start of the note after
 //!   them: an acciaccatura a 32nd at most (less before a short note), an
 //!   appoggiatura half of that note, shared by a group of them.
+//! - **Hairpins** take the loudness about two dynamic levels up or down
+//!   over their length; it stays there, unless a dynamic comes inside.
+//! - A note under a **trill** alternates with the step above (in the key)
+//!   in 32nds.
+//! - **rit.** and **accel.** take the tempo to 75 % or 125 % over their
+//!   length; it stays there until the next tempo marking (the *a tempo*).
 //! - Fermatas do not change timing yet.
 
 use std::collections::{HashMap, HashSet};
@@ -36,8 +42,123 @@ use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 
 use crate::model::{
-    Articulation, Dynamic, Event, EventId, Grace, Jump, Score, MAX_VOICES, TICKS_PER_QUARTER,
+    Articulation, Dynamic, Event, EventId, Grace, Jump, LineFamily, LineKind, Score, MAX_VOICES,
+    TICKS_PER_QUARTER,
 };
+
+/// How much louder a crescendo ends (and softer a diminuendo): about two
+/// dynamic levels.
+const HAIRPIN_VELOCITY: i32 = 24;
+/// The tempo rit. and accel. reach, in percent of the one before.
+const RIT_PERCENT: u64 = 75;
+const ACCEL_PERCENT: u64 = 125;
+/// How often a gradual tempo change steps: a 16th.
+const TEMPO_STEP: u64 = TICKS_PER_QUARTER as u64 / 4;
+
+/// A line of the score in score positions: measures one after another at
+/// their length (as [`Score::event_start`]), not in the order played.
+struct Span {
+    staff: usize,
+    from: u64,
+    to: u64,
+    kind: LineKind,
+}
+
+/// The lines of a score, and where each measure starts in score positions.
+struct Spans {
+    measure_start: Vec<u64>,
+    spans: Vec<Span>,
+}
+
+impl Spans {
+    fn of(score: &Score) -> Self {
+        let mut measure_start = Vec::with_capacity(score.measures.len());
+        let mut t = 0;
+        for a in &score.measures {
+            measure_start.push(t);
+            t += a.capacity() as u64;
+        }
+        let spans = score
+            .lines
+            .iter()
+            .filter_map(|l| {
+                Some(Span {
+                    staff: score.locate(l.start)?.0,
+                    from: score.event_start(l.start)?,
+                    to: score.event_end(l.end)?,
+                    kind: l.kind,
+                })
+            })
+            .collect();
+        Spans {
+            measure_start,
+            spans,
+        }
+    }
+
+    /// The line of `family` over position `pos` of `staff` (any staff for
+    /// `None`), with its index.
+    fn covering(
+        &self,
+        staff: Option<usize>,
+        pos: u64,
+        family: LineFamily,
+    ) -> Option<(usize, &Span)> {
+        self.spans.iter().enumerate().find(|(_, sp)| {
+            sp.kind.family() == family
+                && staff.is_none_or(|s| s == sp.staff)
+                && sp.from <= pos
+                && pos < sp.to
+        })
+    }
+
+    /// The tempo at a score position: the measure's, or on the way of a
+    /// rit. / accel., or where the last one ended (until a tempo marking).
+    fn tempo_at(&self, score: &Score, m: usize, tick: u64) -> u16 {
+        let pos = self.measure_start[m] + tick;
+        let scaled = |bpm: u16, percent: u64| -> u16 {
+            ((bpm as u64 * percent) / 100).clamp(20, 400) as u16
+        };
+        let target = |k: LineKind| {
+            if k == LineKind::Ritardando {
+                RIT_PERCENT
+            } else {
+                ACCEL_PERCENT
+            }
+        };
+        let measure_of = |p: u64| {
+            self.measure_start
+                .partition_point(|&s| s <= p)
+                .saturating_sub(1)
+        };
+        if let Some((_, sp)) = self.covering(None, pos, LineFamily::Tempo) {
+            let base = score.tempo_at(measure_of(sp.from));
+            let frac = (pos - sp.from) as f64 / (sp.to - sp.from).max(1) as f64;
+            let percent = 100.0 + (target(sp.kind) as f64 - 100.0) * frac;
+            return scaled(base, percent.round() as u64);
+        }
+        // The last change that ended before, unless a tempo marking came
+        // after it.
+        let ended = self
+            .spans
+            .iter()
+            .filter(|sp| sp.kind.family() == LineFamily::Tempo && sp.to <= pos)
+            .max_by_key(|sp| sp.to);
+        if let Some(sp) = ended {
+            let marked = (measure_of(sp.to)..=m).any(|k| {
+                self.measure_start[k] >= sp.to
+                    && score.measures[k]
+                        .tempo
+                        .as_ref()
+                        .is_some_and(|t| t.bpm.is_some())
+            });
+            if !marked {
+                return scaled(score.tempo_at(measure_of(sp.from)), target(sp.kind));
+            }
+        }
+        score.tempo_at(m)
+    }
+}
 
 /// The longest an acciaccatura sounds: a 32nd.
 const ACCIACCATURA_TICKS: u64 = TICKS_PER_QUARTER as u64 / 8;
@@ -157,6 +278,15 @@ fn dynamic_velocity(d: Dynamic) -> u8 {
 }
 
 /// Fraction (per mille) of the written length that actually sounds.
+/// How much louder a hairpin takes the music by its end.
+fn hairpin_delta(kind: LineKind) -> i32 {
+    if kind == LineKind::Diminuendo {
+        -HAIRPIN_VELOCITY
+    } else {
+        HAIRPIN_VELOCITY
+    }
+}
+
 fn sounding_permille(e: &Event, slurred: bool) -> u64 {
     let arts = &e.articulations;
     if arts.contains(&Articulation::Staccatissimo) {
@@ -347,6 +477,7 @@ pub fn build(score: &Score) -> Timeline {
     let measure_starts: Vec<u64> = measure_starts.into_iter().map(|s| s.unwrap_or(t)).collect();
 
     let slurred = slurred_events(score);
+    let spans = Spans::of(score);
     let mut notes: Vec<Note> = Vec::new();
 
     for (s, staff) in score.staves.iter().enumerate() {
@@ -354,6 +485,9 @@ pub fn build(score: &Score) -> Timeline {
             let mut velocity = DEFAULT_VELOCITY;
             // Notes still tied into the next event: key -> index in `notes`.
             let mut open_ties: HashMap<u8, usize> = HashMap::new();
+            // The hairpin being played: (its index, the loudness it started
+            // from, whether a dynamic came inside it).
+            let mut hairpin: Option<(usize, u8, bool)> = None;
             for &(play_start, m) in &plays {
                 let events = &staff.measures[m].voices[v];
                 let capacity = score.measures[m].capacity();
@@ -370,6 +504,7 @@ pub fn build(score: &Score) -> Timeline {
                         continue;
                     }
                     let mut start = at;
+                    let pos = spans.measure_start[m] + (at - play_start);
                     at += e.ticks() as u64;
                     if !graces.is_empty() {
                         let full = at - start;
@@ -404,6 +539,29 @@ pub fn build(score: &Score) -> Timeline {
                             other => dynamic_velocity(other),
                         };
                     }
+                    // A hairpin: louder or softer along it, and after it.
+                    match spans.covering(Some(s), pos, LineFamily::Hairpin) {
+                        Some((i, sp)) => {
+                            if hairpin.is_none_or(|h| h.0 != i) || e.dynamic.is_some() {
+                                let seen = hairpin.is_some_and(|h| h.0 == i) && e.dynamic.is_some();
+                                hairpin = Some((i, velocity, seen));
+                            }
+                            let (_, base, _) = hairpin.unwrap_or((i, velocity, false));
+                            let frac = (pos - sp.from) as f64 / (sp.to - sp.from).max(1) as f64;
+                            let delta = hairpin_delta(sp.kind) as f64 * frac;
+                            note_velocity = (base as f64 + delta).round().clamp(1.0, 127.0) as u8;
+                        }
+                        None => {
+                            if let Some((i, base, seen)) = hairpin.take() {
+                                if !seen && e.dynamic.is_none() {
+                                    velocity = (base as i32 + hairpin_delta(spans.spans[i].kind))
+                                        .clamp(1, 127)
+                                        as u8;
+                                    note_velocity = velocity;
+                                }
+                            }
+                        }
+                    }
                     if e.articulations.contains(&Articulation::Marcato) {
                         note_velocity = note_velocity.saturating_add(24);
                     } else if e.articulations.contains(&Articulation::Accent) {
@@ -416,6 +574,33 @@ pub fn build(score: &Score) -> Timeline {
                         continue;
                     }
                     let sounding = written * sounding_permille(e, slurred.contains(&e.id)) / 1000;
+                    // A trill: the note and the step above it, in 32nds.
+                    if spans.covering(Some(s), pos, LineFamily::Trill).is_some() {
+                        let key = score.written_key(s, m);
+                        let step_len = (TICKS_PER_QUARTER as u64 / 8).min((written / 2).max(1));
+                        for p in e.pitches() {
+                            let mut upper = p.shifted(1);
+                            upper.alter = crate::document::key_alter(key, upper.step);
+                            let keys = [*p, upper]
+                                .map(|q| staff.transposition.sounding_midi(q).clamp(0, 127) as u8);
+                            let mut t = start;
+                            let mut k = 0;
+                            while t < start + sounding.max(1) {
+                                let end = (t + step_len).min(start + sounding.max(1));
+                                notes.push(Note {
+                                    start: t,
+                                    end,
+                                    key: keys[k % 2],
+                                    velocity: note_velocity,
+                                    staff: s,
+                                });
+                                t = end;
+                                k += 1;
+                            }
+                        }
+                        open_ties.clear();
+                        continue;
+                    }
                     let mut next_open = HashMap::new();
                     for p in e.pitches() {
                         // Transposing instruments sound away from the written note.
@@ -451,12 +636,28 @@ pub fn build(score: &Score) -> Timeline {
 
     notes.sort_by_key(|n| (n.start, n.key, n.staff));
     // Tempo changes where the tempo of the measure played differs from the
-    // one before (going back to a repeat brings back its tempo).
+    // one before (going back to a repeat brings back its tempo), and along
+    // rit. and accel., a 16th at a time.
     let mut tempos: Vec<(u64, u16)> = Vec::new();
+    let gradual = spans
+        .spans
+        .iter()
+        .any(|sp| sp.kind.family() == LineFamily::Tempo);
     for &(start, m) in &plays {
-        let bpm = score.tempo_at(m);
-        if tempos.last().is_none_or(|&(_, last)| last != bpm) {
-            tempos.push((start, bpm));
+        let ticks: Vec<u64> = if gradual {
+            (0..lengths[m]).step_by(TEMPO_STEP as usize).collect()
+        } else {
+            vec![0]
+        };
+        for tick in ticks {
+            let bpm = if gradual {
+                spans.tempo_at(score, m, tick)
+            } else {
+                score.tempo_at(m)
+            };
+            if tempos.last().is_none_or(|&(_, last)| last != bpm) {
+                tempos.push((start + tick, bpm));
+            }
         }
     }
     Timeline {
@@ -537,6 +738,72 @@ mod tests {
         s.measures[2].ending = vec![2];
         s.measures[4].repeat_end = Some(2);
         assert_eq!(play_order(&s), vec![0, 1, 0, 2, 3, 4, 3, 4]);
+    }
+
+    fn line(s: &mut Score, start: u64, end: u64, kind: LineKind) {
+        let id = s.alloc_id();
+        s.lines.push(Line {
+            id,
+            start,
+            end,
+            kind,
+        });
+    }
+
+    #[test]
+    fn a_crescendo_gets_louder_and_stays_there() {
+        let quarter = |id| note(id, Step::C, DurationBase::Quarter);
+        let mut s = score_with(
+            vec![quarter(1), quarter(2), quarter(3), quarter(4)],
+            vec![note(5, Step::C, DurationBase::Whole)],
+        );
+        line(&mut s, 1, 4, LineKind::Crescendo);
+        let v: Vec<u8> = build(&s).notes.iter().map(|n| n.velocity).collect();
+        assert!(v[0] < v[1] && v[1] < v[2] && v[2] < v[3], "{v:?}");
+        assert_eq!(
+            v[4] as i32,
+            v[0] as i32 + HAIRPIN_VELOCITY,
+            "it stays louder"
+        );
+        // A dynamic at the end of it is what comes after.
+        s.staves[0].measures[1].voices[0][0].dynamic = Some(Dynamic::P);
+        let v: Vec<u8> = build(&s).notes.iter().map(|n| n.velocity).collect();
+        assert_eq!(v[4], dynamic_velocity(Dynamic::P));
+    }
+
+    #[test]
+    fn a_trill_alternates_with_the_step_above() {
+        let mut s = score_with(vec![note(1, Step::C, DurationBase::Quarter)], vec![]);
+        line(&mut s, 1, 1, LineKind::Trill);
+        let keys: Vec<u8> = build(&s).notes.iter().map(|n| n.key).collect();
+        assert!(keys.len() >= 6, "{keys:?}");
+        assert_eq!(&keys[..4], &[60, 62, 60, 62]);
+    }
+
+    #[test]
+    fn rit_slows_down_until_a_tempo() {
+        let mut s = Score::new("t", 3);
+        s.tempo = 100;
+        for m in 0..3 {
+            s.staves[0].measures[m].voices[0] =
+                vec![note(m as u64 + 1, Step::C, DurationBase::Whole)];
+        }
+        line(&mut s, 1, 1, LineKind::Ritardando);
+        let t = build(&s);
+        let bpm: Vec<u16> = t.tempos.iter().map(|&(_, b)| b).collect();
+        assert_eq!(bpm[0], 100);
+        assert!(
+            bpm.windows(2).all(|w| w[1] < w[0]),
+            "gradually slower: {bpm:?}"
+        );
+        assert_eq!(*bpm.last().unwrap(), 75, "and stays there");
+        // A tempo marking in measure 3 brings the tempo back.
+        s.measures[2].tempo = Some(TempoMark {
+            bpm: Some(100),
+            ..Default::default()
+        });
+        let t = build(&s);
+        assert_eq!(t.tempos.last().map(|&(_, b)| b), Some(100));
     }
 
     #[test]

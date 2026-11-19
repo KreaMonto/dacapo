@@ -540,12 +540,21 @@ export default {
   'value.grace': '{value} {name}',
 
   // Octave lines: the drop-down in the Ties & slurs bar and Notes → Octave Lines.
+  'menu.notes.lines': 'Lines',
+  'line.crescendo': 'Crescendo', 'line.crescendo.desc': 'A hairpin opening under the selected notes: louder along it. It stays louder after it, unless a dynamic says otherwise.',
+  'line.diminuendo': 'Diminuendo', 'line.diminuendo.desc': 'A hairpin closing under the selected notes: softer along it.',
+  'line.trill': 'Trill', 'line.trill.desc': 'tr over the note, and a wavy line over the selected notes: played alternating with the note above.',
+  'line.glissando': 'Glissando', 'line.glissando.desc': 'A line from the note before the caret to the next one (or across the selection), sliding between them.',
+  'line.rit': 'rit.', 'line.rit.desc': 'Gradually slower over the selected notes, then at that tempo until the next tempo marking.',
+  'line.accel': 'accel.', 'line.accel.desc': 'Gradually faster over the selected notes, then at that tempo until the next tempo marking.',
+  'toolbar.tempochange': 'Tempo Change',
+  'toolbar.tempochange.desc': 'rit. or accel. over the selected notes, which playback follows. The button shows the last one chosen.',
   'toolbar.ottava': 'Octave Lines',
   'toolbar.ottava.desc': 'Writes the selected notes (or the note before the caret) an octave or two away from how they sound, under a dashed line. They keep sounding as they did. The same line again takes it away.',
-  'ottava.8va': '8va', 'ottava.8va.desc': 'Drawn an octave lower than they sound.',
-  'ottava.8vb': '8vb', 'ottava.8vb.desc': 'Drawn an octave higher than they sound.',
-  'ottava.15ma': '15ma', 'ottava.15ma.desc': 'Drawn two octaves lower than they sound.',
-  'ottava.15mb': '15mb', 'ottava.15mb.desc': 'Drawn two octaves higher than they sound.',
+  'line.8va': '8va', 'line.8va.desc': 'Drawn an octave lower than they sound.',
+  'line.8vb': '8vb', 'line.8vb.desc': 'Drawn an octave higher than they sound.',
+  'line.15ma': '15ma', 'line.15ma.desc': 'Drawn two octaves lower than they sound.',
+  'line.15mb': '15mb', 'line.15mb.desc': 'Drawn two octaves higher than they sound.',
 
   // Beams set by hand: the Beams bar and Notes → Beams.
   'bar.beams': 'Beams',

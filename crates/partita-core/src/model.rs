@@ -642,45 +642,93 @@ impl<'de> Deserialize<'de> for Event {
     }
 }
 
-/// Which octave line: the notes under it sound one or two octaves away from
-/// where they are drawn.
+/// What a line between two notes is. The octave lines move the drawing of
+/// the notes under them (their pitch is kept as it sounds); hairpins and
+/// rit. / accel. change the playback over their length.
+///
+/// New kinds are added at the end: the binary recovery journal (postcard)
+/// stores variants by position.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Ottava {
+pub enum LineKind {
     /// 8va: drawn an octave lower than they sound.
     #[serde(rename = "8va")]
-    Alta,
+    OttavaAlta,
     /// 8vb: drawn an octave higher than they sound.
     #[serde(rename = "8vb")]
-    Bassa,
+    OttavaBassa,
     /// 15ma: drawn two octaves lower.
     #[serde(rename = "15ma")]
     QuindicesimaAlta,
     /// 15mb: drawn two octaves higher.
     #[serde(rename = "15mb")]
     QuindicesimaBassa,
+    /// Hairpin opening: louder.
+    #[serde(rename = "crescendo")]
+    Crescendo,
+    /// Hairpin closing: softer.
+    #[serde(rename = "diminuendo")]
+    Diminuendo,
+    /// tr and a wavy line: the notes are trilled with the step above.
+    #[serde(rename = "trill")]
+    Trill,
+    /// A line from one note to the next, sliding between them.
+    #[serde(rename = "glissando")]
+    Glissando,
+    /// rit.: gradually slower.
+    #[serde(rename = "rit")]
+    Ritardando,
+    /// accel.: gradually faster.
+    #[serde(rename = "accel")]
+    Accelerando,
 }
 
-impl Ottava {
-    /// Octaves the notes sound above where they are drawn.
+/// Lines that cannot overlap on a staff: a new one replaces the others of
+/// its family it overlaps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LineFamily {
+    Octave,
+    Hairpin,
+    Trill,
+    Glissando,
+    Tempo,
+}
+
+impl LineKind {
+    /// Octaves the notes sound above where they are drawn (0 for lines
+    /// that are not octave lines).
     pub fn octaves(self) -> i8 {
         match self {
-            Ottava::Alta => 1,
-            Ottava::Bassa => -1,
-            Ottava::QuindicesimaAlta => 2,
-            Ottava::QuindicesimaBassa => -2,
+            LineKind::OttavaAlta => 1,
+            LineKind::OttavaBassa => -1,
+            LineKind::QuindicesimaAlta => 2,
+            LineKind::QuindicesimaBassa => -2,
+            _ => 0,
+        }
+    }
+
+    pub fn family(self) -> LineFamily {
+        match self {
+            LineKind::OttavaAlta
+            | LineKind::OttavaBassa
+            | LineKind::QuindicesimaAlta
+            | LineKind::QuindicesimaBassa => LineFamily::Octave,
+            LineKind::Crescendo | LineKind::Diminuendo => LineFamily::Hairpin,
+            LineKind::Trill => LineFamily::Trill,
+            LineKind::Glissando => LineFamily::Glissando,
+            LineKind::Ritardando | LineKind::Accelerando => LineFamily::Tempo,
         }
     }
 }
 
-/// An octave line over the notes of a staff (every voice) from the event
-/// `start` to the event `end`, both in that staff. Pitches are kept as they
-/// sound; only the drawing moves. Since file format 8 (recovery format 16).
+/// A line over the notes of a staff (every voice) from the event `start` to
+/// the event `end`, both in that staff: an octave line, a hairpin, a trill,
+/// a glissando, rit. or accel. Since file format 8 (recovery format 16).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OctaveLine {
+pub struct Line {
     pub id: u64,
     pub start: EventId,
     pub end: EventId,
-    pub kind: Ottava,
+    pub kind: LineKind,
 }
 
 /// A phrase mark from one event to a later one in the same staff and voice.
@@ -1787,9 +1835,9 @@ pub struct Score {
     /// Texts placed freely on the pages. Since file format 7 (recovery
     /// format 9).
     pub text_boxes: Vec<TextBox>,
-    /// 8va, 8vb, 15ma and 15mb lines. Since file format 8 (recovery format
-    /// 16).
-    pub octave_lines: Vec<OctaveLine>,
+    /// Lines between notes: octave lines, hairpins, trills, glissandos,
+    /// rit. and accel. Since file format 8 (recovery format 16).
+    pub lines: Vec<Line>,
 }
 
 #[derive(Deserialize)]
@@ -1807,13 +1855,13 @@ struct ScoreFields {
     #[serde(default)]
     text_boxes: Vec<TextBox>,
     #[serde(default)]
-    octave_lines: Vec<OctaveLine>,
+    lines: Vec<Line>,
 }
 
-/// [`Score`] as written to recovery data before octave lines (formats 9 to
+/// [`Score`] as written to recovery data before lines (formats 9 to
 /// 15).
 #[derive(Deserialize)]
-struct ScorePreOctaves {
+struct ScorePreLines {
     metadata: Metadata,
     measures: Vec<MeasureAttrs>,
     staves: Vec<Staff>,
@@ -1849,11 +1897,11 @@ impl<'de> Deserialize<'de> for Score {
                 tempo: s.tempo,
                 text_styles: Default::default(),
                 text_boxes: Vec::new(),
-                octave_lines: Vec::new(),
+                lines: Vec::new(),
             });
         }
         if matches!(legacy_format(), 9..=15) {
-            let s = ScorePreOctaves::deserialize(deserializer)?;
+            let s = ScorePreLines::deserialize(deserializer)?;
             return Ok(Score {
                 metadata: s.metadata,
                 measures: s.measures,
@@ -1863,7 +1911,7 @@ impl<'de> Deserialize<'de> for Score {
                 tempo: s.tempo,
                 text_styles: s.text_styles,
                 text_boxes: s.text_boxes,
-                octave_lines: Vec::new(),
+                lines: Vec::new(),
             });
         }
         let s = ScoreFields::deserialize(deserializer)?;
@@ -1876,7 +1924,7 @@ impl<'de> Deserialize<'de> for Score {
             tempo: s.tempo,
             text_styles: s.text_styles,
             text_boxes: s.text_boxes,
-            octave_lines: s.octave_lines,
+            lines: s.lines,
         })
     }
 }
@@ -2014,7 +2062,7 @@ impl Score {
             tempo: DEFAULT_TEMPO,
             text_styles: Default::default(),
             text_boxes: Vec::new(),
-            octave_lines: Vec::new(),
+            lines: Vec::new(),
         };
         let staff = score.blank_staff("Staff 1", Clef::Treble);
         score.staves.push(staff);
