@@ -49,6 +49,7 @@ The steps, one pull request each:
 - [x] **0.6 Moving bars.** Drag a bar by its handle (⋮⋮) to another zone or another place in its zone; remembered between sessions.
 - [x] **0.7 Layouts.** Built-in layouts and the user's own: **Save Layout As…**, choose one, **Reset** to its built-in layout. The base for the instrument modes.
 - [x] **0.8 Dynamic lanes.** Every bar fits every side (the Measure and Playback bars too, stacked in a column). Each side has any number of rows (top) or columns (left, right): dropping a bar past the first or last one opens a new one, and an empty one disappears.
+- [ ] **0.9 The default layout, by closeness** *(agreed 2026-11-19)*: review where each bar sits by default, not only by room but by which tools are used together (the figures beside their accidentals, the dot, grace notes and tuplets; the marks beside the ties). And **rename** your own layouts (saving, choosing, editing and deleting them already work, in **View → Toolbars**).
 
 ## 1. Common base
 
@@ -99,11 +100,17 @@ Every mode needs these. The order inside each group is the planned order of work
 
 ### Editing
 
-- [ ] Insert vs. overwrite mode.
-- [ ] Box selection.
-- [ ] A panel with the properties of the selected note.
-- [ ] **Reorder staves, and choose where a new one goes** *(new, to discuss)*: today a new staff is always added at the bottom. Moving staves up and down, and placing a new one, should be easy to guess and visual.
-- [ ] **Edit one staff or voice alone** *(new)*: as in Encore, take one instrument or voice out of a large score, work on it by itself, and have the result saved back in the full score. Especially useful for large choral scores.
+Discussed with the user on 2026-11-19.
+
+- [ ] **Insert vs. overwrite mode** *(decided 2026-11-19: as proposed below)*. Today typing **inserts**: the new note goes in before what follows, and the measure can end up too full, which is marked in red with how many beats too many (the user likes that mark and wants to keep it). **Overwrite** would put the note in place of what is there, so the measure keeps its length (a half note over two quarters replaces both). Agreed: insert stays the default, the Insert key switches to overwrite, and the status bar says which one is on.
+- [ ] **Box selection.** Drag a rectangle over the music to select every note in it, across staves and measures, then tie, delete, move, transpose… them together. It selects a range (staves × time), as the selection already is; no picking loose notes with Ctrl+click. **Layers:** a rectangle over the music takes only notes, never text; text boxes have their own selection (a rectangle or Shift+click over boxes selects several, to move them together), which never takes notes.
+- [ ] **Reorder staves, and choose where a new one goes.** Two ways, both one undo step, and MusicXML keeps the order:
+  - **Drag a staff** by a handle at its start: it only moves up or down, and drops between two staves.
+  - **Score → Staves → Order…**: the staves' names in order, with ↑ ↓ arrows; **OK** applies the new order without touching the music.
+  - Staves grouped with a brace or bracket move together; to move one out, ungroup it first (trying shows a warning saying so). A keyboard instrument (piano, harp, organ) always moves as one and is never split.
+  - A new staff goes below the caret's staff (to settle while building it).
+- [ ] **Edit one staff alone.** A view of the same score showing only that staff (or voice): work on it by itself, and every change is already in the full score. Playback plays only it. Getting back must be obvious: a clear bar over the score ("Only Violin I · Back to the full score") and Esc. Later the instrument **parts** build on it, with the tools each instrument needs; for now, the isolated view is enough.
+- **Properties panel**: moved to the modes (section 2), see there.
 
 ## Architecture check (after the common base, before the modes)
 
@@ -127,6 +134,12 @@ The foundation is a **staff type** in the model: normal, percussion or tablature
 ### Task modes
 
 **Notes** (default): what is there today, plus the common base.
+
+**The properties of what is selected** *(moved here from the Editing group on 2026-11-19)*. Options to choose from:
+
+- **A contextual bar**: a thin bar, docked like the others, whose tools change with what is selected (a note: value, accidental, voice, stem direction; a measure: barline, repeat, length; a text: font and size, as the format bar already does for texts). Fits the thin bars and the modes best.
+- **An inspector column**: a docked column listing every property of the selection, editable (as in Sibelius and MuseScore). Complete, but takes room.
+- **A properties dialog**: double-click (or **Notes → Properties…**) shows everything about the selection; the status bar shows a summary. The least room, the slowest to use.
 
 **Text**:
 
